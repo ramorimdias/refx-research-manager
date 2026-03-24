@@ -8,9 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "tauri": "tauri",
-    "tauri:dev": "pnpm tauri:icons && tauri dev",
-    "tauri:build": "pnpm tauri:icons && TAURI_ENV=1 tauri build",
-    "tauri:icons": "node scripts/ensure-tauri-icons.mjs"
+    "tauri:dev": "tauri dev",
+    "tauri:build": "TAURI_ENV=1 tauri build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -14,5 +14,3 @@ next.user-config.*
 node_modules
 .next/
 .DS_Store
-# Generated Tauri icons
-src-tauri/icons/
