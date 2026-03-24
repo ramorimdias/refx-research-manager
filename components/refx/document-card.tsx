@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/lib/types'
-import { ReadingStageBadge, StarRating } from './common'
+import { OcrStatusBadge, ReadingStageBadge, StarRating } from './common'
 import { useAppStore } from '@/lib/store'
 
 interface DocumentCardProps {
@@ -36,7 +36,7 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
 
   if (variant === 'list') {
     return (
-      <Link href={`/documents?id=${doc.id}`}>
+      <Link href={`/reader/view?id=${doc.id}`}>
         <Card className="group hover:border-primary/50 transition-colors">
           <CardContent className="flex items-center gap-4 p-4">
             <button
@@ -125,7 +125,7 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href={`/documents?id=${doc.id}`}>
+                  <Link href={`/documents?id=${doc.id}&edit=1`}>
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Details
                   </Link>
@@ -146,7 +146,7 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
           </div>
         </div>
 
-        <Link href={`/documents?id=${doc.id}`} className="block">
+        <Link href={`/reader/view?id=${doc.id}`} className="block">
           <h3 className="font-medium line-clamp-2 mb-1 group-hover:text-primary transition-colors">
             {doc.title}
           </h3>
@@ -166,7 +166,10 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t border-border">
-          <ReadingStageBadge stage={doc.readingStage} />
+          <div className="flex items-center gap-2">
+            <ReadingStageBadge stage={doc.readingStage} />
+            {doc.hasOcr && <OcrStatusBadge status={doc.ocrStatus} />}
+          </div>
           <div className="flex items-center gap-2">
             {doc.annotationCount > 0 && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">

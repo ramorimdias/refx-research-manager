@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { Loader2 } from 'lucide-react'
+import { loadAppSettings } from '@/lib/app-settings'
+import { useTheme } from 'next-themes'
 
 interface AppProviderProps {
   children: React.ReactNode
@@ -13,6 +15,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const initialize = useAppStore((state) => state.initialize)
   const initialized = useAppStore((state) => state.initialized)
   const isDesktopApp = useAppStore((state) => state.isDesktopApp)
+  const { setTheme } = useTheme()
 
   useEffect(() => {
     const init = async () => {
@@ -27,6 +30,18 @@ export function AppProvider({ children }: AppProviderProps) {
 
     init()
   }, [initialize])
+
+  useEffect(() => {
+    if (!initialized) return
+
+    const applySettings = async () => {
+      const settings = await loadAppSettings(isDesktopApp)
+      setTheme(settings.theme)
+      document.documentElement.style.fontSize = `${settings.fontSize}px`
+    }
+
+    void applySettings()
+  }, [initialized, isDesktopApp, setTheme])
 
   if (isLoading || !initialized) {
     return (

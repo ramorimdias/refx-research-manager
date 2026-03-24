@@ -3,30 +3,44 @@
 import { ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { ReadingStage, MetadataStatus, OcrStatus } from '@/lib/types'
+import type { MetadataStatus, OcrStatus, ReadingStage } from '@/lib/types'
 import {
-  BookOpen,
-  BookMarked,
-  Eye,
-  CheckCircle2,
-  Archive,
   AlertCircle,
   AlertTriangle,
+  Archive,
+  BookMarked,
+  BookOpen,
   CheckCheck,
-  Shield,
+  CheckCircle2,
   Clock,
-  Loader2,
-  XCircle,
+  Eye,
   FileCheck,
+  Loader2,
+  Shield,
+  XCircle,
 } from 'lucide-react'
 
-// Reading Stage Badge
 const readingStageConfig: Record<ReadingStage, { label: string; icon: typeof BookOpen; className: string }> = {
   unread: { label: 'Unread', icon: BookOpen, className: 'bg-muted text-muted-foreground' },
   reading: { label: 'Reading', icon: BookMarked, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
   skimmed: { label: 'Skimmed', icon: Eye, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
   read: { label: 'Read', icon: CheckCircle2, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   archived: { label: 'Archived', icon: Archive, className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' },
+}
+
+const metadataStatusConfig: Record<MetadataStatus, { label: string; icon: typeof AlertCircle; className: string }> = {
+  incomplete: { label: 'Incomplete', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  partial: { label: 'Partial', icon: AlertTriangle, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  complete: { label: 'Complete', icon: CheckCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  verified: { label: 'Verified', icon: Shield, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+}
+
+const ocrStatusConfig: Record<OcrStatus, { label: string; icon: typeof Clock; className: string }> = {
+  pending: { label: 'OCR Pending', icon: Clock, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  processing: { label: 'Processing', icon: Loader2, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  complete: { label: 'OCR Complete', icon: FileCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  failed: { label: 'OCR Failed', icon: XCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  not_needed: { label: 'Native Text', icon: CheckCheck, className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' },
 }
 
 export function ReadingStageBadge({ stage }: { stage: ReadingStage }) {
@@ -40,14 +54,6 @@ export function ReadingStageBadge({ stage }: { stage: ReadingStage }) {
   )
 }
 
-// Metadata Status Badge
-const metadataStatusConfig: Record<MetadataStatus, { label: string; icon: typeof AlertCircle; className: string }> = {
-  incomplete: { label: 'Incomplete', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  partial: { label: 'Partial', icon: AlertTriangle, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  complete: { label: 'Complete', icon: CheckCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  verified: { label: 'Verified', icon: Shield, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-}
-
 export function MetadataStatusBadge({ status }: { status: MetadataStatus }) {
   const config = metadataStatusConfig[status]
   const Icon = config.icon
@@ -57,15 +63,6 @@ export function MetadataStatusBadge({ status }: { status: MetadataStatus }) {
       {config.label}
     </Badge>
   )
-}
-
-// OCR Status Badge
-const ocrStatusConfig: Record<OcrStatus, { label: string; icon: typeof Clock; className: string }> = {
-  pending: { label: 'OCR Pending', icon: Clock, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  processing: { label: 'Processing', icon: Loader2, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  complete: { label: 'OCR Complete', icon: FileCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  failed: { label: 'OCR Failed', icon: XCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  not_needed: { label: 'Native Text', icon: CheckCheck, className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' },
 }
 
 export function OcrStatusBadge({ status }: { status: OcrStatus }) {
@@ -79,14 +76,13 @@ export function OcrStatusBadge({ status }: { status: OcrStatus }) {
   )
 }
 
-// Tag Chip
-export function TagChip({ 
-  name, 
-  color, 
+export function TagChip({
+  name,
+  color,
   onClick,
   removable,
   onRemove,
-}: { 
+}: {
   name: string
   color?: string
   onClick?: () => void
@@ -96,40 +92,32 @@ export function TagChip({
   return (
     <Badge
       variant="secondary"
-      className={cn(
-        'gap-1.5 font-normal cursor-default',
-        onClick && 'cursor-pointer hover:bg-secondary/80'
-      )}
+      className={cn('gap-1.5 font-normal cursor-default', onClick && 'cursor-pointer hover:bg-secondary/80')}
       onClick={onClick}
     >
-      {color && (
-        <div
-          className="h-2 w-2 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-      )}
+      {color && <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />}
       {name}
       {removable && onRemove && (
         <button
-          onClick={(e) => {
-            e.stopPropagation()
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
             onRemove()
           }}
           className="ml-1 hover:text-foreground"
         >
-          ×
+          x
         </button>
       )}
     </Badge>
   )
 }
 
-// Star Rating
-export function StarRating({ 
-  rating, 
+export function StarRating({
+  rating,
   onChange,
   readonly = false,
-}: { 
+}: {
   rating: number
   onChange?: (rating: number) => void
   readonly?: boolean
@@ -140,12 +128,16 @@ export function StarRating({
         <button
           key={star}
           disabled={readonly}
-          onClick={() => onChange?.(star === rating ? 0 : star)}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onChange?.(star === rating ? 0 : star)
+          }}
           className={cn(
             'text-lg transition-colors',
             star <= rating ? 'text-amber-400' : 'text-muted-foreground/30',
-            !readonly && 'hover:text-amber-400 cursor-pointer',
-            readonly && 'cursor-default'
+            !readonly && 'cursor-pointer hover:text-amber-400',
+            readonly && 'cursor-default',
           )}
         >
           ★
@@ -155,7 +147,6 @@ export function StarRating({
   )
 }
 
-// Empty State
 export function EmptyState({
   icon: Icon,
   title,
@@ -179,7 +170,6 @@ export function EmptyState({
   )
 }
 
-// Stats Card
 export function StatsCard({
   label,
   value,
@@ -200,11 +190,9 @@ export function StatsCard({
       <div className="mt-2 flex items-baseline gap-2">
         <span className="text-2xl font-semibold">{value}</span>
         {trend && (
-          <span className={cn(
-            'text-xs',
-            trend.value >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-          )}>
-            {trend.value >= 0 ? '+' : ''}{trend.value}% {trend.label}
+          <span className={cn('text-xs', trend.value >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+            {trend.value >= 0 ? '+' : ''}
+            {trend.value}% {trend.label}
           </span>
         )}
       </div>
@@ -212,7 +200,6 @@ export function StatsCard({
   )
 }
 
-// Section Header
 export function SectionHeader({
   title,
   description,
@@ -226,9 +213,7 @@ export function SectionHeader({
     <div className="flex items-center justify-between">
       <div>
         <h2 className="text-lg font-semibold">{title}</h2>
-        {description && (
-          <p className="text-sm text-muted-foreground">{description}</p>
-        )}
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}
     </div>

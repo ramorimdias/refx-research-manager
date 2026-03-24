@@ -16,12 +16,14 @@ export type DbDocument = {
   libraryId: string
   title: string
   authors: string
+  tags: string[]
   year?: number
   abstractText?: string
   doi?: string
   citationKey?: string
   sourcePath?: string
   importedFilePath?: string
+  searchText?: string
   pageCount?: number
   hasOcr: boolean
   ocrStatus: string
@@ -50,6 +52,10 @@ export async function initializeDatabase() {
 
 export async function listLibraries() {
   return invoke<DbLibrary[]>('list_libraries')
+}
+
+export async function listAllDocuments() {
+  return invoke<DbDocument[]>('list_all_documents')
 }
 
 export async function createLibrary(input: { name: string; description?: string; color?: string }) {
@@ -105,4 +111,16 @@ export async function createNote(input: { documentId?: string; title: string; co
 
 export async function listNotes() {
   return invoke<DbNote[]>('list_notes')
+}
+
+export async function getSettings() {
+  return invoke<Record<string, string>>('get_settings')
+}
+
+export async function setSettings(values: Record<string, string>) {
+  return invoke<void>('set_settings', { input: { values } })
+}
+
+export async function clearLocalData() {
+  return invoke<void>('clear_local_data')
 }

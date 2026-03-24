@@ -33,7 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/lib/types'
-import { ReadingStageBadge, MetadataStatusBadge, StarRating, TagChip } from './common'
+import { ReadingStageBadge, MetadataStatusBadge, OcrStatusBadge, StarRating } from './common'
 import { useAppStore } from '@/lib/store'
 
 interface DocumentTableProps {
@@ -42,7 +42,7 @@ interface DocumentTableProps {
 
 export function DocumentTable({ documents }: DocumentTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const { toggleFavorite, updateDocument } = useAppStore()
+  const { toggleFavorite, updateDocument, generateKeywordsForDocuments } = useAppStore()
 
   const toggleSelection = (id: string) => {
     const newSelection = new Set(selectedIds)
@@ -64,6 +64,14 @@ export function DocumentTable({ documents }: DocumentTableProps) {
 
   return (
     <div className="rounded-lg border border-border">
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
+          <p className="text-sm text-muted-foreground">{selectedIds.size} selected</p>
+          <Button size="sm" variant="outline" onClick={() => void generateKeywordsForDocuments(Array.from(selectedIds))}>
+            Auto Keywords
+          </Button>
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -113,7 +121,7 @@ export function DocumentTable({ documents }: DocumentTableProps) {
               </TableCell>
               <TableCell>
                 <Link
-                  href={`/documents?id=${doc.id}`}
+                  href={`/reader/view?id=${doc.id}`}
                   className="group/link flex items-start gap-2"
                 >
                   <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -150,6 +158,7 @@ export function DocumentTable({ documents }: DocumentTableProps) {
               <TableCell>
                 <div className="flex flex-col gap-1">
                   <ReadingStageBadge stage={doc.readingStage} />
+                  {doc.hasOcr && <OcrStatusBadge status={doc.ocrStatus} />}
                   {doc.metadataStatus !== 'verified' && doc.metadataStatus !== 'complete' && (
                     <MetadataStatusBadge status={doc.metadataStatus} />
                   )}
@@ -190,7 +199,7 @@ export function DocumentTable({ documents }: DocumentTableProps) {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href={`/documents?id=${doc.id}`}>
+                      <Link href={`/documents?id=${doc.id}&edit=1`}>
                         <Edit className="mr-2 h-4 w-4" />
                         Edit Details
                       </Link>

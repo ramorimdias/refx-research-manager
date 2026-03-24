@@ -1,21 +1,9 @@
-# v0 sandbox internal files
-__v0_runtime_loader.js
-__v0_devtools.tsx
-__v0_jsx-dev-runtime.ts
-.snowflake/
-.v0-trash/
-.vercel/
-next.user-config.*
-
-# Environment variables
-.env*.local
-
-# Common ignores
-node_modules
+node_modules/
 .next/
-.DS_Store
-# Generated Tauri icons
-src-tauri/icons/
-
-# Visual Studio workspace metadata (can be file-locked on Windows)
+out/
+dist/
+src-tauri/target/
+src-tauri/gen/
 .vs/
+.idea/
+*.log

@@ -176,8 +176,8 @@ async function sniffPdfMetadataOffline(filePath: string): Promise<SniffedPdfMeta
     const sample = bytes.slice(0, 240_000)
     const text = new TextDecoder('latin1', { fatal: false }).decode(sample)
 
-    const rawTitle = text.match(/\/Title\s*\(([^)]{1,300})\)/s)?.[1]
-    const rawAuthor = text.match(/\/Author\s*\(([^)]{1,300})\)/s)?.[1]
+    const rawTitle = text.match(/\/Title\s*\(([\s\S]{1,300}?)\)/)?.[1]
+    const rawAuthor = text.match(/\/Author\s*\(([\s\S]{1,300}?)\)/)?.[1]
 
     const titleFromPdf = rawTitle ? cleanPdfField(rawTitle) : undefined
     const authorsFromPdf = splitAuthors(rawAuthor ? cleanPdfField(rawAuthor) : undefined)

@@ -14,6 +14,7 @@ pub fn run() {
             commands::initialize_database,
             commands::list_libraries,
             commands::create_library,
+            commands::list_all_documents,
             commands::list_documents_by_library,
             commands::get_document_by_id,
             commands::create_document,
@@ -24,6 +25,9 @@ pub fn run() {
             commands::list_annotations_for_document,
             commands::create_note,
             commands::list_notes,
+            commands::get_settings,
+            commands::set_settings,
+            commands::clear_local_data,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

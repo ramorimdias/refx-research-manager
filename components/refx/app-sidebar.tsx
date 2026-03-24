@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
   Home,
   Library,
@@ -14,7 +15,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Plus,
   ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -51,6 +51,7 @@ const bottomNavItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { sidebarCollapsed, toggleSidebar, activeLibraryId, setActiveLibrary, libraries } = useAppStore()
 
   return (
@@ -143,7 +144,10 @@ export function AppSidebar() {
                     {libraries.map((library) => (
                       <button
                         key={library.id}
-                        onClick={() => setActiveLibrary(library.id)}
+                        onClick={() => {
+                          setActiveLibrary(library.id)
+                          router.push('/libraries')
+                        }}
                         className={cn(
                           'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                           activeLibraryId === library.id
@@ -161,10 +165,6 @@ export function AppSidebar() {
                         </span>
                       </button>
                     ))}
-                    <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground">
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>New Library</span>
-                    </button>
                   </CollapsibleContent>
                 </Collapsible>
               </>

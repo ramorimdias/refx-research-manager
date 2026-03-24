@@ -32,6 +32,7 @@ export interface Document {
   citationKey: string
   filePath?: string
   fileUrl?: string
+  searchText?: string
   pageCount?: number
   hasOcr: boolean
   ocrStatus: OcrStatus
