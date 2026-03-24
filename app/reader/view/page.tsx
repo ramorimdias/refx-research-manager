@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import * as repo from '@/lib/repositories/local-db'
-import { convertFileSrc, isTauri, readFile } from '@/lib/tauri/client'
+import { appDataDir, convertFileSrc, copyFile, isTauri, join, mkdir, open, readFile } from '@/lib/tauri/client'
+import { mockDocuments } from '@/lib/mock-data'
 
 export default function ReaderViewPage() {
   const params = useSearchParams()
@@ -21,7 +22,15 @@ export default function ReaderViewPage() {
   const [viewerError, setViewerError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!id || !isTauri()) return
+    if (!id) return
+
+    if (!isTauri()) {
+      const mockDoc = mockDocuments.find((candidate) => candidate.id === id) ?? null
+      setDoc(mockDoc)
+      if (mockDoc?.lastReadPage) setPage(mockDoc.lastReadPage)
+      return
+    }
+
     repo.getDocumentById(id).then((d) => {
       setDoc(d)
       if (d?.lastReadPage) setPage(d.lastReadPage)
@@ -66,9 +75,33 @@ export default function ReaderViewPage() {
   }, [doc?.importedFilePath])
 
   const fileUrl = useMemo(() => {
-    if (!doc?.importedFilePath || !isTauri()) return ''
-    return convertFileSrc(doc.importedFilePath)
+    if (isTauri() && doc?.importedFilePath) return convertFileSrc(doc.importedFilePath)
+    if (!isTauri() && doc?.url) return doc.url
+    if (!isTauri() && doc?.fileUrl) return doc.fileUrl
+    return ''
   }, [doc])
+
+  const importPdfForDocument = async () => {
+    if (!isTauri() || !doc?.id || !doc?.libraryId) return
+
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      title: 'Import PDF for this document',
+    })
+
+    if (!selected || Array.isArray(selected)) return
+
+    const base = await appDataDir()
+    const targetDir = await join(base, 'pdfs', doc.libraryId)
+    await mkdir(targetDir, { recursive: true })
+
+    const dst = await join(targetDir, `${doc.id}.pdf`)
+    await copyFile(selected, dst)
+
+    const updated = await repo.updateDocumentMetadata(doc.id, { importedFilePath: dst })
+    if (updated) setDoc(updated)
+  }
 
   return (
     <div className="flex h-full">
@@ -99,6 +132,9 @@ export default function ReaderViewPage() {
           ) : (
             <div className="p-6 space-y-2">
               <p>{viewerError ?? 'PDF unavailable. Import a PDF in desktop mode.'}</p>
+              {isTauri() && doc?.id && (
+                <Button size="sm" onClick={importPdfForDocument}>Import PDF…</Button>
+              )}
               {fileUrl && (
                 <a className="text-sm text-primary underline" href={fileUrl} target="_blank" rel="noreferrer">
                   Open with system viewer
