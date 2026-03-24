@@ -8,7 +8,6 @@ import {
   Database,
   Palette,
   FileText,
-  Users,
   ShieldAlert,
   Download,
   RotateCcw,
@@ -37,7 +36,6 @@ export default function SettingsPage() {
   const [fontSize, setFontSize] = useState('16')
   const [autoOcr, setAutoOcr] = useState(true)
   const [autoMetadata, setAutoMetadata] = useState(true)
-  const [emailNotifications, setEmailNotifications] = useState(true)
   const [researchNotifications, setResearchNotifications] = useState(false)
 
   const handleSave = () => {
@@ -103,8 +101,8 @@ export default function SettingsPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Account Information</CardTitle>
-                  <CardDescription>View and update your account details</CardDescription>
+                  <CardTitle className="text-base">Researcher Profile</CardTitle>
+                  <CardDescription>Optional local profile used for citation defaults</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -118,8 +116,8 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div>
-                    <Label className="text-sm">Email</Label>
-                    <Input type="email" placeholder="john@example.com" className="mt-1.5" disabled />
+                    <Label className="text-sm">Preferred Citation Name</Label>
+                    <Input placeholder="Doe, Jane" className="mt-1.5" />
                   </div>
                   <div>
                     <Label className="text-sm">Institution/Affiliation</Label>
@@ -233,15 +231,15 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label className="text-sm font-medium">Email Notifications</Label>
+                      <Label className="text-sm font-medium">Desktop Notifications</Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Receive updates about your research
+                        Show local reminders and background task updates
                       </p>
                     </div>
                     <Checkbox
-                      checked={emailNotifications}
+                      checked={researchNotifications}
                       onCheckedChange={(checked) => {
-                        setEmailNotifications(!!checked)
+                        setResearchNotifications(!!checked)
                         handleChange()
                       }}
                     />
@@ -251,9 +249,9 @@ export default function SettingsPage() {
 
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label className="text-sm font-medium">Research Insights</Label>
+                      <Label className="text-sm font-medium">Reading Nudges</Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Get recommendations based on your reading
+                        Prompt you about unread items in your local queue
                       </p>
                     </div>
                     <Checkbox
@@ -324,17 +322,17 @@ export default function SettingsPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Session Management</CardTitle>
-                  <CardDescription>Manage your active sessions</CardDescription>
+                  <CardTitle className="text-base">Offline Mode</CardTitle>
+                  <CardDescription>No account login is required for this desktop-only build</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
                       <div>
-                        <p className="text-sm font-medium">Current Session</p>
-                        <p className="text-xs text-muted-foreground mt-1">Active • Last used now</p>
+                        <p className="text-sm font-medium">Local Workspace</p>
+                        <p className="text-xs text-muted-foreground mt-1">All data is stored on this device only</p>
                       </div>
-                      <Badge variant="default">Active</Badge>
+                      <Badge variant="default">Offline</Badge>
                     </div>
                   </div>
                 </CardContent>

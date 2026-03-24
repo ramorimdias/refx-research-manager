@@ -2,6 +2,7 @@
 
 import { appDataDir, copyFile, isTauri, join, mkdir, open } from '@/lib/tauri/client'
 import * as repo from '@/lib/repositories/local-db'
+import { sniffPdfMetadata } from '@/lib/services/bibtex-sniffer'
 
 function titleFromPath(filePath: string) {
   const name = filePath.split(/[\\/]/).pop() ?? 'Untitled'
@@ -29,19 +30,30 @@ export async function importPdfs(libraryId: string) {
 
   const imported = []
   for (const src of files) {
+    const sniffed = await sniffPdfMetadata(src)
+
     const doc = await repo.createDocument({
       libraryId,
-      title: titleFromPath(src),
+      title: sniffed.title || titleFromPath(src),
       sourcePath: src,
-      metadataStatus: 'incomplete',
+      authors: JSON.stringify(sniffed.authors ?? []),
+      year: sniffed.year,
+      doi: sniffed.doi,
+      citationKey: sniffed.citationKey,
+      metadataStatus: sniffed.authors?.length || sniffed.doi || sniffed.year ? 'complete' : 'incomplete',
     } as unknown as never)
 
     const dst = await join(targetDir, `${doc.id}.pdf`)
     await copyFile(src, dst)
 
     const updated = await repo.updateDocumentMetadata(doc.id, {
+      title: sniffed.title,
+      authors: JSON.stringify(sniffed.authors ?? []),
+      year: sniffed.year,
+      doi: sniffed.doi,
+      citationKey: sniffed.citationKey,
       importedFilePath: dst,
-      metadataStatus: 'incomplete',
+      metadataStatus: sniffed.authors?.length || sniffed.doi || sniffed.year ? 'complete' : 'incomplete',
       readingStage: 'unread',
     })
 
