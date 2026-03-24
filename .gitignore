@@ -16,3 +16,6 @@ node_modules
 .DS_Store
 # Generated Tauri icons
 src-tauri/icons/
+
+# Visual Studio workspace metadata (can be file-locked on Windows)
+.vs/
