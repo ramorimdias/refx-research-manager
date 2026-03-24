@@ -118,6 +118,7 @@ pub struct UpdateDocumentInput {
     pub favorite: Option<bool>,
     pub last_opened_at: Option<String>,
     pub last_read_page: Option<i64>,
+    pub imported_file_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -306,7 +307,10 @@ pub fn create_library(app: AppHandle, input: CreateLibraryInput) -> Result<Libra
 }
 
 #[tauri::command]
-pub fn list_documents_by_library(app: AppHandle, library_id: String) -> Result<Vec<Document>, AppError> {
+pub fn list_documents_by_library(
+    app: AppHandle,
+    library_id: String,
+) -> Result<Vec<Document>, AppError> {
     let conn = open_db(&app)?;
     let mut stmt = conn.prepare(r#"SELECT id, library_id, title, authors, year, abstract, doi, citation_key, source_path, imported_file_path, page_count, has_ocr, ocr_status, metadata_status, reading_stage, rating, favorite, last_opened_at, last_read_page, created_at, updated_at FROM documents WHERE library_id = ?1 ORDER BY updated_at DESC"#)?;
     let rows = stmt.query_map(params![library_id], map_document_row)?;
@@ -350,7 +354,9 @@ fn map_document_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
 #[tauri::command]
 pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Document, AppError> {
     let conn = open_db(&app)?;
-    let id = input.id.unwrap_or_else(|| format!("doc-{}", uuid::Uuid::new_v4()));
+    let id = input
+        .id
+        .unwrap_or_else(|| format!("doc-{}", uuid::Uuid::new_v4()));
     let now = now_iso();
     conn.execute(
         r#"INSERT INTO documents (id, library_id, title, authors, year, abstract, doi, citation_key, source_path, imported_file_path, page_count, has_ocr, ocr_status, metadata_status, reading_stage, rating, favorite, created_at, updated_at)
@@ -361,7 +367,11 @@ pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Doc
 }
 
 #[tauri::command]
-pub fn update_document_metadata(app: AppHandle, id: String, input: UpdateDocumentInput) -> Result<Option<Document>, AppError> {
+pub fn update_document_metadata(
+    app: AppHandle,
+    id: String,
+    input: UpdateDocumentInput,
+) -> Result<Option<Document>, AppError> {
     let conn = open_db(&app)?;
     let now = now_iso();
     conn.execute(
@@ -378,9 +388,26 @@ pub fn update_document_metadata(app: AppHandle, id: String, input: UpdateDocumen
           favorite = COALESCE(?10, favorite),
           last_opened_at = COALESCE(?11, last_opened_at),
           last_read_page = COALESCE(?12, last_read_page),
-          updated_at = ?13
-          WHERE id = ?14"#,
-        params![input.title, input.authors, input.year, input.abstract_text, input.doi, input.citation_key, input.metadata_status, input.reading_stage, input.rating, input.favorite.map(|b| if b { 1 } else { 0 }), input.last_opened_at, input.last_read_page, now, id],
+          imported_file_path = COALESCE(?13, imported_file_path),
+          updated_at = ?14
+          WHERE id = ?15"#,
+        params![
+            input.title,
+            input.authors,
+            input.year,
+            input.abstract_text,
+            input.doi,
+            input.citation_key,
+            input.metadata_status,
+            input.reading_stage,
+            input.rating,
+            input.favorite.map(|b| if b { 1 } else { 0 }),
+            input.last_opened_at,
+            input.last_read_page,
+            input.imported_file_path,
+            now,
+            id
+        ],
     )?;
     get_document_by_id(app, id)
 }
@@ -393,10 +420,18 @@ pub fn delete_document(app: AppHandle, id: String) -> Result<bool, AppError> {
 }
 
 #[tauri::command]
-pub fn add_tag_to_document(app: AppHandle, document_id: String, tag_name: String) -> Result<(), AppError> {
+pub fn add_tag_to_document(
+    app: AppHandle,
+    document_id: String,
+    tag_name: String,
+) -> Result<(), AppError> {
     let conn = open_db(&app)?;
     let existing: Option<String> = conn
-        .query_row("SELECT id FROM tags WHERE name = ?1", params![tag_name], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM tags WHERE name = ?1",
+            params![tag_name],
+            |r| r.get(0),
+        )
         .optional()?;
     let tag_id = match existing {
         Some(id) => id,
@@ -417,7 +452,11 @@ pub fn add_tag_to_document(app: AppHandle, document_id: String, tag_name: String
 }
 
 #[tauri::command]
-pub fn remove_tag_from_document(app: AppHandle, document_id: String, tag_id: String) -> Result<(), AppError> {
+pub fn remove_tag_from_document(
+    app: AppHandle,
+    document_id: String,
+    tag_id: String,
+) -> Result<(), AppError> {
     let conn = open_db(&app)?;
     conn.execute(
         "DELETE FROM document_tags WHERE document_id = ?1 AND tag_id = ?2",
@@ -427,7 +466,10 @@ pub fn remove_tag_from_document(app: AppHandle, document_id: String, tag_id: Str
 }
 
 #[tauri::command]
-pub fn list_annotations_for_document(app: AppHandle, document_id: String) -> Result<Vec<Annotation>, AppError> {
+pub fn list_annotations_for_document(
+    app: AppHandle,
+    document_id: String,
+) -> Result<Vec<Annotation>, AppError> {
     let conn = open_db(&app)?;
     let mut stmt = conn.prepare("SELECT id, document_id, page_number, kind, content, created_at FROM annotations WHERE document_id = ?1 ORDER BY created_at DESC")?;
     let rows = stmt.query_map(params![document_id], |r| {
@@ -452,7 +494,14 @@ pub fn create_note(app: AppHandle, input: CreateNoteInput) -> Result<Note, AppEr
         "INSERT INTO notes (id, document_id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![id, input.document_id, input.title, input.content, now, now],
     )?;
-    Ok(Note { id, document_id: input.document_id, title: input.title, content: input.content, created_at: now.clone(), updated_at: now })
+    Ok(Note {
+        id,
+        document_id: input.document_id,
+        title: input.title,
+        content: input.content,
+        created_at: now.clone(),
+        updated_at: now,
+    })
 }
 
 #[tauri::command]
