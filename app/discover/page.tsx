@@ -49,6 +49,8 @@ export default function DiscoverPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [yearRange, setYearRange] = useState({ min: '', max: '' })
+  const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'citations'>('relevance')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
   const searchResults = searchQuery
     ? mockDocuments.filter((doc) => {
@@ -74,18 +76,29 @@ export default function DiscoverPage() {
       })
     : []
 
-  const filteredResults = searchResults.filter((doc) => {
-    if (selectedTags.length > 0 && !selectedTags.some((tag) => doc.tags.includes(tag))) {
-      return false
-    }
-    if (yearRange.min && doc.year && doc.year < parseInt(yearRange.min)) {
-      return false
-    }
-    if (yearRange.max && doc.year && doc.year > parseInt(yearRange.max)) {
-      return false
-    }
-    return true
-  })
+  const filteredResults = searchResults
+    .filter((doc) => {
+      if (selectedTags.length > 0 && !selectedTags.some((tag) => doc.tags.includes(tag))) {
+        return false
+      }
+      if (yearRange.min && doc.year && doc.year < parseInt(yearRange.min)) {
+        return false
+      }
+      if (yearRange.max && doc.year && doc.year > parseInt(yearRange.max)) {
+        return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'date':
+          return (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0)
+        case 'citations':
+          return (b.annotationCount || 0) - (a.annotationCount || 0)
+        default:
+          return 0
+      }
+    })
 
   const clearFilters = () => {
     setSelectedTags([])
@@ -127,6 +140,16 @@ export default function DiscoverPage() {
             <Filter className="mr-2 h-4 w-4" />
             Advanced
           </Button>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+            <SelectTrigger className="w-40 h-12">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="relevance">Relevance</SelectItem>
+              <SelectItem value="date">Most Recent</SelectItem>
+              <SelectItem value="citations">Most Cited</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Advanced Search Options */}
@@ -210,29 +233,31 @@ export default function DiscoverPage() {
         <div className="flex-1 overflow-auto">
           {searchQuery ? (
             <div className="p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  {filteredResults.length} results for "{searchQuery}"
-                </p>
-                {hasActiveFilters && (
-                  <div className="flex items-center gap-2">
-                    {selectedTags.map((tag) => (
-                      <Badge
-                        key={tag}
-                        variant="secondary"
-                        className="gap-1"
-                      >
-                        {tag}
-                        <button
-                          onClick={() => setSelectedTags((prev) => prev.filter((t) => t !== tag))}
-                          className="ml-1 hover:text-foreground"
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">
+                    {filteredResults.length} results for "{searchQuery}"
+                  </p>
+                  {hasActiveFilters && (
+                    <div className="flex items-center gap-2 mt-2">
+                      {selectedTags.map((tag) => (
+                        <Badge
+                          key={tag}
+                          variant="secondary"
+                          className="gap-1"
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+                          {tag}
+                          <button
+                            onClick={() => setSelectedTags((prev) => prev.filter((t) => t !== tag))}
+                            className="ml-1 hover:text-foreground"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {filteredResults.length === 0 ? (
@@ -244,22 +269,22 @@ export default function DiscoverPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className={viewMode === 'list' ? 'space-y-4' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'}>
                   {filteredResults.map((doc) => (
                     <Link key={doc.id} href={`/documents/${doc.id}`}>
-                      <Card className="hover:border-primary/50 transition-colors">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-4">
+                      <Card className="hover:border-primary/50 transition-colors h-full">
+                        <CardContent className={viewMode === 'list' ? 'p-4' : 'p-4'}>
+                          <div className={viewMode === 'list' ? 'flex items-start gap-4' : 'flex flex-col gap-3'}>
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                               <FileText className="h-6 w-6 text-primary" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-4">
                                 <div>
-                                  <h3 className="font-medium">{doc.title}</h3>
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    {doc.authors.slice(0, 3).join(', ')}
-                                    {doc.authors.length > 3 && ' et al.'}
+                                  <h3 className="font-medium line-clamp-2">{doc.title}</h3>
+                                  <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
+                                    {doc.authors.slice(0, 2).join(', ')}
+                                    {doc.authors.length > 2 && ' et al.'}
                                   </p>
                                 </div>
                                 <ReadingStageBadge stage={doc.readingStage} />
@@ -269,21 +294,23 @@ export default function DiscoverPage() {
                                   {doc.abstract}
                                 </p>
                               )}
-                              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                                {doc.year && (
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="h-3 w-3" />
-                                    {doc.year}
-                                  </span>
-                                )}
-                                {doc.venue && (
-                                  <span className="flex items-center gap-1">
-                                    <Building className="h-3 w-3" />
-                                    {doc.venue}
-                                  </span>
-                                )}
-                                <div className="flex gap-1">
-                                  {doc.tags.slice(0, 3).map((tag) => (
+                              <div className={viewMode === 'list' ? 'flex items-center gap-4 mt-3 text-xs text-muted-foreground' : 'flex flex-col gap-2 mt-3'}>
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                  {doc.year && (
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {doc.year}
+                                    </span>
+                                  )}
+                                  {doc.venue && (
+                                    <span className="flex items-center gap-1 truncate">
+                                      <Building className="h-3 w-3" />
+                                      {doc.venue}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex gap-1 flex-wrap">
+                                  {doc.tags.slice(0, viewMode === 'list' ? 3 : 2).map((tag) => (
                                     <Badge key={tag} variant="secondary" className="text-xs">
                                       {tag}
                                     </Badge>

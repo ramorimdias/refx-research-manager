@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   ChevronRight,
   Sparkles,
+  Grid2x2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -87,6 +88,7 @@ const nodeIcons: Record<GraphNodeType, typeof FileText> = {
 export default function MapsPage() {
   const [zoom, setZoom] = useState(100)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [visibleTypes, setVisibleTypes] = useState<GraphNodeType[]>([
     'document',
     'author',
@@ -95,6 +97,7 @@ export default function MapsPage() {
   ])
   const [showLabels, setShowLabels] = useState(true)
   const [showEdges, setShowEdges] = useState(true)
+  const [selectedCluster, setSelectedCluster] = useState<string | null>(null)
 
   const nodePositions = useMemo(() => generateNodePositions(mockGraphNodes), [])
 
@@ -252,7 +255,13 @@ export default function MapsPage() {
                   {mockTopicClusters.map((cluster) => (
                     <button
                       key={cluster.id}
-                      className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-muted transition-colors text-left"
+                      className={cn(
+                        'w-full flex items-center justify-between p-2 rounded-lg transition-colors text-left',
+                        selectedCluster === cluster.id
+                          ? 'bg-secondary border border-primary'
+                          : 'hover:bg-muted'
+                      )}
+                      onClick={() => setSelectedCluster(selectedCluster === cluster.id ? null : cluster.id)}
                     >
                       <div className="flex items-center gap-2">
                         <div
@@ -306,6 +315,13 @@ export default function MapsPage() {
                   const pos = nodePositions[node.id]
                   if (!pos) return null
                   const isSelected = selectedNodeId === node.id
+                  const isHovered = hoveredNodeId === node.id
+                  const selectedClusterData = selectedCluster
+                    ? mockTopicClusters.find((c) => c.id === selectedCluster)
+                    : null
+                  const isInSelectedCluster = selectedClusterData?.documentIds.includes(
+                    node.id.replace('node-doc-', 'doc-')
+                  )
                   const radius = node.type === 'document' ? 24 : node.type === 'topic' ? 28 : 20
 
                   return (
@@ -314,21 +330,31 @@ export default function MapsPage() {
                       transform={`translate(${pos.x}, ${pos.y})`}
                       className="cursor-pointer"
                       onClick={() => setSelectedNodeId(node.id)}
+                      onMouseEnter={() => setHoveredNodeId(node.id)}
+                      onMouseLeave={() => setHoveredNodeId(null)}
                     >
                       <circle
                         r={radius}
                         fill={nodeColors[node.type]}
-                        opacity={0.9}
+                        opacity={
+                          isSelected || isHovered || !selectedCluster || isInSelectedCluster
+                            ? 0.9
+                            : 0.3
+                        }
                         className={cn(
                           'transition-all',
-                          isSelected && 'stroke-[3] stroke-foreground'
+                          isSelected && 'stroke-[3] stroke-foreground',
+                          isHovered && 'stroke-[2] stroke-primary'
                         )}
                       />
                       {showLabels && (
                         <text
                           y={radius + 14}
                           textAnchor="middle"
-                          className="text-xs fill-foreground"
+                          className={cn(
+                            'text-xs fill-foreground transition-opacity',
+                            !selectedCluster || isInSelectedCluster ? 'opacity-100' : 'opacity-40'
+                          )}
                           style={{ fontSize: 10 }}
                         >
                           {node.label.length > 20
@@ -378,39 +404,86 @@ export default function MapsPage() {
           </div>
 
           {/* Inspector Panel */}
-          {selectedNode && (
+          {(selectedNode || selectedCluster) && (
             <div className="w-80 shrink-0 border-l border-border overflow-auto">
               <div className="p-4 border-b border-border flex items-center justify-between">
-                <h3 className="font-semibold">Inspector</h3>
+                <h3 className="font-semibold">
+                  {selectedNode ? 'Node' : 'Cluster'} Details
+                </h3>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => setSelectedNodeId(null)}
+                  onClick={() => {
+                    setSelectedNodeId(null)
+                    setSelectedCluster(null)
+                  }}
                 >
                   ×
                 </Button>
               </div>
               <div className="p-4 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-10 w-10 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: nodeColors[selectedNode.type] }}
-                  >
-                    {(() => {
-                      const Icon = nodeIcons[selectedNode.type]
-                      return <Icon className="h-5 w-5 text-white" />
-                    })()}
+                {selectedNode ? (
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="h-10 w-10 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: nodeColors[selectedNode.type] }}
+                    >
+                      {(() => {
+                        const Icon = nodeIcons[selectedNode.type]
+                        return <Icon className="h-5 w-5 text-white" />
+                      })()}
+                    </div>
+                    <div>
+                      <Badge variant="secondary" className="capitalize text-xs mb-1">
+                        {selectedNode.type}
+                      </Badge>
+                      <h4 className="font-medium">{selectedNode.label}</h4>
+                    </div>
                   </div>
-                  <div>
-                    <Badge variant="secondary" className="capitalize text-xs mb-1">
-                      {selectedNode.type}
-                    </Badge>
-                    <h4 className="font-medium">{selectedNode.label}</h4>
-                  </div>
-                </div>
+                ) : null}
+                {selectedCluster && (() => {
+                  const clusterData = mockTopicClusters.find((c) => c.id === selectedCluster)
+                  return clusterData ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="h-10 w-10 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: clusterData.color }}
+                        >
+                          <Grid2x2 className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <Badge variant="secondary" className="text-xs mb-1">
+                            Topic Cluster
+                          </Badge>
+                          <h4 className="font-medium">{clusterData.name}</h4>
+                        </div>
+                      </div>
+                      <Separator />
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Description</Label>
+                        <p className="text-sm mt-1">{clusterData.description}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Keywords</Label>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {clusterData.keywords.map((kw) => (
+                            <Badge key={kw} variant="secondary" className="text-xs">
+                              {kw}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Documents</Label>
+                        <p className="text-sm mt-1">{clusterData.documentIds.length} papers</p>
+                      </div>
+                    </div>
+                  ) : null
+                })()}
 
-                {selectedNode.type === 'document' && (
+                {selectedNode && selectedNode.type === 'document' && (
                   <div className="space-y-3">
                     {(() => {
                       const doc = getNodeDocument(selectedNode.id)
@@ -447,19 +520,23 @@ export default function MapsPage() {
                   </div>
                 )}
 
-                <Separator />
+                {selectedNode && (
+                  <>
+                    <Separator />
 
-                <div>
-                  <Label className="text-xs text-muted-foreground">Connections</Label>
-                  <p className="text-sm mt-1">
-                    {
-                      mockGraphEdges.filter(
-                        (e) => e.source === selectedNode.id || e.target === selectedNode.id
-                      ).length
-                    }{' '}
-                    connections
-                  </p>
-                </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Connections</Label>
+                      <p className="text-sm mt-1">
+                        {
+                          mockGraphEdges.filter(
+                            (e) => e.source === selectedNode.id || e.target === selectedNode.id
+                          ).length
+                        }{' '}
+                        connections
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
