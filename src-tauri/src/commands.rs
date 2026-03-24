@@ -288,11 +288,21 @@ pub fn create_library(app: AppHandle, input: CreateLibraryInput) -> Result<Libra
     let conn = open_db(&app)?;
     let id = format!("lib-{}", uuid::Uuid::new_v4());
     let now = now_iso();
+    let name = input.name;
+    let description = input.description.unwrap_or_default();
+    let color = input.color.unwrap_or("#3b82f6".into());
     conn.execute(
         "INSERT INTO libraries (id, name, description, color, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, input.name, input.description.unwrap_or_default(), input.color.unwrap_or("#3b82f6".into()), now, now],
+        params![id, name, description, color, now, now],
     )?;
-    Ok(Library { id, name: input.name, description: input.description.unwrap_or_default(), color: input.color.unwrap_or("#3b82f6".into()), created_at: now.clone(), updated_at: now })
+    Ok(Library {
+        id,
+        name,
+        description,
+        color,
+        created_at: now.clone(),
+        updated_at: now,
+    })
 }
 
 #[tauri::command]
@@ -388,13 +398,17 @@ pub fn add_tag_to_document(app: AppHandle, document_id: String, tag_name: String
     let existing: Option<String> = conn
         .query_row("SELECT id FROM tags WHERE name = ?1", params![tag_name], |r| r.get(0))
         .optional()?;
-    let tag_id = existing.unwrap_or_else(|| format!("tag-{}", uuid::Uuid::new_v4()));
-    if existing.is_none() {
-        conn.execute(
-            "INSERT INTO tags (id, name, created_at) VALUES (?1, ?2, ?3)",
-            params![tag_id, tag_name, now_iso()],
-        )?;
-    }
+    let tag_id = match existing {
+        Some(id) => id,
+        None => {
+            let generated_id = format!("tag-{}", uuid::Uuid::new_v4());
+            conn.execute(
+                "INSERT INTO tags (id, name, created_at) VALUES (?1, ?2, ?3)",
+                params![generated_id, tag_name, now_iso()],
+            )?;
+            generated_id
+        }
+    };
     conn.execute(
         "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?1, ?2)",
         params![document_id, tag_id],

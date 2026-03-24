@@ -68,6 +68,64 @@ pnpm install
 
 ---
 
+## Clone and sync the repo in Visual Studio Code (Windows)
+
+If by “VS” you mean **VS Code**, this is the fastest workflow:
+
+1. **Clone in VS Code UI**
+   - Open VS Code.
+   - `Ctrl + Shift + P` → run **Git: Clone**.
+   - Paste your repository URL.
+   - Choose a local folder.
+   - Click **Open** when prompted.
+
+2. **Open integrated terminal** in the cloned folder:
+
+   ```powershell
+   cd <your-cloned-folder>\v0-refx-research-app
+   ```
+
+3. **Install dependencies** after first clone:
+
+   ```powershell
+   pnpm install
+   ```
+
+4. **Create your branch** for work:
+
+   ```powershell
+   git checkout -b your-branch-name
+   ```
+
+5. **Sync latest changes from remote** (daily / before pushing):
+
+   ```powershell
+   git checkout main
+   git pull origin main
+   git checkout your-branch-name
+   git rebase main
+   ```
+
+6. **Resolve conflicts** (if any), then continue:
+
+   ```powershell
+   git add .
+   git rebase --continue
+   ```
+
+7. **Push your branch**:
+
+   ```powershell
+   git push -u origin your-branch-name
+   ```
+
+If you are using **Visual Studio (full IDE)** instead of VS Code, the equivalent flow is:
+- Git menu → **Clone Repository**
+- Use **Git Changes** / **Pull** to sync
+- Use **Manage Branches** to create/switch branches
+
+---
+
 ## Run in development
 
 ### Web preview only
@@ -104,6 +162,87 @@ Configured targets:
 
 Output location:
 - `src-tauri/target/release/bundle/`
+
+### Windows-only: step-by-step test + build for MSI
+
+If you are building on a Windows machine and want to validate locally before sharing an installer, use this sequence:
+
+1. **Install required tooling (one-time):**
+   - Node.js 20+
+   - pnpm 9+
+   - Rust (`rustup`, includes `cargo`)
+   - Visual Studio 2022 Build Tools with C++ workload
+   - WebView2 Runtime
+
+2. **Open terminal in the project root** (`v0-refx-research-app`) and install dependencies:
+
+   ```powershell
+   pnpm install
+   ```
+
+3. **Smoke-test the desktop app in dev mode:**
+
+   ```powershell
+   pnpm tauri:dev
+   ```
+
+   Check that:
+   - the desktop window opens
+   - navigation works
+   - importing a PDF works
+   - app restarts without DB errors
+
+4. **Create a production MSI build:**
+
+   ```powershell
+   pnpm tauri:build
+   ```
+
+   This runs the configured static frontend build (`TAURI_ENV=1 pnpm build`) and then Tauri bundling.
+
+5. **Find the generated Windows installer:**
+
+   ```text
+   src-tauri\target\release\bundle\msi\
+   ```
+
+   You should see an `.msi` file for the current app version.
+
+6. **Installer validation checklist (recommended):**
+   - Run the `.msi` installer.
+   - Launch Refx from Start Menu.
+   - Verify app opens with expected window title (`Refx - Research Library`).
+   - Import at least one PDF and reopen app to confirm data persists.
+   - Uninstall and reinstall to verify clean install behavior.
+
+7. **If build fails, verify first:**
+   - `cargo --version`, `rustc --version`
+   - `pnpm --version`, `node --version`
+   - Visual Studio Build Tools C++ workload is installed
+   - You are building on Windows for MSI output
+
+8. **Fix common Windows packaging errors (`icons/icon.ico` / `package.metadata`):**
+
+   If you see errors similar to:
+
+   - ``package.metadata does not exist``
+   - ```icons/icon.ico not found; required for generating a Windows Resource file during tauri-build```
+
+   run:
+
+   ```powershell
+   # Generates src-tauri/icons/*.png + src-tauri/icons/icon.ico
+   # from public/icon-light-32x32.png
+   pnpm tauri:icons
+
+   # Then retry
+   pnpm tauri:build
+   ```
+
+   Notes:
+   - `tauri:dev` and `tauri:build` now run `tauri:icons` automatically before invoking Tauri.
+   - The `package.metadata does not exist` line is usually informational; missing `icon.ico` is the real blocker.
+   - `icon.ico` is generated locally by `tauri:icons` and is intentionally not committed.
 
 ---
 
