@@ -36,7 +36,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { useAppStore, useFilteredDocuments } from '@/lib/store'
-import { mockLibraries } from '@/lib/mock-data'
 import { DocumentTable } from '@/components/refx/document-table'
 import { FilterPanel } from '@/components/refx/filter-panel'
 import { DocumentCard } from '@/components/refx/document-card'
@@ -52,11 +51,25 @@ export default function LibrariesPage() {
     setSort,
     filters,
     setFilters,
+    libraries,
+    importDocuments,
+    isDesktopApp,
   } = useAppStore()
   const documents = useFilteredDocuments()
   const [showFilters, setShowFilters] = useState(true)
+  const [isImporting, setIsImporting] = useState(false)
 
-  const activeLibrary = mockLibraries.find((lib) => lib.id === activeLibraryId)
+  const activeLibrary = libraries.find((lib) => lib.id === activeLibraryId)
+
+  const handleImport = async () => {
+    if (!isDesktopApp || isImporting) return
+    setIsImporting(true)
+    try {
+      await importDocuments()
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   return (
     <div className="flex h-full">
@@ -78,7 +91,7 @@ export default function LibrariesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Libraries</SelectItem>
-                {mockLibraries.map((lib) => (
+                {libraries.map((lib) => (
                   <SelectItem key={lib.id} value={lib.id}>
                     <div className="flex items-center gap-2">
                       <div
@@ -140,9 +153,9 @@ export default function LibrariesPage() {
             </Tabs>
 
             {/* Actions */}
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleImport} disabled={!isDesktopApp || isImporting}>
               <Upload className="mr-2 h-4 w-4" />
-              Import
+              {isImporting ? 'Importing...' : 'Import'}
             </Button>
             <Button size="sm">
               <Plus className="mr-2 h-4 w-4" />
@@ -206,9 +219,9 @@ export default function LibrariesPage() {
                   : 'Get started by importing PDFs or adding documents manually.'}
               </p>
               <div className="flex gap-2">
-                <Button variant="outline">
+                <Button variant="outline" onClick={handleImport} disabled={!isDesktopApp || isImporting}>
                   <Upload className="mr-2 h-4 w-4" />
-                  Import PDFs
+                  {isImporting ? 'Importing PDFs...' : 'Import PDFs'}
                 </Button>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />

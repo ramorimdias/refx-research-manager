@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AppShell } from '@/components/refx/app-shell'
+import { AppProvider } from '@/components/refx/app-provider'
 import './globals.css'
 
 const geist = Geist({ 
@@ -63,9 +64,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AppShell>
-            {children}
-          </AppShell>
+          <AppProvider>
+            <AppShell>
+              {children}
+            </AppShell>
+          </AppProvider>
         </ThemeProvider>
         <Analytics />
       </body>

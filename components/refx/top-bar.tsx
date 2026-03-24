@@ -19,13 +19,24 @@ import { Badge } from '@/components/ui/badge'
 import { Kbd } from '@/components/ui/kbd'
 
 export function TopBar() {
-  const { toggleCommandPalette } = useAppStore()
+  const { toggleCommandPalette, importDocuments, isDesktopApp } = useAppStore()
   const { setTheme, theme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const handleImport = async () => {
+    if (!isDesktopApp || isImporting) return
+    setIsImporting(true)
+    try {
+      await importDocuments()
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background px-4">
@@ -43,9 +54,15 @@ export function TopBar() {
 
       {/* Right side actions */}
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={handleImport}
+          disabled={!isDesktopApp || isImporting}
+        >
           <Upload className="h-4 w-4" />
-          <span className="hidden sm:inline">Import</span>
+          <span className="hidden sm:inline">{isImporting ? 'Importing...' : 'Import'}</span>
         </Button>
 
         <Button variant="ghost" size="icon" className="relative">

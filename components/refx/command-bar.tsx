@@ -17,6 +17,7 @@ import {
   Moon,
   Sun,
   Keyboard,
+  Loader2,
 } from 'lucide-react'
 import {
   CommandDialog,
@@ -29,14 +30,23 @@ import {
   CommandShortcut,
 } from '@/components/ui/command'
 import { useAppStore } from '@/lib/store'
-import { mockDocuments, mockLibraries } from '@/lib/mock-data'
 import { useTheme } from 'next-themes'
 
 export function CommandBar() {
   const router = useRouter()
-  const { commandPaletteOpen, toggleCommandPalette, setActiveLibrary, setActiveDocument } = useAppStore()
+  const {
+    commandPaletteOpen,
+    toggleCommandPalette,
+    setActiveLibrary,
+    setActiveDocument,
+    libraries,
+    documents,
+    importDocuments,
+    isDesktopApp,
+  } = useAppStore()
   const { setTheme, theme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -57,6 +67,16 @@ export function CommandBar() {
   const runCommand = (command: () => void) => {
     toggleCommandPalette()
     command()
+  }
+
+  const handleImport = async () => {
+    if (!isDesktopApp || isImporting) return
+    setIsImporting(true)
+    try {
+      await importDocuments()
+    } finally {
+      setIsImporting(false)
+    }
   }
 
   return (
@@ -120,9 +140,9 @@ export function CommandBar() {
             <span>New Library</span>
             <CommandShortcut>N L</CommandShortcut>
           </CommandItem>
-          <CommandItem>
+          <CommandItem onSelect={() => runCommand(() => void handleImport())} disabled={!isDesktopApp || isImporting}>
             <Upload className="mr-2 h-4 w-4" />
-            <span>Import Documents</span>
+            <span>{isImporting ? 'Importing Documents...' : 'Import Documents'}</span>
             <CommandShortcut>I</CommandShortcut>
           </CommandItem>
           <CommandItem>
@@ -135,7 +155,7 @@ export function CommandBar() {
         <CommandSeparator />
 
         <CommandGroup heading="Libraries">
-          {mockLibraries.map((library) => (
+          {libraries.map((library) => (
             <CommandItem
               key={library.id}
               onSelect={() =>
@@ -160,7 +180,7 @@ export function CommandBar() {
         <CommandSeparator />
 
         <CommandGroup heading="Recent Documents">
-          {mockDocuments.slice(0, 5).map((doc) => (
+          {documents.slice(0, 5).map((doc) => (
             <CommandItem
               key={doc.id}
               onSelect={() =>
@@ -172,9 +192,15 @@ export function CommandBar() {
             >
               <FileText className="mr-2 h-4 w-4" />
               <span className="truncate">{doc.title}</span>
-              <span className="ml-auto text-xs text-muted-foreground">{doc.year}</span>
+              {doc.year && <span className="ml-auto text-xs text-muted-foreground">{doc.year}</span>}
             </CommandItem>
           ))}
+          {isImporting && (
+            <CommandItem disabled>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <span>Working...</span>
+            </CommandItem>
+          )}
         </CommandGroup>
 
         <CommandSeparator />

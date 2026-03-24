@@ -86,6 +86,7 @@ interface AppState {
   loadTags: () => Promise<void>
   loadNotes: () => Promise<void>
   loadCollections: () => Promise<void>
+  importDocuments: () => Promise<number>
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -395,6 +396,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (isDesktopApp) {
       const collections = await db.getAllCollections()
       set({ collections })
+    }
+  },
+
+  importDocuments: async () => {
+    const { isDesktopApp } = get()
+
+    if (!isDesktopApp) {
+      return 0
+    }
+
+    try {
+      const { importMultiplePdfFiles } = await import('./file-service')
+      const importedDocuments = await importMultiplePdfFiles()
+
+      if (importedDocuments.length > 0) {
+        set((state) => ({
+          documents: [...importedDocuments, ...state.documents],
+        }))
+      }
+
+      return importedDocuments.length
+    } catch (error) {
+      console.error('Failed to import documents:', error)
+      return 0
     }
   },
 }))

@@ -33,7 +33,6 @@ import {
 } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { mockLibraries } from '@/lib/mock-data'
 
 const mainNavItems = [
   { href: '/', label: 'Home', icon: Home },
@@ -52,7 +51,7 @@ const bottomNavItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const { sidebarCollapsed, toggleSidebar, activeLibraryId, setActiveLibrary } = useAppStore()
+  const { sidebarCollapsed, toggleSidebar, activeLibraryId, setActiveLibrary, libraries } = useAppStore()
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -141,7 +140,7 @@ export function AppSidebar() {
                     <ChevronDown className="h-3 w-3" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1">
-                    {mockLibraries.map((library) => (
+                    {libraries.map((library) => (
                       <button
                         key={library.id}
                         onClick={() => setActiveLibrary(library.id)}
