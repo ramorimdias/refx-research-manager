@@ -11,6 +11,10 @@ export type DbLibrary = {
   updatedAt: string
 }
 
+export type DbProcessingStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'failed' | 'skipped'
+export type DbOcrStatus = 'pending' | 'processing' | 'complete' | 'failed' | 'not_needed'
+export type DbMetadataStatus = 'missing' | 'partial' | 'complete'
+
 export type DbDocument = {
   id: string
   libraryId: string
@@ -26,11 +30,30 @@ export type DbDocument = {
   citationKey?: string
   sourcePath?: string
   importedFilePath?: string
+  extractedTextPath?: string
   searchText?: string
+  textHash?: string
+  textExtractedAt?: string
+  textExtractionStatus: DbProcessingStatus
   pageCount?: number
+  hasExtractedText: boolean
+  hasOcrText: boolean
   hasOcr: boolean
-  ocrStatus: string
-  metadataStatus: string
+  ocrStatus: DbOcrStatus
+  metadataStatus: DbMetadataStatus
+  metadataProvenance?: string
+  metadataUserEditedFields?: string
+  indexingStatus: DbProcessingStatus
+  tagSuggestions?: string
+  rejectedTagSuggestions?: string
+  tagSuggestionTextHash?: string
+  tagSuggestionStatus: DbProcessingStatus
+  classificationResult?: string
+  classificationTextHash?: string
+  classificationStatus: DbProcessingStatus
+  processingError?: string
+  processingUpdatedAt?: string
+  lastProcessedAt?: string
   readingStage: string
   rating: number
   favorite: boolean
@@ -40,15 +63,110 @@ export type DbDocument = {
   updatedAt: string
 }
 
+export type DbCreateDocumentInput = {
+  id?: string
+  libraryId: string
+  documentType?: string
+  title: string
+  authors?: string
+  year?: number
+  abstractText?: string
+  doi?: string
+  isbn?: string
+  publisher?: string
+  citationKey?: string
+  sourcePath?: string
+  importedFilePath?: string
+  extractedTextPath?: string
+  searchText?: string
+  textHash?: string
+  textExtractedAt?: string
+  textExtractionStatus?: DbProcessingStatus
+  pageCount?: number
+  hasExtractedText?: boolean
+  hasOcr?: boolean
+  hasOcrText?: boolean
+  ocrStatus?: DbOcrStatus
+  metadataStatus?: DbMetadataStatus
+  metadataProvenance?: string
+  metadataUserEditedFields?: string
+  indexingStatus?: DbProcessingStatus
+  tagSuggestions?: string
+  rejectedTagSuggestions?: string
+  tagSuggestionTextHash?: string
+  tagSuggestionStatus?: DbProcessingStatus
+  classificationResult?: string
+  classificationTextHash?: string
+  classificationStatus?: DbProcessingStatus
+  processingError?: string
+  processingUpdatedAt?: string
+  lastProcessedAt?: string
+}
+
+export type DbUpdateDocumentMetadataInput = {
+  documentType?: string
+  title?: string
+  authors?: string
+  sourcePath?: string
+  importedFilePath?: string
+  extractedTextPath?: string
+  searchText?: string
+  textHash?: string
+  textExtractedAt?: string
+  textExtractionStatus?: DbProcessingStatus
+  pageCount?: number
+  hasExtractedText?: boolean
+  hasOcr?: boolean
+  hasOcrText?: boolean
+  ocrStatus?: DbOcrStatus
+  year?: number
+  abstractText?: string
+  doi?: string
+  isbn?: string
+  publisher?: string
+  citationKey?: string
+  metadataStatus?: DbMetadataStatus
+  metadataProvenance?: string
+  metadataUserEditedFields?: string
+  indexingStatus?: DbProcessingStatus
+  tagSuggestions?: string
+  rejectedTagSuggestions?: string
+  tagSuggestionTextHash?: string
+  tagSuggestionStatus?: DbProcessingStatus
+  classificationResult?: string
+  classificationTextHash?: string
+  classificationStatus?: DbProcessingStatus
+  processingError?: string
+  processingUpdatedAt?: string
+  lastProcessedAt?: string
+  readingStage?: string
+  rating?: number
+  favorite?: boolean
+  lastOpenedAt?: string
+  lastReadPage?: number
+}
+
 export type DbNote = {
   id: string
   documentId?: string
   pageNumber?: number
   locationHint?: string
+  commentNumber?: number
+  positionX?: number
+  positionY?: number
   title: string
   content: string
   createdAt: string
   updatedAt: string
+}
+
+export type DbAnnotation = {
+  id: string
+  documentId: string
+  pageNumber: number
+  kind: string
+  content?: string
+  createdAt: string
 }
 
 export async function initializeDatabase() {
@@ -83,30 +201,20 @@ export async function getDocumentById(id: string) {
   return invoke<DbDocument | null>('get_document_by_id', { id })
 }
 
-export async function createDocument(input: {
-  id?: string
-  libraryId: string
-  documentType?: string
-  title: string
-  authors?: string
-  year?: number
-  abstractText?: string
-  doi?: string
-  isbn?: string
-  publisher?: string
-  citationKey?: string
-  sourcePath?: string
-  importedFilePath?: string
-}) {
+export async function createDocument(input: DbCreateDocumentInput) {
   return invoke<DbDocument>('create_document', { input })
 }
 
-export async function updateDocumentMetadata(id: string, input: Record<string, unknown>) {
+export async function updateDocumentMetadata(id: string, input: DbUpdateDocumentMetadataInput) {
   return invoke<DbDocument | null>('update_document_metadata', { id, input })
 }
 
 export async function deleteDocument(id: string) {
   return invoke<boolean>('delete_document', { id })
+}
+
+export async function moveDocumentsToLibrary(documentIds: string[], targetLibraryId: string) {
+  return invoke<DbDocument[]>('move_documents_to_library', { documentIds, targetLibraryId })
 }
 
 export async function openDocumentFileLocation(path: string) {
@@ -117,19 +225,40 @@ export async function addTagToDocument(documentId: string, tagName: string) {
   return invoke<void>('add_tag_to_document', { documentId, tagName })
 }
 
-export async function removeTagFromDocument(documentId: string, tagId: string) {
-  return invoke<void>('remove_tag_from_document', { documentId, tagId })
+export async function removeTagFromDocument(documentId: string, tagName: string) {
+  return invoke<void>('remove_tag_from_document', { documentId, tagName })
 }
 
 export async function listAnnotationsForDocument(documentId: string) {
-  return invoke<Array<{ id: string; pageNumber: number; kind: string; content?: string; createdAt: string }>>('list_annotations_for_document', { documentId })
+  return invoke<DbAnnotation[]>('list_annotations_for_document', { documentId })
 }
 
-export async function createNote(input: { documentId?: string; pageNumber?: number; locationHint?: string; title: string; content: string }) {
+export async function listAllAnnotations() {
+  return invoke<DbAnnotation[]>('list_all_annotations')
+}
+
+export async function createNote(input: {
+  documentId?: string
+  pageNumber?: number
+  locationHint?: string
+  commentNumber?: number
+  positionX?: number
+  positionY?: number
+  title: string
+  content: string
+}) {
   return invoke<DbNote>('create_note', { input })
 }
 
-export async function updateNote(id: string, input: { pageNumber?: number; locationHint?: string; title?: string; content?: string }) {
+export async function updateNote(id: string, input: {
+  pageNumber?: number
+  locationHint?: string
+  commentNumber?: number
+  positionX?: number
+  positionY?: number
+  title?: string
+  content?: string
+}) {
   return invoke<DbNote | null>('update_note', { id, input })
 }
 

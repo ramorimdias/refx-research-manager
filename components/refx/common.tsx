@@ -16,7 +16,6 @@ import {
   Eye,
   FileCheck,
   Loader2,
-  Shield,
   XCircle,
 } from 'lucide-react'
 
@@ -29,10 +28,9 @@ const readingStageConfig: Record<ReadingStage, { label: string; icon: typeof Boo
 }
 
 const metadataStatusConfig: Record<MetadataStatus, { label: string; icon: typeof AlertCircle; className: string }> = {
-  incomplete: { label: 'Incomplete', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  missing: { label: 'Missing', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   partial: { label: 'Partial', icon: AlertTriangle, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
   complete: { label: 'Complete', icon: CheckCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  verified: { label: 'Verified', icon: Shield, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
 const ocrStatusConfig: Record<OcrStatus, { label: string; icon: typeof Clock; className: string }> = {
@@ -109,6 +107,17 @@ export function TagChip({
           x
         </button>
       )}
+    </Badge>
+  )
+}
+
+export function NewBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="border-emerald-300/70 bg-emerald-500/[0.08] text-[10px] font-semibold tracking-[0.14em] text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300"
+    >
+      NEW
     </Badge>
   )
 }

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Command, Moon, Search, Sun, Upload } from 'lucide-react'
+import { Command, Moon, Search, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAppStore } from '@/lib/store'
@@ -19,26 +19,14 @@ export function TopBar() {
     setGlobalSearchQuery,
     setPersistentSearch,
     toggleCommandPalette,
-    importDocuments,
     isDesktopApp,
   } = useAppStore()
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  const handleImport = async () => {
-    if (!isDesktopApp || isImporting) return
-    setIsImporting(true)
-    try {
-      await importDocuments()
-    } finally {
-      setIsImporting(false)
-    }
-  }
 
   const submitGlobalSearch = () => {
     setPersistentSearch({ query: globalSearchQuery.trim() })
@@ -76,17 +64,6 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={handleImport}
-          disabled={!isDesktopApp || isImporting}
-        >
-          <Upload className="h-4 w-4" />
-          <span className="hidden sm:inline">{isImporting ? 'Importing...' : 'Import'}</span>
-        </Button>
-
         <Button variant="outline" size="sm" className="gap-2" onClick={() => toggleCommandPalette(true)}>
           <Command className="h-4 w-4" />
           <span className="hidden md:inline">Commands</span>

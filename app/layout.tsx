@@ -7,9 +7,9 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Refx - Research Management',
-  description: 'Advanced personal and team research manager for PDFs, references, annotations, and knowledge synthesis',
+  description: 'Advanced personal and team research manager for PDFs, references, comments, and knowledge synthesis',
   generator: 'v0.app',
-  keywords: ['research', 'pdf', 'references', 'citations', 'annotations', 'academic'],
+  keywords: ['research', 'pdf', 'references', 'citations', 'comments', 'academic'],
   authors: [{ name: 'Refx Team' }],
   icons: {
     icon: [

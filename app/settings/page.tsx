@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   Select,
@@ -231,6 +232,72 @@ export default function SettingsPage() {
                         onCheckedChange={(checked) => updateSettings('autoMetadata', !!checked)}
                       />
                     </div>
+
+                    <Separator />
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm font-medium">Auto Online Metadata Enrichment</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">If local metadata is still incomplete, try Crossref first and Semantic Scholar second.</p>
+                      </div>
+                      <Checkbox
+                        checked={settings.autoOnlineMetadataEnrichment}
+                        onCheckedChange={(checked) => updateSettings('autoOnlineMetadataEnrichment', !!checked)}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <Label className="text-sm font-medium">Advanced Semantic Classification</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Optional topic classification after tag suggestion. Phase 1 uses a free local heuristic classifier; later modes can plug in here.
+                      </p>
+                      <Select
+                        value={settings.advancedClassificationMode}
+                        onValueChange={(value) => updateSettings('advancedClassificationMode', value as StoredAppSettings['advancedClassificationMode'])}
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">Disabled</SelectItem>
+                          <SelectItem value="local_heuristic">Local Heuristic</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Metadata API Configuration</CardTitle>
+                    <CardDescription>Provider configuration is stored locally on this device. No shared API keys are bundled with REFX.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label className="text-sm font-medium">Crossref Contact Email</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">Optional. Used as a polite contact hint for Crossref requests.</p>
+                      <Input
+                        type="email"
+                        value={settings.crossrefContactEmail}
+                        onChange={(event) => updateSettings('crossrefContactEmail', event.target.value)}
+                        className="mt-2"
+                        placeholder="name@example.com"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium">Semantic Scholar API Key</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">Optional. If provided, REFX will use Semantic Scholar as a secondary enrichment source.</p>
+                      <Input
+                        type="password"
+                        value={settings.semanticScholarApiKey}
+                        onChange={(event) => updateSettings('semanticScholarApiKey', event.target.value)}
+                        className="mt-2"
+                        placeholder="Enter your Semantic Scholar API key"
+                      />
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -258,7 +325,7 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-                      Clear Local Data removes documents, notes, annotations, tags, and imported files, then recreates one empty default library.
+                      Clear Local Data removes documents, notes, comments, tags, and imported files, then recreates one empty default library.
                     </div>
                   </CardContent>
                 </Card>

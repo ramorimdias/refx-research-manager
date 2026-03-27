@@ -1,14 +1,9 @@
 'use client'
 
-import { appDataDir, copyFile, isTauri, join, mkdir, open } from '@/lib/tauri/client'
+import { isTauri, open } from '@/lib/tauri/client'
+import { loadAppSettings } from '@/lib/app-settings'
 import * as repo from '@/lib/repositories/local-db'
-import { sniffPdfMetadata } from '@/lib/services/bibtex-sniffer'
-import { deriveOcrState, extractPdfSearchText } from '@/lib/services/document-processing'
-
-function titleFromPath(filePath: string) {
-  const name = filePath.split(/[\\/]/).pop() ?? 'Untitled'
-  return name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim()
-}
+import { ingestImportedPdfDocument } from '@/lib/services/document-ingestion-service'
 
 export async function bootstrapDesktop() {
   await repo.initializeDatabase()
@@ -28,48 +23,25 @@ export async function importPdfs(libraryId: string, sourcePaths?: string[]) {
 
   if (!selected) return []
   const files = Array.isArray(selected) ? selected : [selected]
-  const base = await appDataDir()
-  const targetDir = await join(base, 'pdfs', libraryId)
-  await mkdir(targetDir, { recursive: true })
+  const settings = await loadAppSettings(true)
 
-  const imported = []
+  const imported: repo.DbDocument[] = []
   for (const src of files) {
-    const sniffed = await sniffPdfMetadata(src)
-    const fileNameTitle = titleFromPath(src)
-    const generatedId = `doc-${crypto.randomUUID()}`
-    const dst = await join(targetDir, `${generatedId}.pdf`)
-    await copyFile(src, dst)
-
-    const doc = await repo.createDocument({
-      id: generatedId,
-      libraryId,
-      title: fileNameTitle,
-      authors: JSON.stringify(sniffed.authors ?? []),
-      year: sniffed.year,
-      doi: sniffed.doi,
-      citationKey: sniffed.citationKey,
-      importedFilePath: dst,
-      metadataStatus: sniffed.authors?.length || sniffed.doi || sniffed.year ? 'complete' : 'incomplete',
-    } as unknown as never)
-
-    const searchText = await extractPdfSearchText(dst).catch(() => '')
-    const ocrState = deriveOcrState(searchText)
-
-    const updated = await repo.updateDocumentMetadata(doc.id, {
-      title: fileNameTitle,
-      authors: JSON.stringify(sniffed.authors ?? []),
-      year: sniffed.year,
-      doi: sniffed.doi,
-      citationKey: sniffed.citationKey,
-      importedFilePath: dst,
-      searchText,
-      hasOcr: ocrState.hasOcr,
-      ocrStatus: ocrState.ocrStatus,
-      metadataStatus: sniffed.authors?.length || sniffed.doi || sniffed.year ? 'complete' : 'incomplete',
-      readingStage: 'unread',
-    })
-
-    imported.push(updated ?? doc)
+    const result = await ingestImportedPdfDocument(
+      { libraryId, sourcePath: src },
+      {
+        enableOcrFallback: settings.autoOcr,
+        enableOnlineMetadataEnrichment: settings.autoOnlineMetadataEnrichment,
+        enableSemanticClassification: settings.advancedClassificationMode !== 'off',
+        semanticClassificationMode: settings.advancedClassificationMode,
+      },
+    )
+    if (!result.success) {
+      console.error('Document ingestion failed:', result)
+    }
+    if (result.document) {
+      imported.push(result.document)
+    }
   }
 
   return imported

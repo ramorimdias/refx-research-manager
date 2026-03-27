@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, BookOpen, Save, Star } from 'lucide-react'
+import { ArrowLeft, BookOpen, Save, Star, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { EmptyState, StarRating } from '@/components/refx/common'
+import { EmptyState, StarRating, TagChip } from '@/components/refx/common'
 import { useAppStore } from '@/lib/store'
 import type { ReadingStage } from '@/lib/types'
 
@@ -31,7 +31,7 @@ const readingStages: Array<{ value: ReadingStage; label: string }> = [
 export default function DocumentDetailPage() {
   const params = useSearchParams()
   const id = params.get('id')
-  const { documents, initialized, updateDocument, setActiveDocument } = useAppStore()
+  const { documents, initialized, addDocumentTag, removeDocumentTag, acceptSuggestedTag, rejectSuggestedTag, updateDocument, setActiveDocument } = useAppStore()
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
 
   const [title, setTitle] = useState('')
@@ -45,6 +45,7 @@ export default function DocumentDetailPage() {
   const [readingStage, setReadingStage] = useState<ReadingStage>('unread')
   const [rating, setRating] = useState(0)
   const [favorite, setFavorite] = useState(false)
+  const [tagInput, setTagInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
@@ -107,6 +108,12 @@ export default function DocumentDetailPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const handleAddTag = async () => {
+    if (!document || !tagInput.trim()) return
+    await addDocumentTag(document.id, tagInput)
+    setTagInput('')
   }
 
   return (
@@ -227,6 +234,97 @@ export default function DocumentDetailPage() {
                   value={abstract}
                   onChange={(event) => setAbstract(event.target.value)}
                 />
+              </div>
+
+              <div className="md:col-span-2 space-y-4 rounded-lg border border-border p-4">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-medium">Tags</Label>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {document.tags.length > 0 ? (
+                      document.tags.map((tag) => (
+                        <TagChip
+                          key={tag}
+                          name={tag}
+                          removable
+                          onRemove={() => void removeDocumentTag(document.id, tag)}
+                        />
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No tags added yet.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={tagInput}
+                      onChange={(event) => setTagInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          void handleAddTag()
+                        }
+                      }}
+                      placeholder="Add a manual tag"
+                    />
+                    <Button type="button" variant="outline" onClick={() => void handleAddTag()} disabled={!tagInput.trim()}>
+                      Add Tag
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Suggested Tags</Label>
+                  {document.suggestedTags && document.suggestedTags.length > 0 ? (
+                    <div className="space-y-2">
+                      {document.suggestedTags.map((tag) => (
+                        <div key={tag.name} className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2">
+                          <TagChip name={tag.name} />
+                          {typeof tag.confidence === 'number' && (
+                            <span className="text-xs text-muted-foreground">
+                              {Math.round(tag.confidence * 100)}%
+                            </span>
+                          )}
+                          <Button size="sm" variant="outline" onClick={() => void acceptSuggestedTag(document.id, tag.name)}>
+                            Accept
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => void rejectSuggestedTag(document.id, tag.name)}>
+                            Reject
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No pending tag suggestions for this document.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Semantic Classification</Label>
+                  {document.classification ? (
+                    <div className="space-y-2 rounded-md border border-border p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium">{document.classification.category}</span>
+                        <span className="text-xs text-muted-foreground">/</span>
+                        <span className="text-sm">{document.classification.topic}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {Math.round(document.classification.confidence * 100)}% confidence
+                        </span>
+                      </div>
+                      {document.classification.suggestedTags && document.classification.suggestedTags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {document.classification.suggestedTags.map((tag) => (
+                            <TagChip key={tag.name} name={tag.name} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No semantic classification saved for this document.</p>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

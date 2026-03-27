@@ -28,8 +28,9 @@ export type PdfPageWords = {
   words: PdfWord[]
 }
 
-type SearchOccurrence = {
+export type SearchOccurrence = {
   index: number
+  matchedText?: string
   snippet: string
   start: number
   end: number
@@ -211,7 +212,7 @@ function findMatchesInWordList(words: PdfWord[], query: string, maxResults = 100
   const queryTokens = extractQueryTokens(query)
   if (queryTokens.length === 0 || words.length === 0) return []
 
-  const occurrences: Array<{ startIndex: number; endIndex: number; snippet: string; rects: SearchOccurrence['rects'] }> = []
+  const occurrences: Array<{ matchedText: string; startIndex: number; endIndex: number; snippet: string; rects: SearchOccurrence['rects'] }> = []
   const seen = new Set<string>()
 
   const addMatch = (startIndex: number, endIndex: number) => {
@@ -224,6 +225,7 @@ function findMatchesInWordList(words: PdfWord[], query: string, maxResults = 100
     seen.add(dedupeKey)
 
     occurrences.push({
+      matchedText: normalizeText(matchedWords.map((word) => word.text).join(' ')),
       startIndex,
       endIndex,
       snippet,
@@ -264,7 +266,7 @@ function findMatchesInWordList(words: PdfWord[], query: string, maxResults = 100
   return occurrences
 }
 
-async function loadPdfJs() {
+export async function loadPdfJsModule() {
   if (!pdfJsPromise) {
     pdfJsPromise = import('pdfjs-dist/legacy/build/pdf.mjs').then((module) => {
       if (typeof window !== 'undefined' && !module.GlobalWorkerOptions.workerSrc) {
@@ -285,7 +287,7 @@ async function extractPdfPages(filePath: string) {
   }
 
   const loadingPromise = (async () => {
-    const pdfjs = await loadPdfJs()
+    const pdfjs = await loadPdfJsModule()
     const bytes = await readFile(filePath)
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(bytes),
@@ -374,9 +376,18 @@ export async function extractPdfPageWords(filePath: string) {
   return extractPdfPages(filePath)
 }
 
-export async function extractPdfSearchText(filePath: string) {
+export async function extractPdfDocumentText(filePath: string) {
   const pages = await extractPdfPages(filePath)
-  return pages.map((page) => page.text).join('\n\n')
+  return {
+    pageCount: pages.length,
+    pages,
+    text: pages.map((page) => page.text).join('\n\n'),
+  }
+}
+
+export async function extractPdfSearchText(filePath: string) {
+  const { text } = await extractPdfDocumentText(filePath)
+  return text
 }
 
 export async function extractPdfSearchFragments(filePath: string) {
@@ -486,6 +497,7 @@ export function findDocumentSearchOccurrences(document: Document, query: string,
         seen.add(dedupeKey)
         occurrences.push({
           index: occurrences.length,
+          matchedText: fragment.slice(start, end),
           start,
           end,
           estimatedPage: document.pageCount
@@ -512,6 +524,7 @@ export function findDocumentSearchOccurrences(document: Document, query: string,
       seen.add(dedupeKey)
       occurrences.push({
         index: occurrences.length,
+        matchedText: fragment.slice(tokenIndex, tokenIndex + token.length),
         start: tokenIndex,
         end: tokenIndex + token.length,
         estimatedPage: document.pageCount
@@ -541,6 +554,7 @@ export async function findPdfSearchOccurrences(filePath: string, query: string, 
     for (const match of pageMatches) {
       occurrences.push({
         index: occurrences.length,
+        matchedText: match.matchedText,
         start: match.startIndex,
         end: match.endIndex,
         estimatedPage: page.pageNumber,

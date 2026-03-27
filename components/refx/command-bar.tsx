@@ -13,7 +13,6 @@ import {
   Settings,
   StickyNote,
   Sun,
-  Upload,
 } from 'lucide-react'
 import {
   CommandDialog,
@@ -37,12 +36,10 @@ export function CommandBar() {
     setActiveDocument,
     libraries,
     documents,
-    importDocuments,
     isDesktopApp,
   } = useAppStore()
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -63,16 +60,6 @@ export function CommandBar() {
   const runCommand = (command: () => void) => {
     toggleCommandPalette(false)
     command()
-  }
-
-  const handleImport = async () => {
-    if (!isDesktopApp || isImporting) return
-    setIsImporting(true)
-    try {
-      await importDocuments()
-    } finally {
-      setIsImporting(false)
-    }
   }
 
   const toggleTheme = async () => {
@@ -126,10 +113,6 @@ export function CommandBar() {
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => runCommand(() => void handleImport())} disabled={!isDesktopApp || isImporting}>
-            <Upload className="mr-2 h-4 w-4" />
-            <span>{isImporting ? 'Importing documents...' : 'Import documents'}</span>
-          </CommandItem>
           {mounted && (
             <CommandItem onSelect={() => runCommand(() => void toggleTheme())}>
               {resolvedTheme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}

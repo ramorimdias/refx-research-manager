@@ -11,15 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState, MetadataStatusBadge, ReadingStageBadge } from '@/components/refx/common'
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value'
 import { useAppStore } from '@/lib/store'
 import type { KeywordGroup, MetadataStatus, ReadingStage } from '@/lib/types'
-import { searchDocumentDeepWithOptions } from '@/lib/services/document-processing'
+import { searchDocuments, type DocumentSearchPageHit, type DocumentSearchQuery } from '@/lib/services/document-search-service'
 
 type SearchResult = {
   document: ReturnType<typeof useAppStore.getState>['documents'][number]
+  matchedQueryTerms: string[] 
+  matchedTerms: string[]
+  pageHits: DocumentSearchPageHit[]
   preview: string
-  rawScore: number
-  matchCount: number
+  score: number
 }
 
 type GroupJoinOperator = 'AND' | 'OR'
@@ -72,8 +75,15 @@ function parseInitialGroups(params: URLSearchParams) {
   }
 
   const legacyQuery = params.get('q') ?? ''
-  const legacyKeywords = normalizeKeywords(legacyQuery.split(','))
-  return legacyKeywords.length > 0 ? [createKeywordGroup('AND', legacyKeywords)] : []
+  return legacyQuery.trim().length > 0 ? [createKeywordGroup('AND', [legacyQuery.trim()])] : []
+}
+
+function parseInitialSimpleQuery(params: URLSearchParams) {
+  const directQuery = (params.get('q') ?? '').trim()
+  if (directQuery) return directQuery
+
+  const groups = parseInitialGroups(params)
+  return flattenKeywords(groups).join(' ')
 }
 
 function parseQueryMode(params: URLSearchParams) {
@@ -92,6 +102,29 @@ function querySummary(groups: KeywordGroup[], groupJoinOperator: GroupJoinOperat
   return groups
     .map((group) => `(${group.keywords.join(` ${group.operator} `)})`)
     .join(` ${groupJoinOperator} `)
+}
+
+function buildSearchQuery(groups: KeywordGroup[], groupJoinOperator: GroupJoinOperator): DocumentSearchQuery | null {
+  const normalizedGroups = normalizeGroups(groups)
+  if (normalizedGroups.length === 0) return null
+
+  const groupQueries = normalizedGroups.map((group) =>
+    group.keywords.length === 1
+      ? group.keywords[0]
+      : {
+          combineWith: group.operator,
+          queries: group.keywords,
+        },
+  )
+
+  if (groupQueries.length === 1) {
+    return groupQueries[0] ?? null
+  }
+
+  return {
+    combineWith: groupJoinOperator,
+    queries: groupQueries,
+  }
 }
 
 function highlightText(text: string, keywords: string[]) {
@@ -136,7 +169,9 @@ export default function SearchPage() {
   )
   const initialMode = useMemo(() => parseQueryMode(new URLSearchParams(paramString)), [paramString])
   const initialGroupJoinOperator = useMemo(() => parseGroupJoinOperator(new URLSearchParams(paramString)), [paramString])
+  const initialSimpleQuery = useMemo(() => parseInitialSimpleQuery(new URLSearchParams(paramString)), [paramString])
   const [queryMode, setQueryMode] = useState<'simple' | 'complex'>(initialMode)
+  const [simpleQueryInput, setSimpleQueryInput] = useState(initialSimpleQuery)
   const [draftGroups, setDraftGroups] = useState<KeywordGroup[]>(initialGroups.length > 0 ? initialGroups : [createKeywordGroup('AND')])
   const [draftGroupJoinOperator, setDraftGroupJoinOperator] = useState<GroupJoinOperator>(initialGroupJoinOperator)
   const [groupInputs, setGroupInputs] = useState<Record<string, string>>({})
@@ -145,35 +180,42 @@ export default function SearchPage() {
   const [searchedCount, setSearchedCount] = useState(0)
   const [totalToSearch, setTotalToSearch] = useState(0)
   const searchRunId = useRef(0)
+  const debouncedSimpleQuery = useDebouncedValue(simpleQueryInput.trim(), 300)
 
   const selectedLibraryId = persistentSearch.selectedLibraryId
   const readingStage = persistentSearch.readingStage
   const metadataStatus = persistentSearch.metadataStatus
   const favoriteOnly = persistentSearch.favoriteOnly
   const flexibility = persistentSearch.flexibility
-  const groupJoinOperator = persistentSearch.groupJoinOperator
   const executedGroups = useMemo(() => normalizeGroups(initialGroups), [initialGroups])
-  const executedKeywords = useMemo(() => flattenKeywords(executedGroups), [executedGroups])
   const executedGroupJoinOperator = useMemo(() => initialGroupJoinOperator, [initialGroupJoinOperator])
+  const executedSimpleQuery = useMemo(() => initialSimpleQuery.trim(), [initialSimpleQuery])
+  const executedKeywords = useMemo(
+    () => queryMode === 'simple'
+      ? normalizeKeywords(executedSimpleQuery.split(/\s+/))
+      : flattenKeywords(executedGroups),
+    [executedGroups, executedSimpleQuery, queryMode],
+  )
   const executedQueryLabel = useMemo(
-    () => querySummary(executedGroups, executedGroupJoinOperator),
-    [executedGroupJoinOperator, executedGroups],
+    () => queryMode === 'simple' ? executedSimpleQuery : querySummary(executedGroups, executedGroupJoinOperator),
+    [executedGroupJoinOperator, executedGroups, executedSimpleQuery, queryMode],
   )
 
   useEffect(() => {
     setQueryMode(initialMode)
+    setSimpleQueryInput(initialSimpleQuery)
     setDraftGroupJoinOperator(initialGroupJoinOperator)
     const nextGroups = initialGroups.length > 0 ? initialGroups : [createKeywordGroup('AND')]
     setDraftGroups(nextGroups)
-    const joinedKeywords = flattenKeywords(initialGroups).join(', ')
-    setGlobalSearchQuery(joinedKeywords)
+    const persistedQuery = initialMode === 'simple' ? initialSimpleQuery : flattenKeywords(initialGroups).join(', ')
+    setGlobalSearchQuery(persistedQuery)
     setPersistentSearch({
-      query: joinedKeywords,
-      keywords: flattenKeywords(initialGroups),
-      keywordGroups: normalizeGroups(initialGroups),
-      groupJoinOperator: initialGroupJoinOperator,
+      query: persistedQuery,
+      keywords: initialMode === 'simple' ? normalizeKeywords(initialSimpleQuery.split(/\s+/)) : flattenKeywords(initialGroups),
+      keywordGroups: initialMode === 'simple' ? [] : normalizeGroups(initialGroups),
+      groupJoinOperator: initialMode === 'simple' ? 'AND' : initialGroupJoinOperator,
     })
-  }, [initialGroupJoinOperator, initialGroups, initialMode, setGlobalSearchQuery, setPersistentSearch])
+  }, [initialGroupJoinOperator, initialGroups, initialMode, initialSimpleQuery, setGlobalSearchQuery, setPersistentSearch])
 
   const filteredDocuments = useMemo(() => {
     return documents.filter((document) => {
@@ -184,11 +226,51 @@ export default function SearchPage() {
       return true
     })
   }, [documents, favoriteOnly, metadataStatus, readingStage, selectedLibraryId])
+  const searchableDocumentIds = useMemo(() => filteredDocuments.map((document) => document.id), [filteredDocuments])
+  const searchableDocumentsById = useMemo(() => new Map(filteredDocuments.map((document) => [document.id, document])), [filteredDocuments])
+  const executedSearchQuery = useMemo(() => {
+    if (queryMode === 'simple') {
+      return executedSimpleQuery || null
+    }
+
+    return buildSearchQuery(executedGroups, executedGroupJoinOperator)
+  }, [executedGroupJoinOperator, executedGroups, executedSimpleQuery, queryMode])
+
+  const applySimpleSearch = (nextQuery: string, navigation: 'push' | 'replace' = 'replace') => {
+    const trimmedQuery = nextQuery.trim()
+    const nextParams = new URLSearchParams()
+    nextParams.set('mode', 'simple')
+    if (trimmedQuery) {
+      nextParams.set('q', trimmedQuery)
+    }
+
+    setGlobalSearchQuery(trimmedQuery)
+    setPersistentSearch({
+      query: trimmedQuery,
+      keywords: normalizeKeywords(trimmedQuery.split(/\s+/)),
+      keywordGroups: [],
+      groupJoinOperator: 'AND',
+    })
+
+    const href = nextParams.toString() ? `/search?${nextParams.toString()}` : '/search'
+    if (navigation === 'push') {
+      router.push(href)
+      return
+    }
+
+    router.replace(href)
+  }
+
+  useEffect(() => {
+    if (queryMode !== 'simple') return
+    if (debouncedSimpleQuery === executedSimpleQuery) return
+    applySimpleSearch(debouncedSimpleQuery, 'replace')
+  }, [debouncedSimpleQuery, executedSimpleQuery, queryMode])
 
   useEffect(() => {
     const runId = ++searchRunId.current
 
-    if (executedGroups.length === 0) {
+    if (!executedSearchQuery) {
       setResults([])
       setIsSearching(false)
       setSearchedCount(0)
@@ -203,75 +285,30 @@ export default function SearchPage() {
       setResults([])
       setSearchedCount(0)
       setTotalToSearch(filteredDocuments.length)
-
-      const nextResults: SearchResult[] = []
-
-      for (const [index, document] of filteredDocuments.entries()) {
-        if (cancelled || searchRunId.current !== runId) return
-
-        let totalMatchCount = 0
-        let totalRawScore = 0
-        let preview = ''
-        let matchedGroupCount = 0
-
-        for (const group of executedGroups) {
-          const keywordMatches = await Promise.all(
-            group.keywords.map((keyword) =>
-              searchDocumentDeepWithOptions(document, keyword, {
-                keywords: [keyword],
-                flexibility,
-              }),
-            ),
-          )
-
-          if (cancelled || searchRunId.current !== runId) return
-
-          const matchedKeywords = keywordMatches.filter((match) => match.matchCount > 0)
-          const groupMatched = group.operator === 'AND'
-            ? matchedKeywords.length === group.keywords.length
-            : matchedKeywords.length > 0
-
-          if (!groupMatched) {
-            if (executedGroupJoinOperator === 'AND') {
-              matchedGroupCount = -1
-              break
-            }
-            continue
-          }
-
-          matchedGroupCount += 1
-          totalMatchCount += matchedKeywords.reduce((sum, match) => sum + match.matchCount, 0)
-          totalRawScore += matchedKeywords.reduce((sum, match) => sum + match.rawScore, 0)
-          if (!preview) {
-            preview = matchedKeywords.find((match) => match.preview)?.preview ?? ''
-          }
-        }
-
-        const groupsSatisfied = executedGroupJoinOperator === 'AND'
-          ? matchedGroupCount === executedGroups.length
-          : matchedGroupCount > 0
-
-        if (groupsSatisfied && totalMatchCount > 0) {
-          nextResults.push({
-            document,
-            preview,
-            rawScore: totalRawScore,
-            matchCount: totalMatchCount,
-          })
-        }
-
-        setSearchedCount(index + 1)
-      }
+      const nextResults = await searchDocuments(executedSearchQuery, {
+        documentIds: searchableDocumentIds,
+        flexibility,
+        limit: Math.max(filteredDocuments.length, 100),
+      })
 
       if (cancelled || searchRunId.current !== runId) return
 
-      nextResults.sort((left, right) => {
-        if (right.matchCount !== left.matchCount) return right.matchCount - left.matchCount
-        if (right.rawScore !== left.rawScore) return right.rawScore - left.rawScore
-        return left.document.title.localeCompare(right.document.title)
+      const mappedResults = nextResults.flatMap((result) => {
+        const document = searchableDocumentsById.get(result.documentId)
+        if (!document) return []
+
+        return [{
+          document,
+          matchedQueryTerms: result.matchedQueryTerms,
+          matchedTerms: result.matchedTerms,
+          pageHits: result.pageHits,
+          preview: result.snippet ?? '',
+          score: result.score,
+        }] satisfies SearchResult[]
       })
 
-      setResults(nextResults)
+      setResults(mappedResults)
+      setSearchedCount(filteredDocuments.length)
       setIsSearching(false)
     }
 
@@ -283,7 +320,7 @@ export default function SearchPage() {
         setIsSearching(false)
       }
     }
-  }, [executedGroupJoinOperator, executedGroups, filteredDocuments, flexibility])
+  }, [executedSearchQuery, filteredDocuments.length, flexibility, searchableDocumentIds, searchableDocumentsById])
 
   const updateGroup = (groupId: string, updates: Partial<KeywordGroup>) => {
     setDraftGroups((current) =>
@@ -338,24 +375,17 @@ export default function SearchPage() {
   }
 
   const submitSearch = () => {
-    const preparedGroups =
-      queryMode === 'simple'
-        ? normalizeGroups([
-            {
-              ...(draftGroups[0] ?? createKeywordGroup('AND')),
-              operator: 'AND',
-              keywords: normalizeKeywords([
-                ...(draftGroups[0]?.keywords ?? []),
-                ...((groupInputs[draftGroups[0]?.id ?? '']?.trim() ?? '') ? [groupInputs[draftGroups[0]?.id ?? '']] : []),
-              ]),
-            },
-          ])
-        : normalizeGroups(
-            draftGroups.map((group) => ({
-              ...group,
-              keywords: normalizeKeywords([...group.keywords, ...(groupInputs[group.id]?.trim() ? [groupInputs[group.id]] : [])]),
-            })),
-          )
+    if (queryMode === 'simple') {
+      applySimpleSearch(simpleQueryInput, 'push')
+      return
+    }
+
+    const preparedGroups = normalizeGroups(
+      draftGroups.map((group) => ({
+        ...group,
+        keywords: normalizeKeywords([...group.keywords, ...(groupInputs[group.id]?.trim() ? [groupInputs[group.id]] : [])]),
+      })),
+    )
 
     const flattenedKeywords = flattenKeywords(preparedGroups)
     const joined = flattenedKeywords.join(', ')
@@ -367,7 +397,7 @@ export default function SearchPage() {
       query: joined,
       keywords: flattenedKeywords,
       keywordGroups: preparedGroups,
-      groupJoinOperator: queryMode === 'simple' ? 'AND' : draftGroupJoinOperator,
+      groupJoinOperator: draftGroupJoinOperator,
     })
 
     if (preparedGroups.length === 0) {
@@ -376,16 +406,10 @@ export default function SearchPage() {
     }
 
     const nextParams = new URLSearchParams()
-    nextParams.set('mode', queryMode)
-    if (queryMode === 'simple') {
-      for (const keyword of flattenedKeywords) {
-        nextParams.append('k', keyword)
-      }
-    } else {
-      nextParams.set('go', draftGroupJoinOperator)
-      for (const group of preparedGroups) {
-        nextParams.append('g', encodeGroupParam(group))
-      }
+    nextParams.set('mode', 'complex')
+    nextParams.set('go', draftGroupJoinOperator)
+    for (const group of preparedGroups) {
+      nextParams.append('g', encodeGroupParam(group))
     }
     router.push(`/search?${nextParams.toString()}`)
   }
@@ -396,11 +420,13 @@ export default function SearchPage() {
     setDraftGroups((current) => {
       const normalized = normalizeGroups(current)
       if (nextMode === 'simple') {
-        const flattened = flattenKeywords(normalized)
-        return [createKeywordGroup('AND', flattened)]
+        return [createKeywordGroup('AND')]
       }
       return normalized.length > 0 ? normalized : [createKeywordGroup('AND')]
     })
+    if (nextMode === 'simple') {
+      setSimpleQueryInput(executedSimpleQuery || flattenKeywords(normalizeGroups(draftGroups)).join(' '))
+    }
     setGroupInputs({})
   }
 
@@ -413,7 +439,7 @@ export default function SearchPage() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold">Search</h1>
-            <p className="text-sm text-muted-foreground">Persistent full-library search with deeper document scanning.</p>
+            <p className="text-sm text-muted-foreground">Indexed full-library search backed by the local MiniSearch index.</p>
           </div>
         </div>
 
@@ -465,6 +491,30 @@ export default function SearchPage() {
                     )}
                   </div>
 
+                  {queryMode === 'simple' ? (
+                    <div className="space-y-3 rounded-xl border p-3">
+                      <label className="text-sm font-medium">Quick search</label>
+                      <div className="relative">
+                        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={simpleQueryInput}
+                          onChange={(event) => setSimpleQueryInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              submitSearch()
+                            }
+                          }}
+                          className="pl-9"
+                          placeholder="Search the local full-text index"
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Results update automatically after a short pause and come from the local MiniSearch index.
+                      </p>
+                    </div>
+                  ) : null}
+
                   {queryMode === 'complex' && draftGroups.length > 1 && (
                     <div className="space-y-2 rounded-xl border p-3">
                       <label className="text-sm font-medium">Between groups</label>
@@ -485,35 +535,31 @@ export default function SearchPage() {
                     </div>
                   )}
 
-                  {draftGroups.slice(0, queryMode === 'simple' ? 1 : draftGroups.length).map((group, index) => (
+                  {queryMode === 'complex' && draftGroups.map((group, index) => (
                     <div key={group.id} className="space-y-3 rounded-xl border p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{queryMode === 'simple' ? 'Keywords' : `Group ${index + 1}`}</span>
-                          {queryMode === 'complex' && (
-                            <Select value={group.operator} onValueChange={(value) => updateGroup(group.id, { operator: value as KeywordGroup['operator'] })}>
-                              <SelectTrigger className="h-8 w-24">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="AND">AND</SelectItem>
-                                <SelectItem value="OR">OR</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
+                          <span className="text-sm font-medium">{`Group ${index + 1}`}</span>
+                          <Select value={group.operator} onValueChange={(value) => updateGroup(group.id, { operator: value as KeywordGroup['operator'] })}>
+                            <SelectTrigger className="h-8 w-24">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="AND">AND</SelectItem>
+                              <SelectItem value="OR">OR</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                        {queryMode === 'complex' && (
-                          <Button type="button" variant="ghost" size="sm" onClick={() => removeGroup(group.id)}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeGroup(group.id)}>
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
 
                       <div className="flex gap-2">
                         <Input
                           value={groupInputs[group.id] ?? ''}
                           onChange={(event) => setGroupInputs((current) => ({ ...current, [group.id]: event.target.value }))}
-                          placeholder={queryMode === 'simple' ? 'Add a keyword' : `Add a keyword to this ${group.operator} group`}
+                          placeholder={`Add a keyword to this ${group.operator} group`}
                         />
                         <Button type="button" variant="outline" className="shrink-0" onClick={() => addKeywordToGroup(group.id)} disabled={!(groupInputs[group.id] ?? '').trim()}>
                           <Plus className="mr-2 h-4 w-4" />
@@ -533,9 +579,7 @@ export default function SearchPage() {
                           ))
                         ) : (
                           <p className="text-sm text-muted-foreground">
-                            {queryMode === 'simple'
-                              ? 'Add one or more keywords. Documents will match across this keyword list.'
-                              : `Add one or more keywords. This group matches when ${group.operator === 'AND' ? 'every keyword is found.' : 'any keyword is found.'}`}
+                            {`Add one or more keywords. This group matches when ${group.operator === 'AND' ? 'every keyword is found.' : 'any keyword is found.'}`}
                           </p>
                         )}
                       </div>
@@ -543,9 +587,11 @@ export default function SearchPage() {
                   ))}
                 </div>
 
-                <Button type="submit" className="w-full">
-                  Search
-                </Button>
+                {queryMode === 'complex' && (
+                  <Button type="submit" className="w-full">
+                    Search
+                  </Button>
+                )}
               </form>
 
               <div className="space-y-2">
@@ -610,10 +656,9 @@ export default function SearchPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any status</SelectItem>
-                    <SelectItem value="incomplete">Incomplete</SelectItem>
+                    <SelectItem value="missing">Missing</SelectItem>
                     <SelectItem value="partial">Partial</SelectItem>
                     <SelectItem value="complete">Complete</SelectItem>
-                    <SelectItem value="verified">Verified</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -633,7 +678,7 @@ export default function SearchPage() {
             {executedGroups.length > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
                 <div>
-                  <p className="text-sm text-muted-foreground">Persistent search</p>
+                  <p className="text-sm text-muted-foreground">Persistent indexed search</p>
                   <p className="font-medium">
                     {isSearching
                       ? `Searching ${searchedCount}/${totalToSearch || filteredDocuments.length} documents for ${executedQueryLabel}`
@@ -654,7 +699,9 @@ export default function SearchPage() {
               <EmptyState
                 icon={SearchIcon}
                 title="Start a Search"
-                description="Add one or more keyword groups and press Search to scan your full library."
+                description={queryMode === 'simple'
+                  ? 'Type into the search box to query your local indexed library.'
+                  : 'Add one or more keyword groups and press Search to scan your full library.'}
               />
             )}
 
@@ -662,7 +709,7 @@ export default function SearchPage() {
               <Card>
                 <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  Scanning full documents and library metadata. This can take a bit longer, but it searches the full stored content.
+                  Querying the local MiniSearch index and resolving snippets from stored extracted text.
                 </CardContent>
               </Card>
             )}
@@ -675,9 +722,13 @@ export default function SearchPage() {
               />
             )}
 
-            {results.map(({ document, preview, matchCount }) => {
+            {results.map(({ document, matchedTerms, pageHits, preview, score }) => {
               const library = libraries.find((item) => item.id === document.libraryId)
               const readerKeyword = executedKeywords[0] ?? ''
+              const primaryPageHit = pageHits[0]
+              const readerHref = `/reader/view?id=${document.id}&query=${encodeURIComponent(readerKeyword)}${
+                primaryPageHit ? `&page=${primaryPageHit.pageNumber}&matchText=${encodeURIComponent(primaryPageHit.matchedText)}&matchStart=${primaryPageHit.positions[0]?.start ?? 0}` : ''
+              }&returnTo=search`
 
               return (
                 <Card key={document.id}>
@@ -685,7 +736,7 @@ export default function SearchPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <Link
-                          href={`/reader/view?id=${document.id}&query=${encodeURIComponent(readerKeyword)}&returnTo=search`}
+                          href={readerHref}
                           className="text-lg font-semibold hover:text-primary"
                         >
                           {document.title}
@@ -697,7 +748,7 @@ export default function SearchPage() {
                         </p>
                       </div>
                       <Badge variant="outline" className="shrink-0">
-                        {matchCount} occurrence{matchCount === 1 ? '' : 's'}
+                        Relevance {score}%
                       </Badge>
                     </div>
 
@@ -709,13 +760,23 @@ export default function SearchPage() {
                           {tag}
                         </Badge>
                       ))}
+                      {matchedTerms.slice(0, 4).map((term) => (
+                        <Badge key={`${document.id}-${term}`} variant="outline">
+                          {term}
+                        </Badge>
+                      ))}
+                      {primaryPageHit && (
+                        <Badge variant="outline">
+                          Page {primaryPageHit.pageNumber}
+                        </Badge>
+                      )}
                     </div>
 
                     <p className="text-sm leading-6 text-muted-foreground">{highlightText(preview, executedKeywords)}</p>
 
                     <div className="flex flex-wrap items-center gap-2">
                       <Button asChild>
-                        <Link href={`/reader/view?id=${document.id}&query=${encodeURIComponent(readerKeyword)}&returnTo=search`}>
+                        <Link href={readerHref}>
                           Open in Reader
                         </Link>
                       </Button>

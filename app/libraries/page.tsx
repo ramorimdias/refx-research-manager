@@ -31,6 +31,15 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -38,6 +47,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { deriveMetadataStatus, serializeMetadataProvenance, serializeMetadataUserEditedFields } from '@/lib/services/document-metadata-service'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +62,7 @@ import { useAppStore, useFilteredDocuments } from '@/lib/store'
 import { DocumentTable } from '@/components/refx/document-table'
 import { FilterPanel } from '@/components/refx/filter-panel'
 import { DocumentCard } from '@/components/refx/document-card'
+import { useDocumentViewFlags } from '@/lib/hooks/use-document-view-flags'
 import type { SortField, ViewMode } from '@/lib/types'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
@@ -101,10 +112,39 @@ const DEFAULT_PHYSICAL_BOOK_FORM: PhysicalBookFormState = {
   description: '',
 }
 
+const DOCUMENTS_PER_PAGE = 20
+
+function buildPaginationItems(currentPage: number, totalPages: number) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+
+  const items: Array<number | 'ellipsis'> = [1]
+  const start = Math.max(2, currentPage - 1)
+  const end = Math.min(totalPages - 1, currentPage + 1)
+
+  if (start > 2) {
+    items.push('ellipsis')
+  }
+
+  for (let page = start; page <= end; page += 1) {
+    items.push(page)
+  }
+
+  if (end < totalPages - 1) {
+    items.push('ellipsis')
+  }
+
+  items.push(totalPages)
+  return items
+}
+
 export default function LibrariesPage() {
   const {
     activeLibraryId,
+    currentPage,
     setActiveLibrary,
+    setCurrentPage,
     viewMode,
     setViewMode,
     sort,
@@ -136,17 +176,43 @@ export default function LibrariesPage() {
   const dragDepthRef = useRef(0)
 
   const activeLibrary = libraries.find((lib) => lib.id === activeLibraryId)
+  const paginationSessionKey = JSON.stringify({
+    activeLibraryId,
+    filters,
+    sort,
+  })
+  const totalPages = Math.max(1, Math.ceil(documents.length / DOCUMENTS_PER_PAGE))
+  const paginatedDocuments = documents.slice(
+    (currentPage - 1) * DOCUMENTS_PER_PAGE,
+    currentPage * DOCUMENTS_PER_PAGE,
+  )
+  const documentFlagsById = useDocumentViewFlags({
+    currentPage,
+    documentIds: paginatedDocuments.map((document) => document.id),
+    sessionKey: paginationSessionKey,
+  })
   const activeFilterCount = [
     filters.tags?.length || 0,
     filters.readingStage?.length || 0,
     filters.metadataStatus?.length || 0,
     filters.favorite ? 1 : 0,
-    filters.hasAnnotations ? 1 : 0,
+    filters.hasComments ? 1 : 0,
+    filters.hasNotes ? 1 : 0,
   ].reduce((sum, count) => sum + count, 0)
 
   useEffect(() => {
     void loadLibraryDocuments(activeLibraryId)
   }, [activeLibraryId, loadLibraryDocuments])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [paginationSessionKey, setCurrentPage])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, setCurrentPage, totalPages])
 
   useEffect(() => {
     const stored = window.sessionStorage.getItem('refx-libraries-filters-collapsed')
@@ -306,20 +372,48 @@ export default function LibrariesPage() {
 
     setIsSavingLibrary(true)
     try {
+      const authors = physicalBookForm.authors
+        .split(',')
+        .map((author) => author.trim())
+        .filter(Boolean)
+      const year = physicalBookForm.year ? Number(physicalBookForm.year) : undefined
+      const publisher = physicalBookForm.publisher.trim() || undefined
+      const isbn = physicalBookForm.isbn.trim() || undefined
+      const abstractText = physicalBookForm.description.trim() || undefined
+      const extractedAt = new Date()
+
       await repo.createDocument({
         libraryId,
         documentType: 'physical_book',
         title,
-        authors: JSON.stringify(
-          physicalBookForm.authors
-            .split(',')
-            .map((author) => author.trim())
-            .filter(Boolean),
-        ),
-        year: physicalBookForm.year ? Number(physicalBookForm.year) : undefined,
-        publisher: physicalBookForm.publisher.trim() || undefined,
-        isbn: physicalBookForm.isbn.trim() || undefined,
-        abstractText: physicalBookForm.description.trim() || undefined,
+        authors: JSON.stringify(authors),
+        year,
+        publisher,
+        isbn,
+        abstractText,
+        metadataStatus: deriveMetadataStatus({
+          title,
+          authors,
+          year,
+        }),
+        metadataProvenance: serializeMetadataProvenance({
+          title: { source: 'user', extractedAt, confidence: 1, detail: 'Created manually as a local physical book record.' },
+          ...(authors.length > 0 ? { authors: { source: 'user', extractedAt, confidence: 1, detail: 'Created manually as a local physical book record.' } } : {}),
+          ...(year ? { year: { source: 'user', extractedAt, confidence: 1, detail: 'Created manually as a local physical book record.' } } : {}),
+        }),
+        metadataUserEditedFields: serializeMetadataUserEditedFields({
+          title: true,
+          authors: authors.length > 0 || physicalBookForm.authors.trim().length > 0,
+          year: Boolean(year),
+          publisher: Boolean(publisher),
+          isbn: Boolean(isbn),
+          abstract: Boolean(abstractText),
+        }),
+        textExtractionStatus: 'skipped',
+        ocrStatus: 'not_needed',
+        indexingStatus: 'skipped',
+        tagSuggestionStatus: 'pending',
+        classificationStatus: 'pending',
       })
       await refreshData()
       setIsPhysicalBookDialogOpen(false)
@@ -421,6 +515,10 @@ export default function LibrariesPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 New Library
               </Button>
+              <Button variant="outline" size="sm" onClick={() => void handleImport()} disabled={!isDesktopApp || isImporting}>
+                <Upload className="mr-2 h-4 w-4" />
+                {isImporting ? 'Importing...' : 'Import'}
+              </Button>
               <Button variant="outline" size="sm" onClick={openPhysicalBookDialog}>
                 <BookMarked className="mr-2 h-4 w-4" />
                 Register Book
@@ -439,11 +537,6 @@ export default function LibrariesPage() {
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-
-              <Button variant="outline" size="sm" onClick={() => void handleImport()} disabled={!isDesktopApp || isImporting}>
-                <Upload className="mr-2 h-4 w-4" />
-                {isImporting ? 'Importing...' : 'Import'}
-              </Button>
             </div>
           </div>
 
@@ -547,19 +640,75 @@ export default function LibrariesPage() {
               </div>
             ) : viewMode === 'table' ? (
               <div className={cn('transition-opacity', isImporting && 'opacity-60')}>
-                <DocumentTable documents={documents} />
+                <DocumentTable documents={paginatedDocuments} ephemeralFlagsById={documentFlagsById} />
               </div>
             ) : viewMode === 'grid' ? (
               <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4', isImporting && 'opacity-60')}>
-                {documents.map((doc) => (
-                  <DocumentCard key={doc.id} document={doc} />
+                {paginatedDocuments.map((doc) => (
+                  <DocumentCard key={doc.id} document={doc} ephemeralFlags={documentFlagsById[doc.id]} />
                 ))}
               </div>
             ) : (
               <div className={cn('space-y-2', isImporting && 'opacity-60')}>
-                {documents.map((doc) => (
-                  <DocumentCard key={doc.id} document={doc} variant="list" />
+                {paginatedDocuments.map((doc) => (
+                  <DocumentCard key={doc.id} document={doc} ephemeralFlags={documentFlagsById[doc.id]} variant="list" />
                 ))}
+              </div>
+            )}
+
+            {documents.length > 0 && totalPages > 1 && (
+              <div className="mt-6 flex flex-col gap-3 border-t border-border/80 pt-4">
+                <div className="text-sm text-muted-foreground">
+                  Showing {(currentPage - 1) * DOCUMENTS_PER_PAGE + 1}-{Math.min(currentPage * DOCUMENTS_PER_PAGE, documents.length)} of {documents.length}
+                </div>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          if (currentPage > 1) {
+                            setCurrentPage(currentPage - 1)
+                          }
+                        }}
+                        className={cn(currentPage <= 1 && 'pointer-events-none opacity-50')}
+                      />
+                    </PaginationItem>
+                    {buildPaginationItems(currentPage, totalPages).map((item, index) => (
+                      item === 'ellipsis' ? (
+                        <PaginationItem key={`ellipsis-${index}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : (
+                        <PaginationItem key={item}>
+                          <PaginationLink
+                            href="#"
+                            isActive={item === currentPage}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              setCurrentPage(item)
+                            }}
+                          >
+                            {item}
+                          </PaginationLink>
+                        </PaginationItem>
+                      )
+                    ))}
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          if (currentPage < totalPages) {
+                            setCurrentPage(currentPage + 1)
+                          }
+                        }}
+                        className={cn(currentPage >= totalPages && 'pointer-events-none opacity-50')}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
               </div>
             )}
           </div>

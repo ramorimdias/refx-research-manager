@@ -7,6 +7,10 @@ export type StoredAppSettings = {
   fontSize: '14' | '16' | '18'
   autoOcr: boolean
   autoMetadata: boolean
+  autoOnlineMetadataEnrichment: boolean
+  advancedClassificationMode: 'off' | 'local_heuristic'
+  crossrefContactEmail: string
+  semanticScholarApiKey: string
 }
 
 export const DEFAULT_APP_SETTINGS: StoredAppSettings = {
@@ -14,6 +18,10 @@ export const DEFAULT_APP_SETTINGS: StoredAppSettings = {
   fontSize: '16',
   autoOcr: true,
   autoMetadata: true,
+  autoOnlineMetadataEnrichment: false,
+  advancedClassificationMode: 'off',
+  crossrefContactEmail: '',
+  semanticScholarApiKey: '',
 }
 
 const SETTINGS_STORAGE_KEY = 'refx-settings'
@@ -44,6 +52,16 @@ export async function loadAppSettings(isDesktopApp: boolean): Promise<StoredAppS
     fontSize: parseValue(stored.fontSize, DEFAULT_APP_SETTINGS.fontSize),
     autoOcr: parseValue(stored.autoOcr, DEFAULT_APP_SETTINGS.autoOcr),
     autoMetadata: parseValue(stored.autoMetadata, DEFAULT_APP_SETTINGS.autoMetadata),
+    autoOnlineMetadataEnrichment: parseValue(
+      stored.autoOnlineMetadataEnrichment,
+      DEFAULT_APP_SETTINGS.autoOnlineMetadataEnrichment,
+    ),
+    advancedClassificationMode: parseValue(
+      stored.advancedClassificationMode,
+      DEFAULT_APP_SETTINGS.advancedClassificationMode,
+    ),
+    crossrefContactEmail: parseValue(stored.crossrefContactEmail, DEFAULT_APP_SETTINGS.crossrefContactEmail),
+    semanticScholarApiKey: parseValue(stored.semanticScholarApiKey, DEFAULT_APP_SETTINGS.semanticScholarApiKey),
   }
 }
 
@@ -60,5 +78,9 @@ export async function saveAppSettings(isDesktopApp: boolean, settings: StoredApp
     fontSize: JSON.stringify(settings.fontSize),
     autoOcr: JSON.stringify(settings.autoOcr),
     autoMetadata: JSON.stringify(settings.autoMetadata),
+    autoOnlineMetadataEnrichment: JSON.stringify(settings.autoOnlineMetadataEnrichment),
+    advancedClassificationMode: JSON.stringify(settings.advancedClassificationMode),
+    crossrefContactEmail: JSON.stringify(settings.crossrefContactEmail),
+    semanticScholarApiKey: JSON.stringify(settings.semanticScholarApiKey),
   })
 }

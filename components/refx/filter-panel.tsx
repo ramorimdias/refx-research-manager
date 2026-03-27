@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronDown, Filter, MessageSquare, Star } from 'lucide-react'
+import { ChevronDown, Filter, MessageSquare, Star, StickyNote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -24,10 +24,9 @@ const readingStages: { value: ReadingStage; label: string }[] = [
 ]
 
 const metadataStatuses: { value: MetadataStatus; label: string }[] = [
-  { value: 'incomplete', label: 'Incomplete' },
+  { value: 'missing', label: 'Missing' },
   { value: 'partial', label: 'Partial' },
   { value: 'complete', label: 'Complete' },
-  { value: 'verified', label: 'Verified' },
 ]
 
 export function FilterPanel() {
@@ -53,7 +52,8 @@ export function FilterPanel() {
     filters.readingStage?.length || 0,
     filters.metadataStatus?.length || 0,
     filters.favorite ? 1 : 0,
-    filters.hasAnnotations ? 1 : 0,
+    filters.hasComments ? 1 : 0,
+    filters.hasNotes ? 1 : 0,
   ].reduce((sum, count) => sum + count, 0)
 
   const toggleReadingStage = (stage: ReadingStage) => {
@@ -110,13 +110,24 @@ export function FilterPanel() {
           </div>
           <div className="flex items-center space-x-2">
             <Checkbox
-              id="hasAnnotations"
-              checked={filters.hasAnnotations || false}
-              onCheckedChange={(checked) => setFilters({ ...filters, hasAnnotations: checked ? true : undefined })}
+              id="hasComments"
+              checked={filters.hasComments || false}
+              onCheckedChange={(checked) => setFilters({ ...filters, hasComments: checked ? true : undefined })}
             />
-            <Label htmlFor="hasAnnotations" className="flex cursor-pointer items-center gap-2">
+            <Label htmlFor="hasComments" className="flex cursor-pointer items-center gap-2">
               <MessageSquare className="h-3.5 w-3.5" />
-              Has annotations
+              Has comments
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="hasNotes"
+              checked={filters.hasNotes || false}
+              onCheckedChange={(checked) => setFilters({ ...filters, hasNotes: checked ? true : undefined })}
+            />
+            <Label htmlFor="hasNotes" className="flex cursor-pointer items-center gap-2">
+              <StickyNote className="h-3.5 w-3.5" />
+              Has notes
             </Label>
           </div>
         </div>

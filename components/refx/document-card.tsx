@@ -12,17 +12,18 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { Document } from '@/lib/types'
-import { OcrStatusBadge, ReadingStageBadge, StarRating } from './common'
+import type { Document, DocumentEphemeralUiFlags } from '@/lib/types'
+import { NewBadge, OcrStatusBadge, ReadingStageBadge, StarRating } from './common'
 import { useAppStore } from '@/lib/store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
 
 interface DocumentCardProps {
   document: Document
+  ephemeralFlags?: DocumentEphemeralUiFlags
   variant?: 'grid' | 'list'
 }
 
-export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardProps) {
+export function DocumentCard({ document: doc, ephemeralFlags, variant = 'grid' }: DocumentCardProps) {
   const { toggleFavorite, updateDocument } = useAppStore()
   const openHref = doc.documentType === 'physical_book' ? `/books/notes?id=${doc.id}` : `/reader/view?id=${doc.id}`
   const Icon = doc.documentType === 'physical_book' ? BookMarked : FileText
@@ -30,7 +31,7 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
   if (variant === 'list') {
     return (
       <DocumentContextMenu document={doc}>
-        <Card className="group hover:border-primary/50 transition-colors">
+        <Card className={cn('group transition-colors hover:border-primary/50', ephemeralFlags?.isNewlyAdded && 'border-emerald-300/60 bg-emerald-500/[0.04]')}>
           <CardContent className="flex items-center gap-4 p-4">
             <button
               onClick={() => toggleFavorite(doc.id)}
@@ -50,9 +51,12 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
               </div>
 
               <div className="flex-1 min-w-0">
-                <h3 className="font-medium truncate group-hover:text-primary transition-colors">
-                  {doc.title}
-                </h3>
+                <div className="flex items-start gap-2">
+                  <h3 className="min-w-0 truncate font-medium transition-colors group-hover:text-primary">
+                    {doc.title}
+                  </h3>
+                  {ephemeralFlags?.isNewlyAdded && <NewBadge />}
+                </div>
                 <p className="text-sm text-muted-foreground truncate">
                   {doc.authors.slice(0, 2).join(', ')}
                   {doc.authors.length > 2 && ' et al.'}
@@ -62,10 +66,10 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
             </Link>
 
             <div className="flex items-center gap-3 shrink-0">
-              {doc.annotationCount > 0 && (
+              {doc.commentCount > 0 && (
                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                   <MessageSquare className="h-3.5 w-3.5" />
-                  {doc.annotationCount}
+                  {doc.commentCount}
                 </div>
               )}
               <ReadingStageBadge stage={doc.readingStage} />
@@ -94,7 +98,7 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
 
   return (
     <DocumentContextMenu document={doc}>
-      <Card className="group hover:border-primary/50 transition-colors">
+      <Card className={cn('group transition-colors hover:border-primary/50', ephemeralFlags?.isNewlyAdded && 'border-emerald-300/60 bg-emerald-500/[0.04]')}>
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
@@ -128,9 +132,12 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
           </div>
 
           <Link href={openHref} className="block">
-            <h3 className="font-medium line-clamp-2 mb-1 group-hover:text-primary transition-colors">
-              {doc.title}
-            </h3>
+            <div className="mb-1 flex items-start gap-2">
+              <h3 className="line-clamp-2 font-medium transition-colors group-hover:text-primary">
+                {doc.title}
+              </h3>
+              {ephemeralFlags?.isNewlyAdded && <NewBadge />}
+            </div>
             <p className="text-sm text-muted-foreground line-clamp-1 mb-3">
               {doc.authors.slice(0, 2).join(', ')}
               {doc.authors.length > 2 && ' et al.'}
@@ -152,10 +159,10 @@ export function DocumentCard({ document: doc, variant = 'grid' }: DocumentCardPr
               {doc.hasOcr && <OcrStatusBadge status={doc.ocrStatus} />}
             </div>
             <div className="flex items-center gap-2">
-              {doc.annotationCount > 0 && (
+              {doc.commentCount > 0 && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <MessageSquare className="h-3 w-3" />
-                  {doc.annotationCount}
+                  {doc.commentCount}
                 </div>
               )}
               <StarRating

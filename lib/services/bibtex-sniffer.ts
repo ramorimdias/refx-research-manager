@@ -9,7 +9,22 @@ export type SniffedPdfMetadata = {
   doi?: string
   citationKey?: string
   bibtex?: string
-  source?: 'offline' | 'crossref'
+  source?: 'offline' | 'crossref' | 'semantic_scholar'
+}
+
+export type OnlineMetadataMatchStrategy = 'doi' | 'title'
+
+export type OnlineMetadataMatch = SniffedPdfMetadata & {
+  matchedBy: OnlineMetadataMatchStrategy
+  source: 'crossref' | 'semantic_scholar'
+}
+
+export type CrossrefLookupConfig = {
+  contactEmail?: string
+}
+
+export type SemanticScholarLookupConfig = {
+  apiKey?: string
 }
 
 type CrossrefAuthor = {
@@ -24,6 +39,19 @@ type CrossrefWork = {
   author?: CrossrefAuthor[]
   issued?: { 'date-parts'?: number[][] }
   published?: { 'date-parts'?: number[][] }
+}
+
+type SemanticScholarAuthor = {
+  name?: string
+}
+
+type SemanticScholarPaper = {
+  title?: string
+  year?: number
+  authors?: SemanticScholarAuthor[]
+  externalIds?: {
+    DOI?: string
+  }
 }
 
 function cleanPdfField(value: string) {
@@ -94,15 +122,28 @@ function parseCrossrefAuthors(work: CrossrefWork) {
     .filter(Boolean)
 }
 
-async function fetchJsonWithTimeout(url: string, timeoutMs = 6000) {
+function parseSemanticScholarAuthors(paper: SemanticScholarPaper) {
+  return (paper.authors ?? [])
+    .map((author) => author.name?.trim() ?? '')
+    .filter(Boolean)
+}
+
+async function fetchJsonWithTimeout(
+  url: string,
+  options?: {
+    headers?: HeadersInit
+    timeoutMs?: number
+  },
+) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort('timeout'), timeoutMs)
+  const timeout = setTimeout(() => controller.abort('timeout'), options?.timeoutMs ?? 6000)
 
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
+        ...(options?.headers ?? {}),
       },
     })
 
@@ -117,19 +158,63 @@ function isAbortLikeError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-async function fetchCrossrefByDoi(doi: string): Promise<CrossrefWork | null> {
+function appendCrossrefContactEmail(url: string, config?: CrossrefLookupConfig) {
+  if (!config?.contactEmail?.trim()) {
+    return url
+  }
+
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}mailto=${encodeURIComponent(config.contactEmail.trim())}`
+}
+
+async function fetchCrossrefByDoi(doi: string, config?: CrossrefLookupConfig): Promise<CrossrefWork | null> {
   const encoded = encodeURIComponent(doi)
-  const result = await fetchJsonWithTimeout(`https://api.crossref.org/works/${encoded}`)
+  const result = await fetchJsonWithTimeout(appendCrossrefContactEmail(`https://api.crossref.org/works/${encoded}`, config))
   return result?.message ?? null
 }
 
-async function fetchCrossrefByQuery(title: string, author?: string): Promise<CrossrefWork | null> {
+async function fetchCrossrefByQuery(title: string, author?: string, config?: CrossrefLookupConfig): Promise<CrossrefWork | null> {
   const parts = [title, author].filter(Boolean)
   if (!parts.length) return null
 
   const query = encodeURIComponent(parts.join(' '))
-  const result = await fetchJsonWithTimeout(`https://api.crossref.org/works?rows=1&query.bibliographic=${query}`)
+  const url = appendCrossrefContactEmail(`https://api.crossref.org/works?rows=1&query.bibliographic=${query}`, config)
+  const result = await fetchJsonWithTimeout(url)
   return result?.message?.items?.[0] ?? null
+}
+
+function semanticScholarHeaders(config?: SemanticScholarLookupConfig): HeadersInit | undefined {
+  const apiKey = config?.apiKey?.trim()
+  if (!apiKey) return undefined
+  return {
+    'x-api-key': apiKey,
+  }
+}
+
+async function fetchSemanticScholarByDoi(
+  doi: string,
+  config?: SemanticScholarLookupConfig,
+): Promise<SemanticScholarPaper | null> {
+  const fields = encodeURIComponent('title,authors,year,externalIds')
+  const encoded = encodeURIComponent(`DOI:${doi}`)
+  return fetchJsonWithTimeout(
+    `https://api.semanticscholar.org/graph/v1/paper/${encoded}?fields=${fields}`,
+    { headers: semanticScholarHeaders(config) },
+  ) as Promise<SemanticScholarPaper | null>
+}
+
+async function fetchSemanticScholarByQuery(
+  title: string,
+  config?: SemanticScholarLookupConfig,
+): Promise<SemanticScholarPaper | null> {
+  const query = encodeURIComponent(title)
+  const fields = encodeURIComponent('title,authors,year,externalIds')
+  const result = await fetchJsonWithTimeout(
+    `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=1&fields=${fields}`,
+    { headers: semanticScholarHeaders(config) },
+  ) as { data?: SemanticScholarPaper[] } | null
+
+  return result?.data?.[0] ?? null
 }
 
 function normalizeMetadata(metadata: SniffedPdfMetadata): SniffedPdfMetadata {
@@ -145,36 +230,91 @@ function normalizeMetadata(metadata: SniffedPdfMetadata): SniffedPdfMetadata {
   }
 }
 
-async function enrichWithCrossref(metadata: SniffedPdfMetadata): Promise<SniffedPdfMetadata> {
+export async function lookupCrossrefMetadata(
+  metadata: SniffedPdfMetadata,
+  config?: CrossrefLookupConfig,
+): Promise<OnlineMetadataMatch | null> {
   const base = normalizeMetadata(metadata)
   let work: CrossrefWork | null = null
+  let matchedBy: OnlineMetadataMatchStrategy | null = null
 
   if (base.doi) {
-    work = await fetchCrossrefByDoi(base.doi)
+    work = await fetchCrossrefByDoi(base.doi, config)
+    if (work) matchedBy = 'doi'
   }
 
   if (!work && base.title) {
-    work = await fetchCrossrefByQuery(base.title, base.authors?.[0])
+    work = await fetchCrossrefByQuery(base.title, base.authors?.[0], config)
+    if (work) matchedBy = 'title'
   }
 
-  if (!work) return base
+  if (!work || !matchedBy) return null
 
   const title = work.title?.[0]?.trim() || base.title
   const authors = parseCrossrefAuthors(work)
   const year = parseCrossrefYear(work) ?? base.year
   const doi = work.DOI || base.doi
 
-  return normalizeMetadata({
-    ...base,
-    title,
-    authors: authors.length ? authors : base.authors,
-    year,
-    doi,
+  return {
+    ...normalizeMetadata({
+      ...base,
+      title,
+      authors: authors.length ? authors : base.authors,
+      year,
+      doi,
+      source: 'crossref',
+    }),
+    matchedBy,
     source: 'crossref',
-  })
+  }
 }
 
-async function sniffPdfMetadataOffline(filePath: string): Promise<SniffedPdfMetadata> {
+export async function lookupSemanticScholarMetadata(
+  metadata: SniffedPdfMetadata,
+  config?: SemanticScholarLookupConfig,
+): Promise<OnlineMetadataMatch | null> {
+  const base = normalizeMetadata(metadata)
+  let paper: SemanticScholarPaper | null = null
+  let matchedBy: OnlineMetadataMatchStrategy | null = null
+
+  if (base.doi) {
+    paper = await fetchSemanticScholarByDoi(base.doi, config)
+    if (paper) matchedBy = 'doi'
+  }
+
+  if (!paper && base.title) {
+    paper = await fetchSemanticScholarByQuery(base.title, config)
+    if (paper) matchedBy = 'title'
+  }
+
+  if (!paper || !matchedBy) return null
+
+  const authors = parseSemanticScholarAuthors(paper)
+  const doi = paper.externalIds?.DOI || base.doi
+
+  return {
+    ...normalizeMetadata({
+      ...base,
+      title: paper.title?.trim() || base.title,
+      authors: authors.length ? authors : base.authors,
+      year: paper.year ?? base.year,
+      doi,
+      source: 'semantic_scholar',
+    }),
+    matchedBy,
+    source: 'semantic_scholar',
+  }
+}
+
+export async function enrichWithCrossrefMetadata(
+  metadata: SniffedPdfMetadata,
+  config?: CrossrefLookupConfig,
+): Promise<SniffedPdfMetadata> {
+  const matched = await lookupCrossrefMetadata(metadata, config)
+  return matched ?? normalizeMetadata(metadata)
+}
+
+export async function sniffPdfMetadataOffline(filePath: string): Promise<SniffedPdfMetadata> {
   try {
     const bytes = await readFile(filePath)
     const sample = bytes.slice(0, 240_000)
@@ -214,7 +354,7 @@ export async function sniffPdfMetadata(filePath: string): Promise<SniffedPdfMeta
   const offline = await sniffPdfMetadataOffline(filePath)
 
   try {
-    return await enrichWithCrossref(offline)
+    return await enrichWithCrossrefMetadata(offline)
   } catch (error) {
     if (isAbortLikeError(error)) {
       console.info('Crossref enrichment timed out, using offline metadata only.')
