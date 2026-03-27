@@ -7,7 +7,7 @@ export type PositionedComment = DbNote & {
 }
 
 export function buildDocumentCommentTitle(commentNumber: number) {
-  return `Comment ${commentNumber}`
+  return `Note ${commentNumber}`
 }
 
 export function sortDocumentComments<T extends DbNote>(comments: T[]) {
@@ -37,4 +37,3 @@ export function getNextDocumentCommentNumber(notes: DbNote[], documentId: string
     return Math.max(max, note.commentNumber ?? 0)
   }, 0) + 1
 }
-

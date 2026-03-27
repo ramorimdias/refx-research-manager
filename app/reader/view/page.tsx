@@ -1,9 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Highlighter, Loader2, MapPin, MessageSquare, Search, SquareArrowOutUpRight, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Highlighter, Loader2, MapPin, Search, SquareArrowOutUpRight, StickyNote, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,7 +10,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import * as repo from '@/lib/repositories/local-db'
-import { appDataDir, convertFileSrc, copyFile, getCurrentWindow, isTauri, join, mkdir, open, readFile } from '@/lib/tauri/client'
+import { appDataDir, copyFile, getCurrentWindow, isTauri, join, mkdir, open, readFile } from '@/lib/tauri/client'
 import { useAppStore } from '@/lib/store'
 import { buildDocumentCommentTitle, getDocumentPageComments, getNextDocumentCommentNumber } from '@/lib/services/document-comment-service'
 import { extractPdfPageWords, extractSearchPreview, findPdfSearchOccurrences, type PdfWord, type SearchOccurrence } from '@/lib/services/document-processing'
@@ -108,6 +107,7 @@ export default function ReaderViewPage() {
   const [commentDraftContent, setCommentDraftContent] = useState('')
   const [commentDraftPosition, setCommentDraftPosition] = useState<{ x: number; y: number } | null>(null)
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false)
   const [isSelectingCommentPosition, setIsSelectingCommentPosition] = useState(false)
   const [isSavingComment, setIsSavingComment] = useState(false)
   const [viewerError, setViewerError] = useState<string | null>(null)
@@ -250,11 +250,6 @@ export default function ReaderViewPage() {
     return () => window.clearTimeout(timeout)
   }, [document, id, page, updateDocument])
 
-  const fileUrl = useMemo(() => {
-    if (isTauri() && document?.filePath) return convertFileSrc(document.filePath)
-    return ''
-  }, [document?.filePath])
-
   useEffect(() => {
     let cancelled = false
 
@@ -367,8 +362,12 @@ export default function ReaderViewPage() {
       setCommentDraftContent('')
       setCommentDraftPosition(null)
     }
-    setIsSelectingCommentPosition(false)
   }, [page, selectedComment?.content, selectedComment?.id, selectedComment?.positionX, selectedComment?.positionY])
+
+  useEffect(() => {
+    setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(false)
+  }, [page])
 
   useEffect(() => {
     setActiveOccurrenceIndex(0)
@@ -619,13 +618,47 @@ export default function ReaderViewPage() {
 
     setCommentDraftPosition({ x, y })
     setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(true)
+  }
+
+  const handleStartNewComment = () => {
+    setSelectedCommentId(null)
+    setCommentDraftContent('')
+    setCommentDraftPosition(null)
+    setIsNoteEditorOpen(false)
+    setIsSelectingCommentPosition(true)
   }
 
   const handleSelectComment = (commentId: string, options?: { scrollIntoView?: boolean }) => {
     if (options?.scrollIntoView) {
       shouldAutoScrollCommentRef.current = true
     }
+    setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(false)
     setSelectedCommentId(commentId)
+  }
+
+  const handleOpenCommentEditor = () => {
+    if (!selectedComment && !commentDraftPosition) return
+    setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(true)
+  }
+
+  const handleCancelCommentEditor = () => {
+    if (selectedComment) {
+      setCommentDraftContent(selectedComment.content)
+      setCommentDraftPosition(
+        typeof selectedComment.positionX === 'number' && typeof selectedComment.positionY === 'number'
+          ? { x: selectedComment.positionX, y: selectedComment.positionY }
+          : null,
+      )
+    } else {
+      setCommentDraftContent('')
+      setCommentDraftPosition(null)
+    }
+
+    setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(false)
   }
 
   const handleSaveComment = async () => {
@@ -654,6 +687,7 @@ export default function ReaderViewPage() {
       }
 
       await loadNotes()
+      setIsNoteEditorOpen(false)
     } finally {
       setIsSavingComment(false)
       setIsSelectingCommentPosition(false)
@@ -671,6 +705,7 @@ export default function ReaderViewPage() {
     setCommentDraftContent('')
     setCommentDraftPosition(null)
     setIsSelectingCommentPosition(false)
+    setIsNoteEditorOpen(false)
   }
 
   if (!document) {
@@ -782,7 +817,7 @@ export default function ReaderViewPage() {
               {searchOccurrences.length === 0 ? '0 results' : `${activeOccurrenceIndex + 1}/${searchOccurrences.length}`}
             </span>
           </div>
-          {fileUrl && (
+          {document.filePath && (
             <ReaderToolbarIconButton
               label="Detach into new window"
               onClick={() => void detachReaderWindow()}
@@ -791,7 +826,7 @@ export default function ReaderViewPage() {
               <SquareArrowOutUpRight className="h-4 w-4" />
             </ReaderToolbarIconButton>
           )}
-          {fileUrl && (
+          {document.filePath && (
             <Button
               variant="outline"
               size="sm"
@@ -813,20 +848,6 @@ export default function ReaderViewPage() {
                   ? 'Re-run OCR'
                   : 'Run OCR'}
             </Button>
-          )}
-          {fileUrl && (
-            <div className="ml-auto">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button asChild variant="ghost" size="icon" aria-label="Open external viewer" title="Open external viewer" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                    <a href={fileUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Open external viewer</TooltipContent>
-              </Tooltip>
-            </div>
           )}
         </div>
         <div ref={readerViewportRef} className="flex-1 overflow-auto bg-muted/30 p-4">
@@ -856,7 +877,7 @@ export default function ReaderViewPage() {
                       {pageWords.map((word, wordIndex) => (
                         <span
                           key={`${wordIndex}-${word.left}-${word.top}`}
-                          className="absolute select-text whitespace-pre text-transparent"
+                          className="absolute cursor-text select-text whitespace-pre text-transparent"
                           style={{
                             left: `${word.left * (zoom / 100)}px`,
                             top: `${word.top * (zoom / 100)}px`,
@@ -870,7 +891,7 @@ export default function ReaderViewPage() {
                         </span>
                       ))}
                     </div>
-                    <div className="absolute inset-0 z-10 overflow-hidden">
+                    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
                       {positionedPageComments.map((comment) => {
                         const isActive = comment.id === selectedCommentId
                         return (
@@ -882,14 +903,14 @@ export default function ReaderViewPage() {
                               handleSelectComment(comment.id, { scrollIntoView: true })
                             }}
                             className={cn(
-                              'absolute flex h-8 w-8 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full border border-white text-xs font-semibold text-white shadow-lg transition hover:scale-105',
+                              'pointer-events-auto absolute flex h-8 w-8 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full border border-white text-xs font-semibold text-white shadow-lg transition hover:scale-105',
                               isActive ? 'z-20 bg-primary ring-2 ring-primary/30' : 'bg-amber-500 hover:bg-amber-600',
                             )}
                             style={{
                               left: `${(comment.positionX ?? 0) * renderedPageSize.width}px`,
                               top: `${(comment.positionY ?? 0) * renderedPageSize.height}px`,
                             }}
-                            aria-label={`Open ${buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}`}
+                            aria-label={`Select ${buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}`}
                             title={buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}
                           >
                             {comment.commentNumber}
@@ -956,11 +977,6 @@ export default function ReaderViewPage() {
                     {isRunningOcr || document.ocrStatus === 'processing' ? 'Running OCR...' : 'Run OCR'}
                   </Button>
                 </div>
-              )}
-              {fileUrl && (
-                <a className="text-sm text-primary underline" href={fileUrl} target="_blank" rel="noreferrer">
-                  Open with system viewer
-                </a>
               )}
             </div>
           )}
@@ -1033,79 +1049,64 @@ export default function ReaderViewPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <MessageSquare className="h-4 w-4" />
-                Page comments
+                <StickyNote className="h-4 w-4" />
+                Page Notes
               </div>
-              <div className="flex items-center gap-2">
-                <ReaderToolbarIconButton
-                  label={isSelectingCommentPosition ? 'Cancel position selection' : 'Choose comment position on page'}
-                  onClick={() => setIsSelectingCommentPosition((current) => !current)}
-                  disabled={!pdfDocument}
-                  className={cn(isSelectingCommentPosition && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}
-                >
-                  <MapPin className="h-4 w-4" />
-                </ReaderToolbarIconButton>
-                {selectedComment ? (
+              {isSelectingCommentPosition ? (
+                <Button variant="outline" size="sm" onClick={handleCancelCommentEditor}>
+                  Cancel
+                </Button>
+              ) : (
+                <Button size="sm" onClick={handleStartNewComment} disabled={!pdfDocument}>
+                  New Note
+                </Button>
+              )}
+            </div>
+
+            {isSelectingCommentPosition ? (
+              <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 text-sm text-foreground">
+                Click anywhere on the page to place {selectedComment ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber) : buildDocumentCommentTitle(nextCommentNumber)}.
+              </div>
+            ) : null}
+
+            {isNoteEditorOpen ? (
+              <div className="rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {selectedComment
+                          ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber)
+                          : buildDocumentCommentTitle(nextCommentNumber)}
+                      </Badge>
+                      <span className="text-sm font-medium">{selectedComment ? 'Edit Note' : 'New Note'}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {commentDraftPosition
+                        ? `Balloon at ${Math.round(commentDraftPosition.x * 100)}%, ${Math.round(commentDraftPosition.y * 100)}%`
+                        : 'Choose where the balloon should go on the page first.'}
+                    </p>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setSelectedCommentId(null)
-                      setCommentDraftContent('')
-                      setCommentDraftPosition(null)
-                      setIsSelectingCommentPosition(false)
-                    }}
+                    onClick={() => setIsSelectingCommentPosition(true)}
+                    disabled={!pdfDocument}
                   >
-                    New comment
+                    <MapPin className="mr-2 h-4 w-4" />
+                    {commentDraftPosition ? 'Move Balloon' : 'Choose Position'}
                   </Button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="rounded-lg border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
-                    {selectedComment
-                      ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber)
-                      : buildDocumentCommentTitle(nextCommentNumber)}
-                  </Badge>
-                  {commentDraftPosition ? (
-                    <span className="text-xs text-muted-foreground">
-                      Positioned at {Math.round(commentDraftPosition.x * 100)}%, {Math.round(commentDraftPosition.y * 100)}%
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No page position selected yet.</span>
-                  )}
                 </div>
-                {selectedComment?.updatedAt ? (
-                  <span className="text-xs text-muted-foreground">
-                    Updated {new Date(selectedComment.updatedAt).toLocaleString()}
-                  </span>
-                ) : null}
-              </div>
-              <Textarea
-                value={commentDraftContent}
-                onChange={(event) => setCommentDraftContent(event.target.value)}
-                placeholder="Add a page comment"
-                className="mt-3 min-h-32"
-              />
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Click the location button, then click on the PDF page to place the comment marker.
-                </p>
-                <div className="flex items-center gap-2">
-                  {selectedComment ? (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => void handleDeleteComment()}
-                      disabled={!isDesktopApp || isSavingComment}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </Button>
-                  ) : null}
+                <Textarea
+                  value={commentDraftContent}
+                  onChange={(event) => setCommentDraftContent(event.target.value)}
+                  placeholder="Write your note"
+                  className="mt-3 min-h-32"
+                />
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={handleCancelCommentEditor}>
+                    Cancel
+                  </Button>
                   <Button
                     size="sm"
                     onClick={() => void handleSaveComment()}
@@ -1114,17 +1115,17 @@ export default function ReaderViewPage() {
                     {isSavingComment
                       ? 'Saving...'
                       : selectedComment
-                        ? 'Update comment'
-                        : 'Save comment'}
+                        ? 'Save Note'
+                        : 'Create Note'}
                   </Button>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{currentPageComments.length} comment{currentPageComments.length === 1 ? '' : 's'} on this page</span>
-                {currentPageComments.length > 0 ? <span>Click a balloon to focus its comment.</span> : null}
+                <span>{currentPageComments.length} note{currentPageComments.length === 1 ? '' : 's'} on this page</span>
+                {currentPageComments.length > 0 ? <span>Click a balloon to focus its note card.</span> : null}
               </div>
               {currentPageComments.length > 0 ? (
                 <div className="space-y-2">
@@ -1154,7 +1155,7 @@ export default function ReaderViewPage() {
                                 {buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}
                               </Badge>
                               <span className="text-xs text-muted-foreground">
-                                {hasMarker ? 'Marker placed on page' : 'No marker yet'}
+                                {hasMarker ? 'Balloon placed on page' : 'No balloon yet'}
                               </span>
                             </div>
                             <span className="text-xs text-muted-foreground">
@@ -1162,16 +1163,32 @@ export default function ReaderViewPage() {
                             </span>
                           </div>
                           <div className="mt-2 text-sm leading-6 text-foreground">
-                            {comment.content || 'No comment text yet.'}
+                            {comment.content || 'No note text yet.'}
                           </div>
                         </button>
+                        {isActive ? (
+                          <div className="mt-3 flex items-center justify-end gap-2 border-t pt-3">
+                            <Button variant="outline" size="sm" onClick={handleOpenCommentEditor}>
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => void handleDeleteComment()}
+                              disabled={!isDesktopApp || isSavingComment}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
                 </div>
               ) : (
                 <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-                  No comments on this page yet.
+                  No notes on this page yet.
                 </div>
               )}
             </div>
