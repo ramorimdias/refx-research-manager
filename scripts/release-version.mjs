@@ -24,7 +24,6 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     stdio: 'inherit',
-    shell: true,
     ...options,
   })
 
@@ -37,7 +36,6 @@ function capture(command, args) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     encoding: 'utf8',
-    shell: true,
   })
 
   if ((result.status ?? 1) !== 0) {
