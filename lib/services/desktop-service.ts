@@ -4,6 +4,7 @@ import { isTauri, open } from '@/lib/tauri/client'
 import { loadAppSettings } from '@/lib/app-settings'
 import * as repo from '@/lib/repositories/local-db'
 import { ingestImportedPdfDocument } from '@/lib/services/document-ingestion-service'
+import { normalizeErrorMessage } from '@/lib/utils/error'
 
 export async function bootstrapDesktop() {
   await repo.initializeDatabase()
@@ -35,9 +36,22 @@ export async function importPdfs(libraryId: string, sourcePaths?: string[]) {
         enableSemanticClassification: settings.advancedClassificationMode !== 'off',
         semanticClassificationMode: settings.advancedClassificationMode,
       },
-    )
+    ).catch((error) => ({
+      document: null,
+      stages: [],
+      success: false,
+      error: normalizeErrorMessage(error, `Failed to import ${src}`),
+    }))
+
+    const failedStageError = Array.isArray(result.stages)
+      ? result.stages.find((stage) => stage.status === 'failed')?.error
+      : undefined
+    const importError = result.error ?? failedStageError
+
     if (!result.success) {
-      console.error('Document ingestion failed:', result)
+      console.error(
+        `Document ingestion failed for "${src}": ${importError ?? 'Unknown import error'}`,
+      )
     }
     if (result.document) {
       imported.push(result.document)

@@ -400,6 +400,7 @@ export default function ReaderViewPage() {
 
     const handleWheel = (event: WheelEvent) => {
       if (pageScrollLockRef.current || !pdfDocument) return
+      if (isSelectingCommentPosition) return
 
       const { scrollTop, clientHeight, scrollHeight } = viewport
       const nearTop = scrollTop <= 4
@@ -426,7 +427,7 @@ export default function ReaderViewPage() {
     return () => {
       viewport.removeEventListener('wheel', handleWheel)
     }
-  }, [page, pdfDocument])
+  }, [page, pdfDocument, isSelectingCommentPosition])
 
   useEffect(() => {
     let cancelled = false
@@ -858,7 +859,7 @@ export default function ReaderViewPage() {
           )}
           {isSelectingCommentPosition && (
             <div className="mx-auto mb-3 max-w-5xl rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
-              Click on the page to place {selectedComment ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber) : buildDocumentCommentTitle(nextCommentNumber)}.
+              Select where {selectedComment ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber) : buildDocumentCommentTitle(nextCommentNumber)} applies on the page.
             </div>
           )}
           {pdfDocument ? (
@@ -992,9 +993,6 @@ export default function ReaderViewPage() {
             <Search className="h-4 w-4" />
             Document Search
           </div>
-          <p className="text-xs text-muted-foreground">
-            Phase 1 uses exact PDF word boxes when available. Otherwise it falls back to page-level hits from stored extracted text and cannot draw exact highlight rectangles.
-          </p>
           <div className="space-y-2">
             <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Keyword or phrase" />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1056,16 +1054,17 @@ export default function ReaderViewPage() {
                 <Button variant="outline" size="sm" onClick={handleCancelCommentEditor}>
                   Cancel
                 </Button>
-              ) : (
+              ) : !isNoteEditorOpen ? (
                 <Button size="sm" onClick={handleStartNewComment} disabled={!pdfDocument}>
                   New Note
                 </Button>
-              )}
+              ) : null
+              }
             </div>
 
             {isSelectingCommentPosition ? (
               <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 text-sm text-foreground">
-                Click anywhere on the page to place {selectedComment ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber) : buildDocumentCommentTitle(nextCommentNumber)}.
+                Select where {selectedComment ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber) : buildDocumentCommentTitle(nextCommentNumber)} applies on the page.
               </div>
             ) : null}
 
@@ -1079,13 +1078,7 @@ export default function ReaderViewPage() {
                           ? buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber)
                           : buildDocumentCommentTitle(nextCommentNumber)}
                       </Badge>
-                      <span className="text-sm font-medium">{selectedComment ? 'Edit Note' : 'New Note'}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {commentDraftPosition
-                        ? `Balloon at ${Math.round(commentDraftPosition.x * 100)}%, ${Math.round(commentDraftPosition.y * 100)}%`
-                        : 'Choose where the balloon should go on the page first.'}
-                    </p>
                   </div>
                   <Button
                     variant="outline"
@@ -1125,7 +1118,6 @@ export default function ReaderViewPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{currentPageComments.length} note{currentPageComments.length === 1 ? '' : 's'} on this page</span>
-                {currentPageComments.length > 0 ? <span>Click a balloon to focus its note card.</span> : null}
               </div>
               {currentPageComments.length > 0 ? (
                 <div className="space-y-2">
@@ -1154,9 +1146,6 @@ export default function ReaderViewPage() {
                               <Badge variant={isActive ? 'default' : 'secondary'}>
                                 {buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}
                               </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {hasMarker ? 'Balloon placed on page' : 'No balloon yet'}
-                              </span>
                             </div>
                             <span className="text-xs text-muted-foreground">
                               {new Date(comment.updatedAt).toLocaleString()}

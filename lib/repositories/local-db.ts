@@ -59,6 +59,8 @@ export type DbDocument = {
   favorite: boolean
   lastOpenedAt?: string
   lastReadPage?: number
+  commentaryText?: string
+  commentaryUpdatedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -101,6 +103,8 @@ export type DbCreateDocumentInput = {
   processingError?: string
   processingUpdatedAt?: string
   lastProcessedAt?: string
+  commentaryText?: string
+  commentaryUpdatedAt?: string
 }
 
 export type DbUpdateDocumentMetadataInput = {
@@ -144,6 +148,8 @@ export type DbUpdateDocumentMetadataInput = {
   favorite?: boolean
   lastOpenedAt?: string
   lastReadPage?: number
+  commentaryText?: string
+  commentaryUpdatedAt?: string
 }
 
 export type DbNote = {
@@ -167,6 +173,132 @@ export type DbAnnotation = {
   kind: string
   content?: string
   createdAt: string
+}
+
+export type DbDocumentRelation = {
+  id: string
+  sourceDocumentId: string
+  targetDocumentId: string
+  linkType: string
+  linkOrigin: string
+  relationStatus?: string
+  confidence?: number
+  label?: string
+  notes?: string
+  matchMethod?: string
+  rawReferenceText?: string
+  normalizedReferenceText?: string
+  normalizedTitle?: string
+  normalizedFirstAuthor?: string
+  referenceIndex?: number
+  parseConfidence?: number
+  parseWarnings?: string
+  matchDebugInfo?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DbCreateDocumentRelationInput = {
+  sourceDocumentId: string
+  targetDocumentId: string
+  linkType: string
+  linkOrigin: string
+  relationStatus?: string
+  confidence?: number
+  label?: string
+  notes?: string
+  matchMethod?: string
+  rawReferenceText?: string
+  normalizedReferenceText?: string
+  normalizedTitle?: string
+  normalizedFirstAuthor?: string
+  referenceIndex?: number
+  parseConfidence?: number
+  parseWarnings?: string
+  matchDebugInfo?: string
+}
+
+export type DbUpdateDocumentRelationInput = {
+  linkType?: string
+  relationStatus?: string
+  confidence?: number
+  label?: string
+  notes?: string
+}
+
+export type DbGraphView = {
+  id: string
+  libraryId: string
+  name: string
+  description?: string
+  relationFilter: string
+  colorMode: string
+  sizeMode: string
+  scopeMode: string
+  neighborhoodDepth: string
+  focusMode: boolean
+  hideOrphans: boolean
+  confidenceThreshold: number
+  yearMin?: number
+  yearMax?: number
+  selectedDocumentId?: string
+  documentIdsJson?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DbCreateGraphViewInput = {
+  libraryId: string
+  name: string
+  description?: string
+  relationFilter: string
+  colorMode: string
+  sizeMode: string
+  scopeMode: string
+  neighborhoodDepth: string
+  focusMode: boolean
+  hideOrphans: boolean
+  confidenceThreshold: number
+  yearMin?: number
+  yearMax?: number
+  selectedDocumentId?: string
+  documentIdsJson?: string
+}
+
+export type DbUpdateGraphViewInput = {
+  name?: string
+  description?: string
+  relationFilter?: string
+  colorMode?: string
+  sizeMode?: string
+  scopeMode?: string
+  neighborhoodDepth?: string
+  focusMode?: boolean
+  hideOrphans?: boolean
+  confidenceThreshold?: number
+  yearMin?: number
+  yearMax?: number
+  selectedDocumentId?: string
+  documentIdsJson?: string
+}
+
+export type DbGraphViewNodeLayout = {
+  graphViewId: string
+  documentId: string
+  positionX: number
+  positionY: number
+  pinned: boolean
+  hidden: boolean
+  updatedAt: string
+}
+
+export type DbUpsertGraphViewNodeLayoutInput = {
+  graphViewId: string
+  documentId: string
+  positionX: number
+  positionY: number
+  pinned?: boolean
+  hidden?: boolean
 }
 
 export async function initializeDatabase() {
@@ -235,6 +367,66 @@ export async function listAnnotationsForDocument(documentId: string) {
 
 export async function listAllAnnotations() {
   return invoke<DbAnnotation[]>('list_all_annotations')
+}
+
+export async function createRelation(input: DbCreateDocumentRelationInput) {
+  return invoke<DbDocumentRelation>('create_document_relation', { input })
+}
+
+export async function updateRelation(id: string, input: DbUpdateDocumentRelationInput) {
+  return invoke<DbDocumentRelation | null>('update_document_relation', { id, input })
+}
+
+export async function deleteRelation(id: string) {
+  return invoke<boolean>('delete_document_relation', { id })
+}
+
+export async function listRelationsForLibrary(libraryId: string) {
+  return invoke<DbDocumentRelation[]>('list_document_relations_for_library', { libraryId })
+}
+
+export async function rebuildAutoCitationRelations(libraryId: string) {
+  return invoke<DbDocumentRelation[]>('rebuild_auto_citation_relations', {
+    input: { libraryId },
+  })
+}
+
+export async function rebuildAutoCitationRelationsForDocument(documentId: string) {
+  return invoke<DbDocumentRelation[]>('rebuild_auto_citation_relations_for_document', {
+    input: { documentId },
+  })
+}
+
+export async function listGraphViews(libraryId: string) {
+  return invoke<DbGraphView[]>('list_graph_views', { libraryId })
+}
+
+export async function createGraphView(input: DbCreateGraphViewInput) {
+  return invoke<DbGraphView>('create_graph_view', { input })
+}
+
+export async function updateGraphView(id: string, input: DbUpdateGraphViewInput) {
+  return invoke<DbGraphView | null>('update_graph_view', { id, input })
+}
+
+export async function deleteGraphView(id: string) {
+  return invoke<boolean>('delete_graph_view', { id })
+}
+
+export async function duplicateGraphView(id: string) {
+  return invoke<DbGraphView>('duplicate_graph_view', { id })
+}
+
+export async function listGraphViewNodeLayouts(graphViewId: string) {
+  return invoke<DbGraphViewNodeLayout[]>('list_graph_view_node_layouts', { graphViewId })
+}
+
+export async function upsertGraphViewNodeLayout(input: DbUpsertGraphViewNodeLayoutInput) {
+  return invoke<DbGraphViewNodeLayout>('upsert_graph_view_node_layout', { input })
+}
+
+export async function resetGraphViewNodeLayouts(graphViewId: string, documentId?: string) {
+  return invoke<void>('reset_graph_view_node_layouts', { graphViewId, documentId })
 }
 
 export async function createNote(input: {

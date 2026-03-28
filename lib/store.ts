@@ -7,6 +7,10 @@ import { deriveMetadataStatus, markMetadataFieldProvenanceAsUser, markMetadataFi
 import { parseDocumentClassification } from '@/lib/services/document-classification-service'
 import { resumeDocumentIngestion } from '@/lib/services/document-ingestion-service'
 import {
+  rebuildCitationRelationsForDocument,
+  rebuildCitationRelationsForLibrary,
+} from '@/lib/services/document-citation-relation-service'
+import {
   buildAcceptedSuggestionUpdates,
   buildManualTagUpdates,
   buildRejectedSuggestionUpdates,
@@ -21,6 +25,13 @@ import { clearDocumentSearchIndex, indexDocument, removeDocumentFromIndex } from
 import * as repo from '@/lib/repositories/local-db'
 import type {
   Document,
+  DocumentRelation,
+  DocumentRelationStatus,
+  DocumentRelationLinkOrigin,
+  DocumentRelationLinkType,
+  CitationMatchMethod,
+  GraphView,
+  GraphViewNodeLayout,
   DocumentFilters,
   EditableMetadataField,
   DocumentSort,
@@ -33,6 +44,9 @@ import type {
 
 type AppNote = repo.DbNote
 type AppAnnotation = repo.DbAnnotation
+type AppRelation = DocumentRelation
+type AppGraphView = GraphView
+type AppGraphViewNodeLayout = GraphViewNodeLayout
 
 interface AppState {
   initialized: boolean
@@ -41,6 +55,9 @@ interface AppState {
   documents: Document[]
   annotations: AppAnnotation[]
   notes: AppNote[]
+  relations: AppRelation[]
+  graphViews: AppGraphView[]
+  graphViewLayouts: AppGraphViewNodeLayout[]
   activeLibraryId: string | null
   activeDocumentId: string | null
   viewMode: ViewMode
@@ -78,6 +95,82 @@ interface AppState {
   removeDocumentsFromLibrary: (documentIds: string[]) => Promise<number>
   moveDocumentsToLibrary: (documentIds: string[], targetLibraryId: string) => Promise<number>
   loadNotes: () => Promise<void>
+  loadRelations: (libraryId?: string | null) => Promise<void>
+  loadGraphViews: (libraryId?: string | null) => Promise<void>
+  loadGraphViewLayouts: (graphViewId: string | null) => Promise<void>
+  createGraphView: (input: {
+    libraryId: string
+    name: string
+    description?: string
+    relationFilter: GraphView['relationFilter']
+    colorMode: GraphView['colorMode']
+    sizeMode: GraphView['sizeMode']
+    scopeMode: GraphView['scopeMode']
+    neighborhoodDepth: GraphView['neighborhoodDepth']
+    focusMode: boolean
+    hideOrphans: boolean
+    confidenceThreshold: number
+    yearMin?: number
+    yearMax?: number
+    selectedDocumentId?: string
+    documentIds: string[]
+  }) => Promise<GraphView | null>
+  updateGraphView: (id: string, input: {
+    name?: string
+    description?: string
+    relationFilter?: GraphView['relationFilter']
+    colorMode?: GraphView['colorMode']
+    sizeMode?: GraphView['sizeMode']
+    scopeMode?: GraphView['scopeMode']
+    neighborhoodDepth?: GraphView['neighborhoodDepth']
+    focusMode?: boolean
+    hideOrphans?: boolean
+    confidenceThreshold?: number
+    yearMin?: number
+    yearMax?: number
+    selectedDocumentId?: string
+    documentIds?: string[]
+  }) => Promise<GraphView | null>
+  duplicateGraphView: (id: string) => Promise<GraphView | null>
+  deleteGraphView: (id: string) => Promise<boolean>
+  upsertGraphViewNodeLayout: (input: {
+    graphViewId: string
+    documentId: string
+    x: number
+    y: number
+    pinned?: boolean
+    hidden?: boolean
+  }) => Promise<GraphViewNodeLayout | null>
+  resetGraphViewNodeLayouts: (graphViewId: string, documentId?: string) => Promise<void>
+  createRelation: (input: {
+    sourceDocumentId: string
+    targetDocumentId: string
+    linkType?: DocumentRelationLinkType
+    linkOrigin?: DocumentRelationLinkOrigin
+    relationStatus?: DocumentRelationStatus
+    confidence?: number
+    label?: string
+    notes?: string
+    matchMethod?: CitationMatchMethod
+    rawReferenceText?: string
+    normalizedReferenceText?: string
+    normalizedTitle?: string
+    normalizedFirstAuthor?: string
+    referenceIndex?: number
+    parseConfidence?: number
+    parseWarnings?: string[]
+    matchDebugInfo?: string
+  }) => Promise<DocumentRelation | null>
+  updateRelation: (id: string, input: {
+    linkType?: DocumentRelationLinkType
+    relationStatus?: DocumentRelationStatus
+    confidence?: number
+    label?: string
+    notes?: string
+  }) => Promise<DocumentRelation | null>
+  deleteRelation: (id: string) => Promise<boolean>
+  rebuildAutoCitationRelations: (libraryId?: string | null) => Promise<void>
+  rebuildAutoCitationRelationsForDocument: (documentId: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
   addDocumentTag: (id: string, tagName: string) => Promise<void>
   removeDocumentTag: (id: string, tagName: string) => Promise<void>
@@ -191,6 +284,8 @@ function toUiDocument(
     tags: d.tags ?? [],
     commentCount: counts?.commentCount ?? 0,
     notesCount: counts?.notesCount ?? 0,
+    commentaryText: d.commentaryText,
+    commentaryUpdatedAt: d.commentaryUpdatedAt ? new Date(d.commentaryUpdatedAt) : undefined,
     addedAt: d.createdAt ? new Date(d.createdAt) : new Date(),
     createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
     updatedAt: d.updatedAt ? new Date(d.updatedAt) : new Date(),
@@ -228,17 +323,105 @@ function previewState() {
     documents: [] as Document[],
     annotations: [] as AppAnnotation[],
     notes: [] as AppNote[],
+    relations: [] as AppRelation[],
+    graphViews: [] as AppGraphView[],
+    graphViewLayouts: [] as AppGraphViewNodeLayout[],
     activeLibraryId: DEFAULT_LIBRARY_ID,
     activeDocumentId: null,
   }
 }
 
+function toUiRelation(relation: repo.DbDocumentRelation): DocumentRelation {
+  const parseWarnings = (() => {
+    if (!relation.parseWarnings) return undefined
+    try {
+      return JSON.parse(relation.parseWarnings) as string[]
+    } catch {
+      return undefined
+    }
+  })()
+
+  return {
+    id: relation.id,
+    sourceDocumentId: relation.sourceDocumentId,
+    targetDocumentId: relation.targetDocumentId,
+    linkType: relation.linkType as DocumentRelationLinkType,
+    linkOrigin: relation.linkOrigin as DocumentRelationLinkOrigin,
+    relationStatus: relation.relationStatus as DocumentRelationStatus | undefined,
+    confidence: relation.confidence,
+    label: relation.label,
+    notes: relation.notes,
+    matchMethod: relation.matchMethod as CitationMatchMethod | undefined,
+    rawReferenceText: relation.rawReferenceText,
+    normalizedReferenceText: relation.normalizedReferenceText,
+    normalizedTitle: relation.normalizedTitle,
+    normalizedFirstAuthor: relation.normalizedFirstAuthor,
+    referenceIndex: relation.referenceIndex,
+    parseConfidence: relation.parseConfidence,
+    parseWarnings,
+    matchDebugInfo: relation.matchDebugInfo,
+    createdAt: new Date(relation.createdAt),
+    updatedAt: new Date(relation.updatedAt),
+  }
+}
+
+function toUiGraphView(view: repo.DbGraphView): GraphView {
+  const documentIds = (() => {
+    if (!view.documentIdsJson) return []
+    try {
+      const parsed = JSON.parse(view.documentIdsJson)
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : []
+    } catch {
+      return []
+    }
+  })()
+
+  return {
+    id: view.id,
+    libraryId: view.libraryId,
+    name: view.name,
+    description: view.description,
+    relationFilter: view.relationFilter as GraphView['relationFilter'],
+    colorMode: view.colorMode as GraphView['colorMode'],
+    sizeMode: view.sizeMode as GraphView['sizeMode'],
+    scopeMode: view.scopeMode as GraphView['scopeMode'],
+    neighborhoodDepth: view.neighborhoodDepth as GraphView['neighborhoodDepth'],
+    focusMode: view.focusMode,
+    hideOrphans: view.hideOrphans,
+    confidenceThreshold: view.confidenceThreshold,
+    yearMin: view.yearMin,
+    yearMax: view.yearMax,
+    selectedDocumentId: view.selectedDocumentId,
+    documentIds,
+    createdAt: new Date(view.createdAt),
+    updatedAt: new Date(view.updatedAt),
+  }
+}
+
+function toUiGraphViewNodeLayout(layout: repo.DbGraphViewNodeLayout): GraphViewNodeLayout {
+  return {
+    graphViewId: layout.graphViewId,
+    documentId: layout.documentId,
+    x: layout.positionX,
+    y: layout.positionY,
+    pinned: layout.pinned,
+    hidden: layout.hidden,
+    updatedAt: new Date(layout.updatedAt),
+  }
+}
+
 async function fetchDesktopData() {
   const libraries = await bootstrapDesktop()
-  const [documents, notes, annotations] = await Promise.all([
+  const [documents, notes, annotations, relationGroups, graphViewGroups] = await Promise.all([
     repo.listAllDocuments(),
     repo.listNotes(),
     repo.listAllAnnotations(),
+    Promise.all(
+      libraries.map((library) => repo.listRelationsForLibrary(library.id)),
+    ),
+    Promise.all(
+      libraries.map((library) => repo.listGraphViews(library.id)),
+    ),
   ])
   const noteCounts = notes.reduce<Record<string, number>>((acc, note) => {
     if (note.documentId) {
@@ -261,6 +444,8 @@ async function fetchDesktopData() {
     documents: uiDocuments,
     notes,
     annotations,
+    relations: relationGroups.flat().map(toUiRelation),
+    graphViews: graphViewGroups.flat().map(toUiGraphView),
   }
 }
 
@@ -322,6 +507,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   documents: [],
   annotations: [],
   notes: [],
+  relations: [],
+  graphViews: [],
+  graphViewLayouts: [],
   activeLibraryId: null,
   activeDocumentId: null,
   viewMode: 'table',
@@ -342,7 +530,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
 
-    const { libraries, documents, notes, annotations } = await fetchDesktopData()
+    const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
     const currentActiveLibraryId = get().activeLibraryId
     const activeLibraryId = libraries.some((library) => library.id === currentActiveLibraryId)
       ? currentActiveLibraryId
@@ -355,6 +543,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       documents,
       annotations,
       notes,
+      relations,
+      graphViews,
+      graphViewLayouts: [],
       activeLibraryId,
       activeDocumentId: get().activeDocumentId,
     })
@@ -366,7 +557,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
 
-    const { libraries, documents, notes, annotations } = await fetchDesktopData()
+    const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
     const activeLibraryId = libraries.some((library) => library.id === get().activeLibraryId)
       ? get().activeLibraryId
       : libraries[0]?.id ?? null
@@ -379,6 +570,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       documents,
       annotations,
       notes,
+      relations,
+      graphViews,
       activeLibraryId,
       activeDocumentId,
     })
@@ -444,11 +637,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const created = await repo.createLibrary(input)
-    const { libraries, documents, notes } = await fetchDesktopData()
+    const { libraries, documents, notes, relations, graphViews } = await fetchDesktopData()
     set({
       libraries,
       documents,
       notes,
+      relations,
+      graphViews,
       activeLibraryId: created.id,
     })
   },
@@ -594,6 +789,291 @@ export const useAppStore = create<AppState>((set, get) => ({
         notesCount: noteCounts[document.id] ?? 0,
       })),
     }))
+  },
+
+  loadRelations: async (libraryId) => {
+    if (!get().isDesktopApp) {
+      set({ relations: [] })
+      return
+    }
+
+    const targetLibraryId = libraryId ?? get().activeLibraryId
+    if (!targetLibraryId) {
+      set({ relations: [] })
+      return
+    }
+
+    const relationRows = await repo.listRelationsForLibrary(targetLibraryId)
+    const targetDocumentIds = new Set(
+      get().documents
+        .filter((document) => document.libraryId === targetLibraryId)
+        .map((document) => document.id),
+    )
+
+    set((state) => ({
+      relations: [
+        ...state.relations.filter(
+          (relation) =>
+            !targetDocumentIds.has(relation.sourceDocumentId)
+            && !targetDocumentIds.has(relation.targetDocumentId),
+        ),
+        ...relationRows.map(toUiRelation),
+      ],
+    }))
+  },
+
+  loadGraphViews: async (libraryId) => {
+    if (!get().isDesktopApp) {
+      set({ graphViews: [] })
+      return
+    }
+
+    const targetLibraryId = libraryId ?? get().activeLibraryId
+    if (!targetLibraryId) {
+      set({ graphViews: [] })
+      return
+    }
+
+    const viewRows = await repo.listGraphViews(targetLibraryId)
+    set((state) => ({
+      graphViews: [
+        ...state.graphViews.filter((view) => view.libraryId !== targetLibraryId),
+        ...viewRows.map(toUiGraphView),
+      ],
+    }))
+  },
+
+  loadGraphViewLayouts: async (graphViewId) => {
+    if (!get().isDesktopApp || !graphViewId) {
+      set({ graphViewLayouts: [] })
+      return
+    }
+
+    const layoutRows = await repo.listGraphViewNodeLayouts(graphViewId)
+    set({
+      graphViewLayouts: layoutRows.map(toUiGraphViewNodeLayout),
+    })
+  },
+
+  createGraphView: async (input) => {
+    if (!get().isDesktopApp) return null
+
+    const created = await repo.createGraphView({
+      libraryId: input.libraryId,
+      name: input.name,
+      description: input.description,
+      relationFilter: input.relationFilter,
+      colorMode: input.colorMode,
+      sizeMode: input.sizeMode,
+      scopeMode: input.scopeMode,
+      neighborhoodDepth: input.neighborhoodDepth,
+      focusMode: input.focusMode,
+      hideOrphans: input.hideOrphans,
+      confidenceThreshold: input.confidenceThreshold,
+      yearMin: input.yearMin,
+      yearMax: input.yearMax,
+      selectedDocumentId: input.selectedDocumentId,
+      documentIdsJson: JSON.stringify(input.documentIds),
+    })
+
+    const nextView = toUiGraphView(created)
+    set((state) => ({
+      graphViews: [...state.graphViews.filter((view) => view.id !== nextView.id), nextView],
+    }))
+    return nextView
+  },
+
+  updateGraphView: async (id, input) => {
+    if (!get().isDesktopApp) return null
+
+    const updated = await repo.updateGraphView(id, {
+      name: input.name,
+      description: input.description,
+      relationFilter: input.relationFilter,
+      colorMode: input.colorMode,
+      sizeMode: input.sizeMode,
+      scopeMode: input.scopeMode,
+      neighborhoodDepth: input.neighborhoodDepth,
+      focusMode: input.focusMode,
+      hideOrphans: input.hideOrphans,
+      confidenceThreshold: input.confidenceThreshold,
+      yearMin: input.yearMin,
+      yearMax: input.yearMax,
+      selectedDocumentId: input.selectedDocumentId,
+      documentIdsJson: input.documentIds ? JSON.stringify(input.documentIds) : undefined,
+    })
+
+    if (!updated) return null
+
+    const nextView = toUiGraphView(updated)
+    set((state) => ({
+      graphViews: state.graphViews.map((view) => (view.id === id ? nextView : view)),
+    }))
+    return nextView
+  },
+
+  duplicateGraphView: async (id) => {
+    if (!get().isDesktopApp) return null
+
+    const duplicated = await repo.duplicateGraphView(id)
+    const nextView = toUiGraphView(duplicated)
+    set((state) => ({
+      graphViews: [...state.graphViews, nextView],
+    }))
+    return nextView
+  },
+
+  deleteGraphView: async (id) => {
+    if (!get().isDesktopApp) return false
+
+    const deleted = await repo.deleteGraphView(id)
+    if (!deleted) return false
+
+    set((state) => ({
+      graphViews: state.graphViews.filter((view) => view.id !== id),
+      graphViewLayouts: state.graphViewLayouts.filter((layout) => layout.graphViewId !== id),
+    }))
+    return true
+  },
+
+  upsertGraphViewNodeLayout: async (input) => {
+    if (!get().isDesktopApp) return null
+
+    const updated = await repo.upsertGraphViewNodeLayout({
+      graphViewId: input.graphViewId,
+      documentId: input.documentId,
+      positionX: input.x,
+      positionY: input.y,
+      pinned: input.pinned,
+      hidden: input.hidden,
+    })
+
+    const nextLayout = toUiGraphViewNodeLayout(updated)
+    set((state) => ({
+      graphViewLayouts: [
+        ...state.graphViewLayouts.filter(
+          (layout) =>
+            !(layout.graphViewId === nextLayout.graphViewId && layout.documentId === nextLayout.documentId),
+        ),
+        nextLayout,
+      ],
+    }))
+    return nextLayout
+  },
+
+  resetGraphViewNodeLayouts: async (graphViewId, documentId) => {
+    if (!get().isDesktopApp) return
+
+    await repo.resetGraphViewNodeLayouts(graphViewId, documentId)
+    if (!documentId) {
+      set((state) => ({
+        graphViewLayouts: state.graphViewLayouts.filter((layout) => layout.graphViewId !== graphViewId),
+      }))
+      return
+    }
+
+    set((state) => ({
+      graphViewLayouts: state.graphViewLayouts.filter(
+        (layout) => !(layout.graphViewId === graphViewId && layout.documentId === documentId),
+      ),
+    }))
+  },
+
+  createRelation: async (input) => {
+    if (!get().isDesktopApp) return null
+
+    const created = await repo.createRelation({
+      sourceDocumentId: input.sourceDocumentId,
+      targetDocumentId: input.targetDocumentId,
+      linkType: input.linkType ?? 'manual',
+      linkOrigin: input.linkOrigin ?? 'user',
+      relationStatus: input.relationStatus,
+      confidence: input.confidence,
+      label: input.label,
+      notes: input.notes,
+      matchMethod: input.matchMethod,
+      rawReferenceText: input.rawReferenceText,
+      normalizedReferenceText: input.normalizedReferenceText,
+      normalizedTitle: input.normalizedTitle,
+      normalizedFirstAuthor: input.normalizedFirstAuthor,
+      referenceIndex: input.referenceIndex,
+      parseConfidence: input.parseConfidence,
+      parseWarnings: input.parseWarnings ? JSON.stringify(input.parseWarnings) : undefined,
+      matchDebugInfo: input.matchDebugInfo,
+    })
+    const nextRelation = toUiRelation(created)
+
+    set((state) => ({
+      relations: [
+        ...state.relations.filter((relation) => relation.id !== nextRelation.id),
+        nextRelation,
+      ],
+    }))
+
+    return nextRelation
+  },
+
+  updateRelation: async (id, input) => {
+    if (!get().isDesktopApp) return null
+
+    const updated = await repo.updateRelation(id, {
+      linkType: input.linkType,
+      relationStatus: input.relationStatus,
+      confidence: input.confidence,
+      label: input.label,
+      notes: input.notes,
+    })
+
+    if (!updated) return null
+
+    const nextRelation = toUiRelation(updated)
+    set((state) => ({
+      relations: state.relations.map((relation) => (relation.id === id ? nextRelation : relation)),
+    }))
+
+    return nextRelation
+  },
+
+  deleteRelation: async (id) => {
+    if (!get().isDesktopApp) {
+      set((state) => ({
+        relations: state.relations.filter((relation) => relation.id !== id),
+      }))
+      return true
+    }
+
+    const deleted = await repo.deleteRelation(id)
+    if (!deleted) return false
+
+    set((state) => ({
+      relations: state.relations.filter((relation) => relation.id !== id),
+    }))
+    return true
+  },
+
+  rebuildAutoCitationRelations: async (libraryId) => {
+    if (!get().isDesktopApp) return
+
+    const targetLibraryId = libraryId ?? get().activeLibraryId
+    if (!targetLibraryId) return
+
+    const libraryDocuments = get().documents.filter((document) => document.libraryId === targetLibraryId)
+    await rebuildCitationRelationsForLibrary(targetLibraryId, libraryDocuments)
+    await get().loadRelations(targetLibraryId)
+  },
+
+  rebuildAutoCitationRelationsForDocument: async (documentId) => {
+    if (!get().isDesktopApp) return
+
+    const sourceDocument = get().documents.find((document) => document.id === documentId)
+    if (!sourceDocument) return
+
+    const libraryDocuments = get().documents.filter(
+      (document) => document.libraryId === sourceDocument.libraryId,
+    )
+
+    await rebuildCitationRelationsForDocument(sourceDocument, libraryDocuments)
+    await get().loadRelations(sourceDocument.libraryId)
   },
 
   toggleFavorite: async (id) => {
@@ -885,7 +1365,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await repo.clearLocalData()
     await clearDocumentSearchIndex()
-    const { libraries, documents, notes, annotations } = await fetchDesktopData()
+    const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
     set({
       initialized: true,
       isDesktopApp: true,
@@ -893,6 +1373,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       documents,
       notes,
       annotations,
+      relations,
+      graphViews,
+      graphViewLayouts: [],
       activeLibraryId: libraries[0]?.id ?? null,
       activeDocumentId: null,
       filters: {},

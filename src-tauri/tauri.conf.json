@@ -5,7 +5,7 @@
   "identifier": "com.refx.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:3001",
     "beforeBuildCommand": "cmd /c \"set TAURI_ENV=1&& pnpm build\"",
     "frontendDist": "../out"
   },

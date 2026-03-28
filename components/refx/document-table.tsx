@@ -57,7 +57,7 @@ const COLUMN_DEFINITIONS: ColumnDefinition[] = [
   { key: 'authors', label: 'Authors', defaultWidth: 220, minWidth: 140, hideable: true },
   { key: 'year', label: 'Year', defaultWidth: 80, minWidth: 70, hideable: true },
   { key: 'status', label: 'Status', defaultWidth: 150, minWidth: 120, hideable: true },
-  { key: 'comments', label: 'Comments', defaultWidth: 120, minWidth: 90, hideable: true },
+  { key: 'comments', label: 'Comments', defaultWidth: 170, minWidth: 150, hideable: true },
   { key: 'rating', label: 'Rating', defaultWidth: 140, minWidth: 110, hideable: true },
 ]
 
@@ -363,14 +363,17 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
 
                   {columnVisibility.comments && (
                     <TableCell className="text-center">
-                      {doc.commentCount > 0 ? (
-                        <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          {doc.commentCount}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground/50">—</span>
-                      )}
+                      <div className="flex items-center justify-center gap-2">
+                        <Button asChild variant="outline" size="icon" className="h-8 w-8">
+                          <Link href={`/comments?id=${doc.id}`}>
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span className="sr-only">Open comments</span>
+                          </Link>
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {doc.notesCount} notes
+                        </span>
+                      </div>
                     </TableCell>
                   )}
 

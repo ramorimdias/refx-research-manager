@@ -82,6 +82,8 @@ pub struct Document {
     pub favorite: bool,
     pub last_opened_at: Option<String>,
     pub last_read_page: Option<i64>,
+    pub commentary_text: Option<String>,
+    pub commentary_updated_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -111,6 +113,66 @@ pub struct Annotation {
     pub kind: String,
     pub content: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRelation {
+    pub id: String,
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub link_type: String,
+    pub link_origin: String,
+    pub relation_status: Option<String>,
+    pub confidence: Option<f64>,
+    pub label: Option<String>,
+    pub notes: Option<String>,
+    pub match_method: Option<String>,
+    pub raw_reference_text: Option<String>,
+    pub normalized_reference_text: Option<String>,
+    pub normalized_title: Option<String>,
+    pub normalized_first_author: Option<String>,
+    pub reference_index: Option<i64>,
+    pub parse_confidence: Option<f64>,
+    pub parse_warnings: Option<String>,
+    pub match_debug_info: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphView {
+    pub id: String,
+    pub library_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub relation_filter: String,
+    pub color_mode: String,
+    pub size_mode: String,
+    pub scope_mode: String,
+    pub neighborhood_depth: String,
+    pub focus_mode: bool,
+    pub hide_orphans: bool,
+    pub confidence_threshold: f64,
+    pub year_min: Option<i64>,
+    pub year_max: Option<i64>,
+    pub selected_document_id: Option<String>,
+    pub document_ids_json: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphViewNodeLayout {
+    pub graph_view_id: String,
+    pub document_id: String,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub pinned: bool,
+    pub hidden: bool,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +231,8 @@ pub struct CreateDocumentInput {
     pub processing_error: Option<String>,
     pub processing_updated_at: Option<String>,
     pub last_processed_at: Option<String>,
+    pub commentary_text: Option<String>,
+    pub commentary_updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,6 +278,8 @@ pub struct UpdateDocumentInput {
     pub ocr_status: Option<String>,
     pub last_opened_at: Option<String>,
     pub last_read_page: Option<i64>,
+    pub commentary_text: Option<String>,
+    pub commentary_updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,6 +305,100 @@ pub struct UpdateNoteInput {
     pub position_y: Option<f64>,
     pub title: Option<String>,
     pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateDocumentRelationInput {
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub link_type: String,
+    pub link_origin: String,
+    pub relation_status: Option<String>,
+    pub confidence: Option<f64>,
+    pub label: Option<String>,
+    pub notes: Option<String>,
+    pub match_method: Option<String>,
+    pub raw_reference_text: Option<String>,
+    pub normalized_reference_text: Option<String>,
+    pub normalized_title: Option<String>,
+    pub normalized_first_author: Option<String>,
+    pub reference_index: Option<i64>,
+    pub parse_confidence: Option<f64>,
+    pub parse_warnings: Option<String>,
+    pub match_debug_info: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDocumentRelationInput {
+    pub link_type: Option<String>,
+    pub relation_status: Option<String>,
+    pub confidence: Option<f64>,
+    pub label: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateGraphViewInput {
+    pub library_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub relation_filter: String,
+    pub color_mode: String,
+    pub size_mode: String,
+    pub scope_mode: String,
+    pub neighborhood_depth: String,
+    pub focus_mode: bool,
+    pub hide_orphans: bool,
+    pub confidence_threshold: f64,
+    pub year_min: Option<i64>,
+    pub year_max: Option<i64>,
+    pub selected_document_id: Option<String>,
+    pub document_ids_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateGraphViewInput {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub relation_filter: Option<String>,
+    pub color_mode: Option<String>,
+    pub size_mode: Option<String>,
+    pub scope_mode: Option<String>,
+    pub neighborhood_depth: Option<String>,
+    pub focus_mode: Option<bool>,
+    pub hide_orphans: Option<bool>,
+    pub confidence_threshold: Option<f64>,
+    pub year_min: Option<i64>,
+    pub year_max: Option<i64>,
+    pub selected_document_id: Option<String>,
+    pub document_ids_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertGraphViewNodeLayoutInput {
+    pub graph_view_id: String,
+    pub document_id: String,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub pinned: Option<bool>,
+    pub hidden: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebuildAutoCitationRelationsInput {
+    pub library_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebuildAutoCitationRelationsForDocumentInput {
+    pub document_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -447,6 +607,8 @@ CREATE TABLE IF NOT EXISTS documents (
   favorite INTEGER DEFAULT 0,
   last_opened_at TEXT,
   last_read_page INTEGER,
+  commentary_text TEXT,
+  commentary_updated_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
@@ -487,6 +649,65 @@ CREATE TABLE IF NOT EXISTS notes (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS document_relations (
+  id TEXT PRIMARY KEY,
+  source_document_id TEXT NOT NULL,
+  target_document_id TEXT NOT NULL,
+  link_type TEXT NOT NULL,
+  link_origin TEXT NOT NULL,
+  relation_status TEXT DEFAULT 'confirmed',
+  confidence REAL,
+  label TEXT,
+  notes TEXT,
+  match_method TEXT,
+  raw_reference_text TEXT,
+  normalized_reference_text TEXT,
+  normalized_title TEXT,
+  normalized_first_author TEXT,
+  reference_index INTEGER,
+  parse_confidence REAL,
+  parse_warnings TEXT,
+  match_debug_info TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (source_document_id) REFERENCES documents(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_document_id) REFERENCES documents(id) ON DELETE CASCADE,
+  UNIQUE (source_document_id, target_document_id, link_type, link_origin)
+);
+CREATE TABLE IF NOT EXISTS graph_views (
+  id TEXT PRIMARY KEY,
+  library_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  relation_filter TEXT NOT NULL DEFAULT 'all',
+  color_mode TEXT NOT NULL DEFAULT 'density',
+  size_mode TEXT NOT NULL DEFAULT 'total_degree',
+  scope_mode TEXT NOT NULL DEFAULT 'mapped',
+  neighborhood_depth TEXT NOT NULL DEFAULT 'full',
+  focus_mode INTEGER NOT NULL DEFAULT 0,
+  hide_orphans INTEGER NOT NULL DEFAULT 1,
+  confidence_threshold REAL NOT NULL DEFAULT 0,
+  year_min INTEGER,
+  year_max INTEGER,
+  selected_document_id TEXT,
+  document_ids_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+  FOREIGN KEY (selected_document_id) REFERENCES documents(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS graph_view_node_layouts (
+  graph_view_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  position_x REAL NOT NULL,
+  position_y REAL NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (graph_view_id, document_id),
+  FOREIGN KEY (graph_view_id) REFERENCES graph_views(id) ON DELETE CASCADE,
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -495,6 +716,11 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_documents_library_id ON documents(library_id);
 CREATE INDEX IF NOT EXISTS idx_notes_document_id ON notes(document_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_document_id ON annotations(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_relations_source_document_id ON document_relations(source_document_id);
+CREATE INDEX IF NOT EXISTS idx_document_relations_target_document_id ON document_relations(target_document_id);
+CREATE INDEX IF NOT EXISTS idx_document_relations_link_origin ON document_relations(link_origin);
+CREATE INDEX IF NOT EXISTS idx_graph_views_library_id ON graph_views(library_id);
+CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_view_node_layouts(graph_view_id);
         "#,
     )?;
 
@@ -521,6 +747,29 @@ CREATE INDEX IF NOT EXISTS idx_annotations_document_id ON annotations(document_i
     ensure_column(&conn, "documents", "document_type", "TEXT NOT NULL DEFAULT 'pdf'")?;
     ensure_column(&conn, "documents", "isbn", "TEXT")?;
     ensure_column(&conn, "documents", "publisher", "TEXT")?;
+    ensure_column(&conn, "documents", "commentary_text", "TEXT")?;
+    ensure_column(&conn, "documents", "commentary_updated_at", "TEXT")?;
+    ensure_column(&conn, "document_relations", "match_method", "TEXT")?;
+    ensure_column(&conn, "document_relations", "raw_reference_text", "TEXT")?;
+    ensure_column(&conn, "document_relations", "relation_status", "TEXT DEFAULT 'confirmed'")?;
+    ensure_column(&conn, "document_relations", "normalized_reference_text", "TEXT")?;
+    ensure_column(&conn, "document_relations", "normalized_title", "TEXT")?;
+    ensure_column(&conn, "document_relations", "normalized_first_author", "TEXT")?;
+    ensure_column(&conn, "document_relations", "reference_index", "INTEGER")?;
+    ensure_column(&conn, "document_relations", "parse_confidence", "REAL")?;
+    ensure_column(&conn, "document_relations", "parse_warnings", "TEXT")?;
+    ensure_column(&conn, "document_relations", "match_debug_info", "TEXT")?;
+    conn.execute(
+        r#"
+        UPDATE document_relations
+        SET relation_status = CASE
+          WHEN link_origin = 'auto' AND link_type = 'citation' THEN 'auto_confirmed'
+          ELSE 'confirmed'
+        END
+        WHERE relation_status IS NULL
+        "#,
+        [],
+    )?;
     ensure_column(&conn, "notes", "page_number", "INTEGER")?;
     ensure_column(&conn, "notes", "location_hint", "TEXT")?;
     ensure_column(&conn, "notes", "comment_number", "INTEGER")?;
@@ -684,7 +933,7 @@ pub fn list_documents_by_library(
     library_id: String,
 ) -> Result<Vec<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, created_at, updated_at FROM documents WHERE library_id = ?1 ORDER BY updated_at DESC"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, created_at, updated_at FROM documents WHERE library_id = ?1 ORDER BY updated_at DESC"#)?;
     let rows = stmt.query_map(params![library_id], map_document_row)?;
     let mut documents = Vec::new();
     for row in rows {
@@ -698,7 +947,7 @@ pub fn list_documents_by_library(
 #[tauri::command]
 pub fn list_all_documents(app: AppHandle) -> Result<Vec<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, created_at, updated_at FROM documents ORDER BY updated_at DESC"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, created_at, updated_at FROM documents ORDER BY updated_at DESC"#)?;
     let rows = stmt.query_map([], map_document_row)?;
     let mut documents = Vec::new();
     for row in rows {
@@ -712,7 +961,7 @@ pub fn list_all_documents(app: AppHandle) -> Result<Vec<Document>, AppError> {
 #[tauri::command]
 pub fn get_document_by_id(app: AppHandle, id: String) -> Result<Option<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, created_at, updated_at FROM documents WHERE id = ?1"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, created_at, updated_at FROM documents WHERE id = ?1"#)?;
     let doc = stmt.query_row(params![id], map_document_row).optional()?;
     match doc {
         Some(mut document) => {
@@ -768,9 +1017,182 @@ fn map_document_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         favorite: row.get::<_, i64>(39)? == 1,
         last_opened_at: row.get(40)?,
         last_read_page: row.get(41)?,
-        created_at: row.get(42)?,
-        updated_at: row.get(43)?,
+        commentary_text: row.get(42)?,
+        commentary_updated_at: row.get(43)?,
+        created_at: row.get(44)?,
+        updated_at: row.get(45)?,
     })
+}
+
+fn map_document_relation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentRelation> {
+    Ok(DocumentRelation {
+        id: row.get(0)?,
+        source_document_id: row.get(1)?,
+        target_document_id: row.get(2)?,
+        link_type: row.get(3)?,
+        link_origin: row.get(4)?,
+        relation_status: row.get(5)?,
+        confidence: row.get(6)?,
+        label: row.get(7)?,
+        notes: row.get(8)?,
+        match_method: row.get(9)?,
+        raw_reference_text: row.get(10)?,
+        normalized_reference_text: row.get(11)?,
+        normalized_title: row.get(12)?,
+        normalized_first_author: row.get(13)?,
+        reference_index: row.get(14)?,
+        parse_confidence: row.get(15)?,
+        parse_warnings: row.get(16)?,
+        match_debug_info: row.get(17)?,
+        created_at: row.get(18)?,
+        updated_at: row.get(19)?,
+    })
+}
+
+fn map_graph_view_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphView> {
+    Ok(GraphView {
+        id: row.get(0)?,
+        library_id: row.get(1)?,
+        name: row.get(2)?,
+        description: row.get(3)?,
+        relation_filter: row.get(4)?,
+        color_mode: row.get(5)?,
+        size_mode: row.get(6)?,
+        scope_mode: row.get(7)?,
+        neighborhood_depth: row.get(8)?,
+        focus_mode: row.get::<_, i64>(9)? == 1,
+        hide_orphans: row.get::<_, i64>(10)? == 1,
+        confidence_threshold: row.get(11)?,
+        year_min: row.get(12)?,
+        year_max: row.get(13)?,
+        selected_document_id: row.get(14)?,
+        document_ids_json: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
+    })
+}
+
+fn map_graph_view_node_layout_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<GraphViewNodeLayout> {
+    Ok(GraphViewNodeLayout {
+        graph_view_id: row.get(0)?,
+        document_id: row.get(1)?,
+        position_x: row.get(2)?,
+        position_y: row.get(3)?,
+        pinned: row.get::<_, i64>(4)? == 1,
+        hidden: row.get::<_, i64>(5)? == 1,
+        updated_at: row.get(6)?,
+    })
+}
+
+fn document_exists(conn: &Connection, id: &str) -> Result<bool, AppError> {
+    let exists: Option<String> = conn
+        .query_row("SELECT id FROM documents WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+    Ok(exists.is_some())
+}
+
+fn list_relations_for_library(
+    conn: &Connection,
+    library_id: &str,
+) -> Result<Vec<DocumentRelation>, AppError> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          dr.id,
+          dr.source_document_id,
+          dr.target_document_id,
+          dr.link_type,
+          dr.link_origin,
+          dr.relation_status,
+          dr.confidence,
+          dr.label,
+          dr.notes,
+          dr.match_method,
+          dr.raw_reference_text,
+          dr.normalized_reference_text,
+          dr.normalized_title,
+          dr.normalized_first_author,
+          dr.reference_index,
+          dr.parse_confidence,
+          dr.parse_warnings,
+          dr.match_debug_info,
+          dr.created_at,
+          dr.updated_at
+        FROM document_relations dr
+        INNER JOIN documents source_doc ON source_doc.id = dr.source_document_id
+        INNER JOIN documents target_doc ON target_doc.id = dr.target_document_id
+        WHERE source_doc.library_id = ?1 AND target_doc.library_id = ?1
+        ORDER BY dr.updated_at DESC, dr.created_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![library_id], map_document_relation_row)?;
+    Ok(rows.filter_map(Result::ok).collect())
+}
+
+fn graph_view_exists(conn: &Connection, id: &str) -> Result<bool, AppError> {
+    let exists: Option<String> = conn
+        .query_row("SELECT id FROM graph_views WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+    Ok(exists.is_some())
+}
+
+fn list_graph_views_for_library(
+    conn: &Connection,
+    library_id: &str,
+) -> Result<Vec<GraphView>, AppError> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        FROM graph_views
+        WHERE library_id = ?1
+        ORDER BY updated_at DESC, created_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![library_id], map_graph_view_row)?;
+    Ok(rows.filter_map(Result::ok).collect())
+}
+
+fn list_graph_view_layouts_for_view(
+    conn: &Connection,
+    graph_view_id: &str,
+) -> Result<Vec<GraphViewNodeLayout>, AppError> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          graph_view_id,
+          document_id,
+          position_x,
+          position_y,
+          pinned,
+          hidden,
+          updated_at
+        FROM graph_view_node_layouts
+        WHERE graph_view_id = ?1
+        ORDER BY updated_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![graph_view_id], map_graph_view_node_layout_row)?;
+    Ok(rows.filter_map(Result::ok).collect())
 }
 
 #[tauri::command]
@@ -789,8 +1211,8 @@ pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Doc
     let tag_suggestion_status = input.tag_suggestion_status.unwrap_or("pending".into());
     let classification_status = input.classification_status.unwrap_or("pending".into());
     conn.execute(
-        r#"INSERT INTO documents (id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, 'unread', 0, 0, ?39, ?39)"#,
+        r#"INSERT INTO documents (id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, commentary_text, commentary_updated_at, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, 'unread', 0, 0, ?38, ?39, ?40, ?40)"#,
         params![
             id,
             input.library_id,
@@ -829,6 +1251,8 @@ pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Doc
             input.processing_error,
             input.processing_updated_at,
             input.last_processed_at,
+            input.commentary_text,
+            input.commentary_updated_at,
             now
         ],
     )?;
@@ -885,8 +1309,10 @@ pub fn update_document_metadata(
           favorite = COALESCE(?38, favorite),
           last_opened_at = COALESCE(?39, last_opened_at),
           last_read_page = COALESCE(?40, last_read_page),
-          updated_at = ?41
-          WHERE id = ?42"#,
+          commentary_text = COALESCE(?41, commentary_text),
+          commentary_updated_at = COALESCE(?42, commentary_updated_at),
+          updated_at = ?43
+          WHERE id = ?44"#,
         params![
             input.title,
             input.document_type,
@@ -928,6 +1354,8 @@ pub fn update_document_metadata(
             input.favorite.map(|b| if b { 1 } else { 0 }),
             input.last_opened_at,
             input.last_read_page,
+            input.commentary_text,
+            input.commentary_updated_at,
             now,
             id
         ],
@@ -1073,6 +1501,718 @@ pub fn move_documents_to_library(
     }
 
     Ok(moved_documents)
+}
+
+#[tauri::command]
+pub fn create_document_relation(
+    app: AppHandle,
+    input: CreateDocumentRelationInput,
+) -> Result<DocumentRelation, AppError> {
+    if input.source_document_id == input.target_document_id {
+        return Err(AppError::Validation(
+            "A document cannot be linked to itself.".to_string(),
+        ));
+    }
+
+    let conn = open_db(&app)?;
+    if !document_exists(&conn, &input.source_document_id)? {
+        return Err(AppError::Validation(
+            "Source document was not found.".to_string(),
+        ));
+    }
+    if !document_exists(&conn, &input.target_document_id)? {
+        return Err(AppError::Validation(
+            "Target document was not found.".to_string(),
+        ));
+    }
+
+    let source_library_id: String = conn.query_row(
+        "SELECT library_id FROM documents WHERE id = ?1",
+        params![input.source_document_id.clone()],
+        |row| row.get(0),
+    )?;
+    let target_library_id: String = conn.query_row(
+        "SELECT library_id FROM documents WHERE id = ?1",
+        params![input.target_document_id.clone()],
+        |row| row.get(0),
+    )?;
+
+    if source_library_id != target_library_id {
+        return Err(AppError::Validation(
+            "Relations can only be created between documents in the same library.".to_string(),
+        ));
+    }
+
+    let existing: Option<DocumentRelation> = conn
+        .query_row(
+            r#"
+            SELECT
+              id,
+              source_document_id,
+              target_document_id,
+              link_type,
+              link_origin,
+              relation_status,
+              confidence,
+              label,
+              notes,
+              match_method,
+              raw_reference_text,
+              normalized_reference_text,
+              normalized_title,
+              normalized_first_author,
+              reference_index,
+              parse_confidence,
+              parse_warnings,
+              match_debug_info,
+              created_at,
+              updated_at
+            FROM document_relations
+            WHERE source_document_id = ?1
+              AND target_document_id = ?2
+              AND link_type = ?3
+              AND link_origin = ?4
+            "#,
+            params![
+                input.source_document_id.clone(),
+                input.target_document_id.clone(),
+                input.link_type.clone(),
+                input.link_origin.clone()
+            ],
+            map_document_relation_row,
+        )
+        .optional()?;
+
+    if let Some(relation) = existing {
+        return Ok(relation);
+    }
+
+    let id = format!("rel-{}", uuid::Uuid::new_v4());
+    let now = now_iso();
+    conn.execute(
+        r#"
+        INSERT INTO document_relations (
+          id,
+          source_document_id,
+          target_document_id,
+          link_type,
+          link_origin,
+          relation_status,
+          confidence,
+          label,
+          notes,
+          match_method,
+          raw_reference_text,
+          normalized_reference_text,
+          normalized_title,
+          normalized_first_author,
+          reference_index,
+          parse_confidence,
+          parse_warnings,
+          match_debug_info,
+          created_at,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)
+        "#,
+        params![
+            id.clone(),
+            input.source_document_id,
+            input.target_document_id,
+            input.link_type,
+            input.link_origin,
+            input.relation_status,
+            input.confidence,
+            input.label,
+            input.notes,
+            input.match_method,
+            input.raw_reference_text,
+            input.normalized_reference_text,
+            input.normalized_title,
+            input.normalized_first_author,
+            input.reference_index,
+            input.parse_confidence,
+            input.parse_warnings,
+            input.match_debug_info,
+            now
+        ],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          id,
+          source_document_id,
+          target_document_id,
+          link_type,
+          link_origin,
+          relation_status,
+          confidence,
+          label,
+          notes,
+          match_method,
+          raw_reference_text,
+          normalized_reference_text,
+          normalized_title,
+          normalized_first_author,
+          reference_index,
+          parse_confidence,
+          parse_warnings,
+          match_debug_info,
+          created_at,
+          updated_at
+        FROM document_relations
+        WHERE id = ?1
+        "#,
+        params![id],
+        map_document_relation_row,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn delete_document_relation(app: AppHandle, id: String) -> Result<bool, AppError> {
+    let conn = open_db(&app)?;
+    let rows = conn.execute("DELETE FROM document_relations WHERE id = ?1", params![id])?;
+    Ok(rows > 0)
+}
+
+#[tauri::command]
+pub fn update_document_relation(
+    app: AppHandle,
+    id: String,
+    input: UpdateDocumentRelationInput,
+) -> Result<Option<DocumentRelation>, AppError> {
+    let conn = open_db(&app)?;
+    let now = now_iso();
+    conn.execute(
+        r#"UPDATE document_relations SET
+          link_type = COALESCE(?1, link_type),
+          relation_status = COALESCE(?2, relation_status),
+          confidence = COALESCE(?3, confidence),
+          label = COALESCE(?4, label),
+          notes = COALESCE(?5, notes),
+          updated_at = ?6
+          WHERE id = ?7"#,
+        params![
+            input.link_type,
+            input.relation_status,
+            input.confidence,
+            input.label,
+            input.notes,
+            now,
+            id
+        ],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          id,
+          source_document_id,
+          target_document_id,
+          link_type,
+          link_origin,
+          relation_status,
+          confidence,
+          label,
+          notes,
+          match_method,
+          raw_reference_text,
+          normalized_reference_text,
+          normalized_title,
+          normalized_first_author,
+          reference_index,
+          parse_confidence,
+          parse_warnings,
+          match_debug_info,
+          created_at,
+          updated_at
+        FROM document_relations
+        WHERE id = ?1
+        "#,
+        params![id],
+        map_document_relation_row,
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn list_document_relations_for_library(
+    app: AppHandle,
+    library_id: String,
+) -> Result<Vec<DocumentRelation>, AppError> {
+    let conn = open_db(&app)?;
+    list_relations_for_library(&conn, &library_id)
+}
+
+#[tauri::command]
+pub fn rebuild_auto_citation_relations(
+    app: AppHandle,
+    input: RebuildAutoCitationRelationsInput,
+) -> Result<Vec<DocumentRelation>, AppError> {
+    let conn = open_db(&app)?;
+    conn.execute(
+        r#"
+        DELETE FROM document_relations
+        WHERE link_origin = 'auto'
+          AND link_type = 'citation'
+          AND (
+            relation_status IS NULL
+            OR relation_status = 'auto_confirmed'
+            OR relation_status = 'proposed'
+          )
+          AND source_document_id IN (
+            SELECT id FROM documents WHERE library_id = ?1
+          )
+          AND target_document_id IN (
+            SELECT id FROM documents WHERE library_id = ?1
+          )
+        "#,
+        params![input.library_id.clone()],
+    )?;
+
+    list_relations_for_library(&conn, &input.library_id)
+}
+
+#[tauri::command]
+pub fn rebuild_auto_citation_relations_for_document(
+    app: AppHandle,
+    input: RebuildAutoCitationRelationsForDocumentInput,
+) -> Result<Vec<DocumentRelation>, AppError> {
+    let conn = open_db(&app)?;
+    let library_id: String = conn.query_row(
+        "SELECT library_id FROM documents WHERE id = ?1",
+        params![input.document_id.clone()],
+        |row| row.get(0),
+    )?;
+
+    conn.execute(
+        r#"
+        DELETE FROM document_relations
+        WHERE link_origin = 'auto'
+          AND link_type = 'citation'
+          AND (
+            relation_status IS NULL
+            OR relation_status = 'auto_confirmed'
+            OR relation_status = 'proposed'
+          )
+          AND source_document_id = ?1
+        "#,
+        params![input.document_id],
+    )?;
+
+    list_relations_for_library(&conn, &library_id)
+}
+
+#[tauri::command]
+pub fn list_graph_views(app: AppHandle, library_id: String) -> Result<Vec<GraphView>, AppError> {
+    let conn = open_db(&app)?;
+    list_graph_views_for_library(&conn, &library_id)
+}
+
+#[tauri::command]
+pub fn create_graph_view(
+    app: AppHandle,
+    input: CreateGraphViewInput,
+) -> Result<GraphView, AppError> {
+    let conn = open_db(&app)?;
+    if get_library_by_id(&conn, &input.library_id)?.is_none() {
+        return Err(AppError::Validation(
+            "Library was not found for this graph view.".to_string(),
+        ));
+    }
+
+    let id = format!("graph-view-{}", uuid::Uuid::new_v4());
+    let now = now_iso();
+    conn.execute(
+        r#"
+        INSERT INTO graph_views (
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)
+        "#,
+        params![
+            id.clone(),
+            input.library_id,
+            input.name,
+            input.description,
+            input.relation_filter,
+            input.color_mode,
+            input.size_mode,
+            input.scope_mode,
+            input.neighborhood_depth,
+            if input.focus_mode { 1 } else { 0 },
+            if input.hide_orphans { 1 } else { 0 },
+            input.confidence_threshold,
+            input.year_min,
+            input.year_max,
+            input.selected_document_id,
+            input.document_ids_json,
+            now
+        ],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        FROM graph_views
+        WHERE id = ?1
+        "#,
+        params![id],
+        map_graph_view_row,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn update_graph_view(
+    app: AppHandle,
+    id: String,
+    input: UpdateGraphViewInput,
+) -> Result<Option<GraphView>, AppError> {
+    let conn = open_db(&app)?;
+    let now = now_iso();
+    conn.execute(
+        r#"UPDATE graph_views SET
+          name = COALESCE(?1, name),
+          description = COALESCE(?2, description),
+          relation_filter = COALESCE(?3, relation_filter),
+          color_mode = COALESCE(?4, color_mode),
+          size_mode = COALESCE(?5, size_mode),
+          scope_mode = COALESCE(?6, scope_mode),
+          neighborhood_depth = COALESCE(?7, neighborhood_depth),
+          focus_mode = COALESCE(?8, focus_mode),
+          hide_orphans = COALESCE(?9, hide_orphans),
+          confidence_threshold = COALESCE(?10, confidence_threshold),
+          year_min = COALESCE(?11, year_min),
+          year_max = COALESCE(?12, year_max),
+          selected_document_id = COALESCE(?13, selected_document_id),
+          document_ids_json = COALESCE(?14, document_ids_json),
+          updated_at = ?15
+          WHERE id = ?16"#,
+        params![
+            input.name,
+            input.description,
+            input.relation_filter,
+            input.color_mode,
+            input.size_mode,
+            input.scope_mode,
+            input.neighborhood_depth,
+            input.focus_mode.map(|value| if value { 1 } else { 0 }),
+            input.hide_orphans.map(|value| if value { 1 } else { 0 }),
+            input.confidence_threshold,
+            input.year_min,
+            input.year_max,
+            input.selected_document_id,
+            input.document_ids_json,
+            now,
+            id
+        ],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        FROM graph_views
+        WHERE id = ?1
+        "#,
+        params![id],
+        map_graph_view_row,
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn delete_graph_view(app: AppHandle, id: String) -> Result<bool, AppError> {
+    let conn = open_db(&app)?;
+    let rows = conn.execute("DELETE FROM graph_views WHERE id = ?1", params![id])?;
+    Ok(rows > 0)
+}
+
+#[tauri::command]
+pub fn duplicate_graph_view(app: AppHandle, id: String) -> Result<GraphView, AppError> {
+    let conn = open_db(&app)?;
+    let existing = conn.query_row(
+        r#"
+        SELECT
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        FROM graph_views
+        WHERE id = ?1
+        "#,
+        params![id.clone()],
+        map_graph_view_row,
+    )?;
+
+    let new_id = format!("graph-view-{}", uuid::Uuid::new_v4());
+    let now = now_iso();
+    conn.execute(
+        r#"
+        INSERT INTO graph_views (
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)
+        "#,
+        params![
+            new_id.clone(),
+            existing.library_id,
+            format!("{} Copy", existing.name),
+            existing.description,
+            existing.relation_filter,
+            existing.color_mode,
+            existing.size_mode,
+            existing.scope_mode,
+            existing.neighborhood_depth,
+            if existing.focus_mode { 1 } else { 0 },
+            if existing.hide_orphans { 1 } else { 0 },
+            existing.confidence_threshold,
+            existing.year_min,
+            existing.year_max,
+            existing.selected_document_id,
+            existing.document_ids_json,
+            now.clone()
+        ],
+    )?;
+
+    conn.execute(
+        r#"
+        INSERT INTO graph_view_node_layouts (
+          graph_view_id,
+          document_id,
+          position_x,
+          position_y,
+          pinned,
+          hidden,
+          updated_at
+        )
+        SELECT
+          ?1,
+          document_id,
+          position_x,
+          position_y,
+          pinned,
+          hidden,
+          ?2
+        FROM graph_view_node_layouts
+        WHERE graph_view_id = ?3
+        "#,
+        params![new_id.clone(), now, id],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          id,
+          library_id,
+          name,
+          description,
+          relation_filter,
+          color_mode,
+          size_mode,
+          scope_mode,
+          neighborhood_depth,
+          focus_mode,
+          hide_orphans,
+          confidence_threshold,
+          year_min,
+          year_max,
+          selected_document_id,
+          document_ids_json,
+          created_at,
+          updated_at
+        FROM graph_views
+        WHERE id = ?1
+        "#,
+        params![new_id],
+        map_graph_view_row,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn list_graph_view_node_layouts(
+    app: AppHandle,
+    graph_view_id: String,
+) -> Result<Vec<GraphViewNodeLayout>, AppError> {
+    let conn = open_db(&app)?;
+    list_graph_view_layouts_for_view(&conn, &graph_view_id)
+}
+
+#[tauri::command]
+pub fn upsert_graph_view_node_layout(
+    app: AppHandle,
+    input: UpsertGraphViewNodeLayoutInput,
+) -> Result<GraphViewNodeLayout, AppError> {
+    let conn = open_db(&app)?;
+    if !graph_view_exists(&conn, &input.graph_view_id)? {
+        return Err(AppError::Validation(
+            "Graph view was not found.".to_string(),
+        ));
+    }
+    if !document_exists(&conn, &input.document_id)? {
+        return Err(AppError::Validation(
+            "Document was not found for this graph view layout.".to_string(),
+        ));
+    }
+
+    let now = now_iso();
+    conn.execute(
+        r#"
+        INSERT INTO graph_view_node_layouts (
+          graph_view_id,
+          document_id,
+          position_x,
+          position_y,
+          pinned,
+          hidden,
+          updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(graph_view_id, document_id) DO UPDATE SET
+          position_x = excluded.position_x,
+          position_y = excluded.position_y,
+          pinned = COALESCE(excluded.pinned, graph_view_node_layouts.pinned),
+          hidden = COALESCE(excluded.hidden, graph_view_node_layouts.hidden),
+          updated_at = excluded.updated_at
+        "#,
+        params![
+            input.graph_view_id.clone(),
+            input.document_id.clone(),
+            input.position_x,
+            input.position_y,
+            if input.pinned.unwrap_or(false) { 1 } else { 0 },
+            if input.hidden.unwrap_or(false) { 1 } else { 0 },
+            now
+        ],
+    )?;
+
+    conn.query_row(
+        r#"
+        SELECT
+          graph_view_id,
+          document_id,
+          position_x,
+          position_y,
+          pinned,
+          hidden,
+          updated_at
+        FROM graph_view_node_layouts
+        WHERE graph_view_id = ?1 AND document_id = ?2
+        "#,
+        params![input.graph_view_id, input.document_id],
+        map_graph_view_node_layout_row,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn reset_graph_view_node_layouts(
+    app: AppHandle,
+    graph_view_id: String,
+    document_id: Option<String>,
+) -> Result<(), AppError> {
+    let conn = open_db(&app)?;
+    if let Some(document_id) = document_id {
+        conn.execute(
+            "DELETE FROM graph_view_node_layouts WHERE graph_view_id = ?1 AND document_id = ?2",
+            params![graph_view_id, document_id],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM graph_view_node_layouts WHERE graph_view_id = ?1",
+            params![graph_view_id],
+        )?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1339,6 +2479,9 @@ pub fn set_settings(app: AppHandle, input: SetSettingsInput) -> Result<(), AppEr
 pub fn clear_local_data(app: AppHandle) -> Result<(), AppError> {
     let conn = open_db(&app)?;
     conn.execute("DELETE FROM document_tags", [])?;
+    conn.execute("DELETE FROM graph_view_node_layouts", [])?;
+    conn.execute("DELETE FROM graph_views", [])?;
+    conn.execute("DELETE FROM document_relations", [])?;
     conn.execute("DELETE FROM annotations", [])?;
     conn.execute("DELETE FROM notes", [])?;
     conn.execute("DELETE FROM tags", [])?;

@@ -28,6 +28,7 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:allow-copy-file",
+    "fs:allow-write-text-file",
     {
       "identifier": "fs:scope",
       "allow": [

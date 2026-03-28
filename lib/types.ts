@@ -42,6 +42,7 @@ export type DocumentProcessingStage =
   | 'ocr_fallback'
   | 'save_document'
   | 'indexing'
+  | 'citation_linking'
   | 'tag_suggestion'
   | 'semantic_classification'
   | 'online_metadata_enrichment'
@@ -135,11 +136,100 @@ export interface Document {
   tags: string[]
   commentCount: number
   notesCount: number
+  commentaryText?: string
+  commentaryUpdatedAt?: Date
   addedAt: Date
   lastOpenedAt?: Date
   lastReadPage?: number
   createdAt: Date
   updatedAt: Date
+}
+
+export type DocumentRelationLinkType =
+  | 'citation'
+  | 'manual'
+  | 'related'
+  | 'supports'
+  | 'contradicts'
+  | 'same_topic'
+
+export type DocumentRelationLinkOrigin = 'auto' | 'user'
+export type DocumentRelationStatus = 'proposed' | 'confirmed' | 'rejected' | 'auto_confirmed'
+export type CitationMatchMethod =
+  | 'doi_exact'
+  | 'title_exact'
+  | 'title_year'
+  | 'title_firstauthor_year'
+  | 'fuzzy_title'
+
+export interface DocumentRelation {
+  id: string
+  sourceDocumentId: string
+  targetDocumentId: string
+  linkType: DocumentRelationLinkType
+  linkOrigin: DocumentRelationLinkOrigin
+  relationStatus?: DocumentRelationStatus
+  confidence?: number
+  label?: string
+  notes?: string
+  matchMethod?: CitationMatchMethod
+  rawReferenceText?: string
+  normalizedReferenceText?: string
+  normalizedTitle?: string
+  normalizedFirstAuthor?: string
+  referenceIndex?: number
+  parseConfidence?: number
+  parseWarnings?: string[]
+  matchDebugInfo?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface GraphView {
+  id: string
+  libraryId: string
+  name: string
+  description?: string
+  relationFilter: 'all' | 'manual' | 'citations' | 'confirmed_citations' | 'proposed_citations'
+  colorMode: 'library' | 'year' | 'density' | 'status' | 'component'
+  sizeMode: 'uniform' | 'inbound_citations' | 'total_degree'
+  scopeMode: 'mapped' | 'library'
+  neighborhoodDepth: 'full' | '1' | '2'
+  focusMode: boolean
+  hideOrphans: boolean
+  confidenceThreshold: number
+  yearMin?: number
+  yearMax?: number
+  selectedDocumentId?: string
+  documentIds: string[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface GraphViewNodeLayout {
+  graphViewId: string
+  documentId: string
+  x: number
+  y: number
+  pinned: boolean
+  hidden: boolean
+  updatedAt: Date
+}
+
+export interface ParsedDocumentReference {
+  rawReferenceText: string
+  normalizedReferenceText: string
+  doi?: string
+  normalizedTitle?: string
+  title?: string
+  authors: string[]
+  normalizedFirstAuthor?: string
+  year?: number
+  journal?: string
+  parseConfidence: number
+  parseWarnings: string[]
+  sourceDocumentId: string
+  referenceIndex: number
 }
 
 export interface Author {

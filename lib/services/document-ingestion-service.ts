@@ -4,12 +4,14 @@ import { appDataDir, copyFile, join, mkdir } from '@/lib/tauri/client'
 import * as repo from '@/lib/repositories/local-db'
 import { loadAppSettings } from '@/lib/app-settings'
 import { buildDocumentMetadataSeed, enrichDocumentMetadataOnline } from '@/lib/services/document-enrichment-service'
+import { rebuildCitationRelationsForDocument } from '@/lib/services/document-citation-relation-service'
 import { classifyDocumentSemantics } from '@/lib/services/document-classification-service'
 import { extractLocalPdfMetadata, mergeExtractedMetadataIntoDocument, type LocalPdfMetadata } from '@/lib/services/document-metadata-service'
 import { runDocumentOcr } from '@/lib/services/document-ocr-service'
 import { generateDocumentTagSuggestions } from '@/lib/services/document-tag-suggestion-service'
 import { extractDocumentText, indexDocument } from '@/lib/services/document-search-service'
-import type { DocumentProcessingStage, DocumentProcessingStageState, SemanticClassificationMode } from '@/lib/types'
+import type { Document, DocumentProcessingStage, DocumentProcessingStageState, SemanticClassificationMode } from '@/lib/types'
+import { normalizeErrorMessage } from '@/lib/utils/error'
 
 type ProcessingContext = {
   document: repo.DbDocument | null
@@ -38,6 +40,7 @@ export type DocumentIngestionResult = {
   documentId?: string
   stages: DocumentProcessingStageState[]
   success: boolean
+  error?: string
 }
 
 const DEFAULT_PIPELINE_OPTIONS: Required<DocumentIngestionOptions> = {
@@ -56,6 +59,7 @@ export const DOCUMENT_INGESTION_STAGE_ORDER: DocumentProcessingStage[] = [
   'ocr_fallback',
   'save_document',
   'indexing',
+  'citation_linking',
   'tag_suggestion',
   'semantic_classification',
   'online_metadata_enrichment',
@@ -64,6 +68,68 @@ export const DOCUMENT_INGESTION_STAGE_ORDER: DocumentProcessingStage[] = [
 function titleFromPath(filePath: string) {
   const name = filePath.split(/[\\/]/).pop() ?? 'Untitled'
   return name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim()
+}
+
+function toAppDocument(document: repo.DbDocument): Document {
+  const authors = (() => {
+    if (Array.isArray(document.authors)) return document.authors
+    if (typeof document.authors !== 'string') return []
+    try {
+      const parsed = JSON.parse(document.authors)
+      return Array.isArray(parsed) ? parsed : [document.authors]
+    } catch {
+      return document.authors ? [document.authors] : []
+    }
+  })()
+
+  return {
+    id: document.id,
+    libraryId: document.libraryId,
+    documentType: document.documentType === 'physical_book' ? 'physical_book' : 'pdf',
+    title: document.title,
+    authors,
+    year: document.year,
+    abstract: document.abstractText,
+    doi: document.doi,
+    isbn: document.isbn,
+    publisher: document.publisher,
+    citationKey: document.citationKey ?? '',
+    sourcePath: document.sourcePath,
+    importedFilePath: document.importedFilePath,
+    extractedTextPath: document.extractedTextPath,
+    filePath: document.importedFilePath ?? document.sourcePath,
+    searchText: document.searchText,
+    textHash: document.textHash,
+    textExtractedAt: document.textExtractedAt ? new Date(document.textExtractedAt) : undefined,
+    textExtractionStatus: document.textExtractionStatus ?? 'pending',
+    pageCount: document.pageCount,
+    hasExtractedText: document.hasExtractedText ?? Boolean(document.searchText || document.extractedTextPath),
+    hasOcrText: document.hasOcrText ?? false,
+    hasOcr: document.hasOcr ?? false,
+    ocrStatus: (document.ocrStatus ?? 'pending') as Document['ocrStatus'],
+    metadataStatus: (document.metadataStatus ?? 'missing') as Document['metadataStatus'],
+    indexingStatus: document.indexingStatus ?? 'pending',
+    tagSuggestionTextHash: document.tagSuggestionTextHash,
+    tagSuggestionStatus: document.tagSuggestionStatus ?? 'pending',
+    classificationTextHash: document.classificationTextHash,
+    classificationStatus: document.classificationStatus ?? 'pending',
+    processingError: document.processingError ?? undefined,
+    processingUpdatedAt: document.processingUpdatedAt ? new Date(document.processingUpdatedAt) : undefined,
+    lastProcessedAt: document.lastProcessedAt ? new Date(document.lastProcessedAt) : undefined,
+    readingStage: (document.readingStage ?? 'unread') as Document['readingStage'],
+    rating: document.rating ?? 0,
+    favorite: document.favorite ?? false,
+    tags: document.tags ?? [],
+    commentCount: 0,
+    notesCount: 0,
+    commentaryText: document.commentaryText,
+    commentaryUpdatedAt: document.commentaryUpdatedAt ? new Date(document.commentaryUpdatedAt) : undefined,
+    addedAt: document.createdAt ? new Date(document.createdAt) : new Date(),
+    lastOpenedAt: document.lastOpenedAt ? new Date(document.lastOpenedAt) : undefined,
+    lastReadPage: document.lastReadPage,
+    createdAt: document.createdAt ? new Date(document.createdAt) : new Date(),
+    updatedAt: document.updatedAt ? new Date(document.updatedAt) : new Date(),
+  }
 }
 
 function mergePipelineOptions(options?: DocumentIngestionOptions) {
@@ -180,7 +246,7 @@ async function updateStageStart(documentId: string, stage: DocumentProcessingSta
 
 async function updateStageFailure(documentId: string, stage: DocumentProcessingStage, error: unknown) {
   const timestamp = nowIso()
-  const message = error instanceof Error ? error.message : String(error)
+  const message = normalizeErrorMessage(error)
   const stageError = `${stageLabel(stage)} failed: ${message}`
 
   switch (stage) {
@@ -464,6 +530,47 @@ async function runTagSuggestionStage(
   }
 }
 
+async function runCitationLinkingStage(
+  context: ProcessingContext,
+  _options: Required<DocumentIngestionOptions>,
+) {
+  const stage: DocumentProcessingStage = 'citation_linking'
+  const startedAt = new Date()
+  const document = context.document
+
+  if (!document || !context.documentId) {
+    return stageSkipped(stage, 'Document record is not available yet.')
+  }
+
+  if (!document.hasExtractedText && !document.hasOcrText) {
+    return stageSkipped(stage, 'Citation linking is waiting for extracted or OCR text.')
+  }
+
+  try {
+    await updateStageStart(context.documentId, stage)
+    const libraryDocuments = (await repo.listDocumentsByLibrary(document.libraryId)).map(toAppDocument)
+    const sourceDocument = libraryDocuments.find((entry) => entry.id === context.documentId)
+    if (!sourceDocument) {
+      return stageSkipped(stage, 'Document is no longer available in the active library.')
+    }
+
+    const createdRelations = await rebuildCitationRelationsForDocument(sourceDocument, libraryDocuments)
+    await refreshContextDocument(context)
+
+    return stageCompleted(
+      stage,
+      startedAt,
+      createdRelations.length > 0
+        ? `Created ${createdRelations.length} automatic citation relation(s).`
+        : 'No in-library citation matches were found.',
+    )
+  } catch (error) {
+    const stageError = await updateStageFailure(context.documentId, stage, error)
+    await refreshContextDocument(context)
+    return stageFailed(stage, startedAt, stageError)
+  }
+}
+
 async function runSemanticClassificationStage(
   context: ProcessingContext,
   options: Required<DocumentIngestionOptions>,
@@ -576,6 +683,7 @@ async function runProcessingStages(
   stages.push(await runOcrFallbackStage(context, resolvedOptions))
   stages.push(await runSaveDocumentStage(context))
   stages.push(await runIndexingStage(context, resolvedOptions))
+  stages.push(await runCitationLinkingStage(context, resolvedOptions))
   stages.push(await runTagSuggestionStage(context, resolvedOptions))
   stages.push(await runSemanticClassificationStage(context, resolvedOptions))
   stages.push(await runOnlineMetadataEnrichmentStage(context, resolvedOptions))
@@ -621,15 +729,26 @@ export async function resumeDocumentIngestion(documentId: string, options?: Docu
 export async function ingestImportedPdfDocument(input: ImportPdfDocumentInput, options?: DocumentIngestionOptions) {
   const stages: DocumentProcessingStageState[] = []
   const importStartedAt = new Date()
+  let documentId: string | undefined
 
   try {
     const base = await appDataDir()
     const targetDir = await join(base, 'pdfs', input.libraryId)
-    await mkdir(targetDir, { recursive: true })
+    try {
+      await mkdir(targetDir, { recursive: true })
+    } catch (error) {
+      throw new Error(`Could not create import directory "${targetDir}": ${normalizeErrorMessage(error)}`)
+    }
 
-    const documentId = `doc-${crypto.randomUUID()}`
+    documentId = `doc-${crypto.randomUUID()}`
     const importedFilePath = await join(targetDir, `${documentId}.pdf`)
-    await copyFile(input.sourcePath, importedFilePath)
+    try {
+      await copyFile(input.sourcePath, importedFilePath)
+    } catch (error) {
+      throw new Error(
+        `Could not copy "${input.sourcePath}" to "${importedFilePath}": ${normalizeErrorMessage(error)}`,
+      )
+    }
 
     const created = await repo.createDocument({
       id: documentId,
@@ -644,6 +763,8 @@ export async function ingestImportedPdfDocument(input: ImportPdfDocumentInput, o
       indexingStatus: 'pending',
       tagSuggestionStatus: 'pending',
       classificationStatus: 'pending',
+    }).catch((error) => {
+      throw new Error(`Could not create the local document record: ${normalizeErrorMessage(error)}`)
     })
 
     stages.push(stageCompleted('import_pdf', importStartedAt, 'PDF copied into local library storage.'))
@@ -663,9 +784,12 @@ export async function ingestImportedPdfDocument(input: ImportPdfDocumentInput, o
       stages: [...stages, ...pipelineResult.stages],
     } satisfies DocumentIngestionResult
   } catch (error) {
-    stages.push(stageFailed('import_pdf', importStartedAt, error instanceof Error ? error.message : String(error)))
+    const message = normalizeErrorMessage(error)
+    stages.push(stageFailed('import_pdf', importStartedAt, message))
     return {
       document: null,
+      documentId,
+      error: message,
       stages,
       success: false,
     } satisfies DocumentIngestionResult

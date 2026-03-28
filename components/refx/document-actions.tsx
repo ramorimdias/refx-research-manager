@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { BookMarked, BookOpen, Copy, Edit, ExternalLink, FolderOpen, Trash2 } from 'lucide-react'
+import { BookMarked, BookOpen, Copy, Edit, ExternalLink, FolderOpen, MessageSquare, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,6 +154,12 @@ function DocumentActionMenuItems({
         <Link href={`/documents?id=${document.id}&edit=1`}>
           <Edit className="mr-2 h-4 w-4" />
           Edit Details
+        </Link>
+      </Item>
+      <Item asChild>
+        <Link href={`/comments?id=${document.id}`}>
+          <MessageSquare className="mr-2 h-4 w-4" />
+          Open Comments
         </Link>
       </Item>
       {document.filePath && (
