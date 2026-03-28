@@ -22,11 +22,16 @@ if (!semverPattern.test(nextVersion)) {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const spawnOptions = {
     cwd: repoRoot,
     stdio: 'inherit',
     ...options,
-  })
+  }
+
+  const isWindowsCmd = process.platform === 'win32' && command.toLowerCase().endsWith('.cmd')
+  const result = isWindowsCmd
+    ? spawnSync('cmd.exe', ['/d', '/s', '/c', command, ...args], spawnOptions)
+    : spawnSync(command, args, spawnOptions)
 
   if ((result.status ?? 1) !== 0) {
     process.exit(result.status ?? 1)
