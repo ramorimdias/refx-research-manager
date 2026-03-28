@@ -34,4 +34,15 @@ const tauriBuild = spawnSync('pnpm.cmd', ['exec', 'tauri', 'build'], {
   shell: true,
 })
 
-process.exit(tauriBuild.status ?? 1)
+if ((tauriBuild.status ?? 1) !== 0) {
+  process.exit(tauriBuild.status ?? 1)
+}
+
+const manifestBuild = spawnSync('node', ['scripts/generate-updater-manifest.mjs'], {
+  cwd: repoRoot,
+  env,
+  stdio: 'inherit',
+  shell: true,
+})
+
+process.exit(manifestBuild.status ?? 1)
