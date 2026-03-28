@@ -63,7 +63,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwOTJCMjUxMzk0NkQwNEMKUldSTTBFWTVVYktTVUFmTG1FK2R6cWN3ZWhGTVBTMjlDdk1yMzhwNGQyeUNFM0s1QmFqRmpxMnEK",
       "endpoints": [
-        "https://github.com/ramorimdias/v0-refx-research-app/releases/latest/download/latest.json"
+        "https://github.com/ramorimdias/refx-research-manager/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

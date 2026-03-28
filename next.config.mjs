@@ -10,6 +10,14 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+
+  experimental: {
+    cpus: 1,
+    workerThreads: true,
+    webpackBuildWorker: false,
+    staticGenerationMaxConcurrency: 1,
+    staticGenerationMinPagesPerWorker: 1000,
+  },
   
   // Disable server-side features for Tauri compatibility
   ...(process.env.TAURI_ENV && {
@@ -18,7 +26,11 @@ const nextConfig = {
     
     // Disable features that require a server
     experimental: {
-      // Allow static generation
+      cpus: 1,
+      workerThreads: true,
+      webpackBuildWorker: false,
+      staticGenerationMaxConcurrency: 1,
+      staticGenerationMinPagesPerWorker: 1000,
     },
   }),
 }

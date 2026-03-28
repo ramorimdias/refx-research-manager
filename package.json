@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "pnpm ocr:assets && pnpm exec next dev --webpack -p 3001",
-    "build": "pnpm ocr:assets && pnpm exec next build",
+    "build": "pnpm ocr:assets && pnpm exec next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "ocr:assets": "node scripts/sync-tesseract-assets.mjs",

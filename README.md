@@ -82,7 +82,7 @@ If by “VS” you mean **VS Code**, this is the fastest workflow:
 2. **Open integrated terminal** in the cloned folder:
 
    ```powershell
-   cd <your-cloned-folder>\v0-refx-research-app
+   cd <your-cloned-folder>\refx-research-manager
    ```
 
 3. **Install dependencies** after first clone:
@@ -174,7 +174,7 @@ If you are building on a Windows machine and want to validate locally before sha
    - Visual Studio 2022 Build Tools with C++ workload
    - WebView2 Runtime
 
-2. **Open terminal in the project root** (`v0-refx-research-app`) and install dependencies:
+2. **Open terminal in the project root** (`refx-research-manager`) and install dependencies:
 
    ```powershell
    pnpm install
