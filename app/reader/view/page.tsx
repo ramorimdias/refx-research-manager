@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, FilePenLine, Highlighter, Loader2, MapPin, Printer, Search, SquareArrowOutUpRight, StickyNote, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FilePenLine, Highlighter, Loader2, MapPin, Printer, Search, SquareArrowOutUpRight, StickyNote, Trash2, Type, ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -88,6 +88,11 @@ function clamp01(value: number) {
   return Math.min(1, Math.max(0, value))
 }
 
+function hasSelectedText() {
+  if (typeof window === 'undefined') return false
+  return Boolean(window.getSelection?.()?.toString().trim())
+}
+
 function parseAreaHighlight(annotation: repo.DbAnnotation): ReaderAreaHighlight | null {
   if (annotation.kind !== 'highlight') return null
   if (!annotation.content) return null
@@ -167,6 +172,9 @@ export default function ReaderViewPage() {
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
   const [page, setPage] = useState(Number.isFinite(pageFromRoute) && pageFromRoute > 0 ? pageFromRoute : 1)
   const [zoom, setZoom] = useState(normalizeZoomLevel(zoomFromRoute))
+  const [renderZoom, setRenderZoom] = useState(normalizeZoomLevel(zoomFromRoute))
+  const [isTextSelectionMode, setIsTextSelectionMode] = useState(false)
+  const [isTextSelectionGestureActive, setIsTextSelectionGestureActive] = useState(false)
   const [commentDraftContent, setCommentDraftContent] = useState('')
   const [commentDraftPosition, setCommentDraftPosition] = useState<{ x: number; y: number } | null>(null)
   const [commentDraftAreaRect, setCommentDraftAreaRect] = useState<NoteAreaRect | null>(null)
@@ -196,6 +204,7 @@ export default function ReaderViewPage() {
   const shouldAutoScrollOccurrenceRef = useRef(false)
   const shouldAutoScrollCommentRef = useRef(false)
   const shouldAutoFocusNoteEditorRef = useRef(false)
+  const skipNextTransientTextDismissRef = useRef(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const readerViewportRef = useRef<HTMLDivElement | null>(null)
   const pageScrollLockRef = useRef(false)
@@ -218,6 +227,17 @@ export default function ReaderViewPage() {
   useEffect(() => {
     setZoom(normalizeZoomLevel(zoomFromRoute))
   }, [zoomFromRoute])
+
+  useEffect(() => {
+    const normalizedZoom = normalizeZoomLevel(zoom)
+    if (normalizedZoom === renderZoom) return
+
+    const timeout = window.setTimeout(() => {
+      setRenderZoom(normalizedZoom)
+    }, 500)
+
+    return () => window.clearTimeout(timeout)
+  }, [renderZoom, zoom])
 
   useEffect(() => {
     if (!document) return
@@ -379,7 +399,12 @@ export default function ReaderViewPage() {
     let cancelled = false
 
     const loadPageWords = async () => {
-      if (!document?.filePath || !isTauri() || viewerMode !== 'pdfjs') {
+      if (
+        !document?.filePath
+        || !isTauri()
+        || viewerMode !== 'pdfjs'
+        || (!isTextSelectionMode && !isTextSelectionGestureActive)
+      ) {
         setPageWords([])
         return
       }
@@ -401,9 +426,10 @@ export default function ReaderViewPage() {
     return () => {
       cancelled = true
     }
-  }, [document?.filePath, page, viewerMode])
+  }, [document?.filePath, page, viewerMode, isTextSelectionGestureActive, isTextSelectionMode])
 
   const activeOccurrence = searchOccurrences[activeOccurrenceIndex] ?? null
+  const zoomPreviewScale = renderZoom > 0 ? zoom / renderZoom : 1
   const currentPageOccurrences = useMemo(
     () => searchOccurrences.filter((occurrence) => occurrence.estimatedPage === page),
     [page, searchOccurrences],
@@ -493,6 +519,7 @@ export default function ReaderViewPage() {
     setCommentDraftAreaRect(null)
     notePlacementStartRef.current = null
     setIsHighlightMode(false)
+    setIsTextSelectionGestureActive(false)
     setDraftHighlightRect(null)
     highlightDragStartRef.current = null
   }, [page])
@@ -526,6 +553,36 @@ export default function ReaderViewPage() {
 
     return () => window.cancelAnimationFrame(rafId)
   }, [isNoteEditorOpen])
+
+  const isTextSelectionLayerVisible = isTextSelectionMode || isTextSelectionGestureActive
+
+  const handleTextSelectionGestureStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!canUsePreciseViewer || isHighlightMode || isSelectingCommentPosition) return
+    if (event.button !== 0) return
+    setIsTextSelectionGestureActive(true)
+  }
+
+  const handleTextSelectionGestureEnd = () => {
+    if (isTextSelectionMode) return
+    window.requestAnimationFrame(() => {
+      skipNextTransientTextDismissRef.current = true
+      setIsTextSelectionGestureActive(true)
+    })
+  }
+
+  const handleTransientTextSelectionDismiss = () => {
+    if (isTextSelectionMode || !isTextSelectionGestureActive) return
+    if (skipNextTransientTextDismissRef.current) {
+      skipNextTransientTextDismissRef.current = false
+      return
+    }
+    if (!hasSelectedText()) {
+      setIsTextSelectionGestureActive(false)
+      return
+    }
+    window.getSelection?.()?.removeAllRanges()
+    setIsTextSelectionGestureActive(false)
+  }
 
   useEffect(() => {
     const viewport = readerViewportRef.current
@@ -605,7 +662,7 @@ export default function ReaderViewPage() {
         }
         if (cancelled) return
 
-        const scale = zoom / 100
+        const scale = renderZoom / 100
         const viewport = pdfPage.getViewport({ scale })
         const canvas = canvasRef.current
         const context = canvas.getContext('2d')
@@ -649,7 +706,7 @@ export default function ReaderViewPage() {
       cancelled = true
       renderTask?.cancel?.()
     }
-  }, [page, pdfDocument, zoom])
+  }, [page, pdfDocument, renderZoom])
 
   const selectOccurrence = (index: number, options?: { jumpToPage?: boolean }) => {
     const occurrence = searchOccurrences[index]
@@ -1455,6 +1512,7 @@ export default function ReaderViewPage() {
           <ReaderToolbarIconButton
             label={isHighlightMode ? 'Exit highlight mode' : 'Highlight mode'}
             onClick={() => {
+              setIsTextSelectionMode(false)
               setIsSelectingCommentPosition(false)
               setIsNoteEditorOpen(false)
               setIsHighlightMode((current) => !current)
@@ -1466,6 +1524,28 @@ export default function ReaderViewPage() {
             className={cn(isHighlightMode && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}
           >
             <Highlighter className="h-4 w-4" />
+          </ReaderToolbarIconButton>
+          <ReaderToolbarIconButton
+            label={isTextSelectionLayerVisible ? 'Exit text selection' : 'Select text'}
+            onClick={() => {
+              setIsHighlightMode(false)
+              setDraftHighlightRect(null)
+              highlightDragStartRef.current = null
+              setIsSelectingCommentPosition(false)
+              if (isTextSelectionLayerVisible) {
+                window.getSelection?.()?.removeAllRanges()
+                skipNextTransientTextDismissRef.current = false
+                setIsTextSelectionGestureActive(false)
+                setIsTextSelectionMode(false)
+              } else {
+                setIsTextSelectionMode(true)
+              }
+            }}
+            disabled={!canUsePreciseViewer}
+            aria-pressed={isTextSelectionLayerVisible}
+            className={cn(isTextSelectionLayerVisible && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}
+          >
+            <Type className="h-4 w-4" />
           </ReaderToolbarIconButton>
           <div className="ml-2 flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-border/80 bg-background px-2 py-1">
             <Search className="h-4 w-4 text-muted-foreground" />
@@ -1568,29 +1648,54 @@ export default function ReaderViewPage() {
                   'relative overflow-hidden rounded border bg-white shadow-sm',
                   (isSelectingCommentPosition || isHighlightMode) && 'cursor-crosshair ring-2 ring-primary/25',
                 )}
-                onClick={handlePageCommentSelection}
+                onClick={isSelectingCommentPosition ? handlePageCommentSelection : undefined}
+                onClickCapture={() => {
+                  if (!isHighlightMode && !isSelectingCommentPosition) {
+                    handleTransientTextSelectionDismiss()
+                  }
+                }}
+                onPointerDownCapture={handleTextSelectionGestureStart}
+                onPointerUpCapture={handleTextSelectionGestureEnd}
+                onPointerCancel={handleTextSelectionGestureEnd}
+                style={{
+                  width: renderedPageSize.width > 0 ? `${renderedPageSize.width * zoomPreviewScale}px` : undefined,
+                  height: renderedPageSize.height > 0 ? `${renderedPageSize.height * zoomPreviewScale}px` : undefined,
+                }}
               >
+                <div
+                  className="relative origin-top-left"
+                  style={{
+                    width: renderedPageSize.width > 0 ? `${renderedPageSize.width}px` : undefined,
+                    height: renderedPageSize.height > 0 ? `${renderedPageSize.height}px` : undefined,
+                    transform: `scale(${zoomPreviewScale})`,
+                  }}
+                >
                 <canvas ref={canvasRef} className="block bg-white" />
                 {renderedPageSize.width > 0 && (
                   <div className="absolute inset-0">
-                    <div className="absolute inset-0 overflow-hidden">
+                    {isTextSelectionLayerVisible ? (
+                    <div className="absolute inset-0 z-30 overflow-hidden select-text cursor-text">
                       {pageWords.map((word, wordIndex) => (
                         <span
                           key={`${wordIndex}-${word.left}-${word.top}`}
-                          className="absolute cursor-text select-text whitespace-pre text-transparent"
+                          className="absolute cursor-text select-text whitespace-pre"
                           style={{
-                            left: `${word.left * (zoom / 100)}px`,
-                            top: `${word.top * (zoom / 100)}px`,
-                            width: `${Math.max(6, word.width * (zoom / 100))}px`,
-                            height: `${Math.max(10, word.height * (zoom / 100))}px`,
-                            fontSize: `${Math.max(10, word.height * (zoom / 100) * 0.85)}px`,
-                            lineHeight: `${Math.max(10, word.height * (zoom / 100))}px`,
+                            left: `${word.left * (renderZoom / 100)}px`,
+                            top: `${word.top * (renderZoom / 100)}px`,
+                            width: `${Math.max(6, word.width * (renderZoom / 100))}px`,
+                            height: `${Math.max(10, word.height * (renderZoom / 100))}px`,
+                            fontSize: `${Math.max(10, word.height * (renderZoom / 100) * 0.85)}px`,
+                            lineHeight: `${Math.max(10, word.height * (renderZoom / 100))}px`,
+                            color: 'rgba(0, 0, 0, 0.01)',
+                            userSelect: 'text',
+                            WebkitUserSelect: 'text',
                           }}
                         >
                           {word.text}
                         </span>
                       ))}
                     </div>
+                    ) : null}
                     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
                       {notePointComments.map((comment) => {
                         const isActive = comment.id === selectedCommentId
@@ -1625,7 +1730,7 @@ export default function ReaderViewPage() {
                         )
                       })}
                     </div>
-                    <div className="absolute inset-0 z-10 overflow-visible">
+                    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible">
                       {noteAreaComments.map((comment) => {
                         const isActive = comment.id === selectedCommentId
                         if (!comment.areaRect) return null
@@ -1805,6 +1910,7 @@ export default function ReaderViewPage() {
                 )}
                 </div>
               </div>
+            </div>
             ) : showViewerLoading ? (
               <div className="flex min-h-[calc(100vh-13rem)] items-center justify-center">
                 <div className="flex items-center gap-2 rounded-full border bg-background/95 px-3 py-2 text-sm shadow-sm">
