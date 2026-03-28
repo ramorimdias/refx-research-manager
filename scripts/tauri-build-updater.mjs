@@ -12,6 +12,10 @@ if (!env.TAURI_SIGNING_PRIVATE_KEY_PATH && !env.TAURI_SIGNING_PRIVATE_KEY && exi
   env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(updaterKeyPath, 'utf8').trim()
 }
 
+if (!('TAURI_SIGNING_PRIVATE_KEY_PASSWORD' in env)) {
+  env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
+}
+
 const build = spawnSync('pnpm.cmd', ['tauri:icons'], {
   cwd: repoRoot,
   env,
