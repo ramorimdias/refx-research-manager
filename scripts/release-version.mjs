@@ -99,10 +99,16 @@ console.log('Building signed release...')
 run('pnpm.cmd', ['tauri:build'])
 
 console.log('')
-console.log('Creating git release commit...')
-
 run('git', ['add', 'package.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml'])
-run('git', ['commit', '-m', `Release v${nextVersion}`])
+
+const stagedVersionChanges = capture('git', ['diff', '--cached', '--name-only'])
+if (stagedVersionChanges) {
+  console.log('Creating git release commit...')
+  run('git', ['commit', '-m', `Release v${nextVersion}`])
+} else {
+  console.log('No version file changes to commit; continuing with tag and push.')
+}
+
 run('git', ['tag', `v${nextVersion}`])
 run('git', ['push', 'origin', branch, '--tags'])
 
