@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const repoRoot = process.cwd()
 const packageJsonPath = join(repoRoot, 'package.json')
@@ -19,6 +20,49 @@ if (!semverPattern.test(nextVersion)) {
   process.exit(1)
 }
 
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    shell: true,
+    ...options,
+  })
+
+  if ((result.status ?? 1) !== 0) {
+    process.exit(result.status ?? 1)
+  }
+}
+
+function capture(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    shell: true,
+  })
+
+  if ((result.status ?? 1) !== 0) {
+    process.stderr.write(result.stderr || '')
+    process.exit(result.status ?? 1)
+  }
+
+  return (result.stdout || '').trim()
+}
+
+const status = capture('git', ['status', '--porcelain'])
+if (status) {
+  console.error('Release aborted: git working tree is not clean.')
+  console.error('Commit or stash your current changes first, then run the release command again.')
+  process.exit(1)
+}
+
+const existingTag = capture('git', ['tag', '--list', `v${nextVersion}`])
+if (existingTag) {
+  console.error(`Release aborted: tag v${nextVersion} already exists.`)
+  process.exit(1)
+}
+
+const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'])
+
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
 const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, 'utf8'))
 
@@ -35,9 +79,17 @@ console.log(`Updated REFX version to ${nextVersion}`)
 console.log(`- package.json: ${currentPackageVersion} -> ${packageJson.version}`)
 console.log(`- src-tauri/tauri.conf.json: ${currentTauriVersion} -> ${tauriConfig.version}`)
 console.log('')
-console.log('Next steps:')
-console.log('1. pnpm tauri:build')
-console.log('2. git add package.json src-tauri/tauri.conf.json')
-console.log(`3. git commit -m "Release v${nextVersion}"`)
-console.log(`4. git tag v${nextVersion}`)
-console.log('5. git push origin main --tags')
+console.log('Building signed release...')
+
+run('pnpm.cmd', ['tauri:build'])
+
+console.log('')
+console.log('Creating git release commit...')
+
+run('git', ['add', 'package.json', 'src-tauri/tauri.conf.json'])
+run('git', ['commit', '-m', `Release v${nextVersion}`])
+run('git', ['tag', `v${nextVersion}`])
+run('git', ['push', 'origin', branch, '--tags'])
+
+console.log('')
+console.log(`Release v${nextVersion} completed and pushed on branch ${branch}.`)

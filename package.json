@@ -12,7 +12,7 @@
     "release:build": "pnpm tauri:build",
     "tauri": "pnpm exec tauri",
     "tauri:dev": "pnpm tauri:icons && pnpm exec tauri dev",
-    "tauri:build": "pnpm tauri:icons && pnpm exec tauri build",
+    "tauri:build": "node scripts/tauri-build-updater.mjs",
     "tauri:build:update": "node scripts/tauri-build-updater.mjs",
     "tauri:icons": "node scripts/ensure-tauri-icons.mjs"
   },
