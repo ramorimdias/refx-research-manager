@@ -163,6 +163,7 @@ export type DbUpdateDocumentMetadataInput = {
 export type DbStartBookCoverUploadSessionResult = {
   token: string
   url: string
+  urls: string[]
 }
 
 export type DbBookCoverUploadSessionStatus = {

@@ -77,6 +77,7 @@ type RelationListItem = {
 type BookCoverPhoneSession = {
   token: string
   url: string
+  urls: string[]
   qrDataUrl: string
 }
 
@@ -625,6 +626,7 @@ export default function DocumentDetailPage() {
       setBookCoverPhoneSession({
         token: session.token,
         url: session.url,
+        urls: session.urls,
         qrDataUrl,
       })
       setBookCoverPhoneStatus('Scan with your phone on the same local network.')
@@ -1219,6 +1221,14 @@ export default function DocumentDetailPage() {
                               Keep the desktop app open. Your phone and computer need to be on the same local network.
                             </p>
                             <Input readOnly value={bookCoverPhoneSession.url} className="text-xs" />
+                            {bookCoverPhoneSession.urls.length > 1 ? (
+                              <div className="space-y-1 rounded-lg border border-border/70 bg-muted/30 p-2">
+                                <p className="text-xs font-medium text-foreground/80">Alternate local URLs</p>
+                                {bookCoverPhoneSession.urls.slice(1).map((candidateUrl) => (
+                                  <Input key={candidateUrl} readOnly value={candidateUrl} className="text-xs" />
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       ) : null}

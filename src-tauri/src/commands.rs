@@ -302,6 +302,7 @@ pub struct UpdateDocumentInput {
 pub struct StartBookCoverUploadSessionResult {
     pub token: String,
     pub url: String,
+    pub urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,10 +500,77 @@ fn normalize_image_extension(file_name: &str, mime_type: Option<&str>) -> &'stat
     }
 }
 
+fn is_private_ipv4(ip: &str) -> bool {
+    ip.starts_with("10.")
+        || ip.starts_with("192.168.")
+        || ip
+            .split('.')
+            .collect::<Vec<_>>()
+            .as_slice()
+            .get(0..2)
+            .map(|parts| {
+                parts[0] == "172"
+                    && parts[1]
+                        .parse::<u8>()
+                        .map(|second| (16..=31).contains(&second))
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false)
+}
+
+fn local_ip_priority(ip: &str) -> u8 {
+    if ip.starts_with("192.168.") {
+        0
+    } else if ip.starts_with("10.") {
+        1
+    } else if ip.starts_with("172.") && is_private_ipv4(ip) {
+        2
+    } else if is_private_ipv4(ip) {
+        3
+    } else {
+        4
+    }
+}
+
 fn detect_local_ip_address() -> Result<String, AppError> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     socket.connect("8.8.8.8:80")?;
     Ok(socket.local_addr()?.ip().to_string())
+}
+
+fn detect_local_ip_addresses() -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if cfg!(target_os = "windows") {
+        if let Ok(output) = Command::new("ipconfig").output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if !trimmed.contains("IPv4") {
+                    continue;
+                }
+                let Some((_, value)) = trimmed.split_once(':') else {
+                    continue;
+                };
+                let ip = value.trim().trim_end_matches("(Preferred)").trim().to_string();
+                if ip.is_empty() || ip.starts_with("169.254.") {
+                    continue;
+                }
+                if !candidates.iter().any(|existing| existing == &ip) {
+                    candidates.push(ip);
+                }
+            }
+        }
+    }
+
+    if let Ok(primary) = detect_local_ip_address() {
+        if !candidates.iter().any(|existing| existing == &primary) {
+            candidates.push(primary);
+        }
+    }
+
+    candidates.sort_by_key(|ip| (local_ip_priority(ip), ip.clone()));
+    candidates
 }
 
 fn write_http_response(
@@ -739,32 +807,31 @@ fn process_book_cover_upload_connection(
     write_http_response(&mut stream, "404 Not Found", "text/plain; charset=utf-8", b"Not found")
 }
 
-fn ensure_book_cover_upload_server(app: &AppHandle) {
-    let app_handle = app.clone();
-    BOOK_COVER_UPLOAD_SERVER.get_or_init(|| {
-        std::thread::spawn(move || {
-            let listener = match TcpListener::bind(("0.0.0.0", BOOK_COVER_UPLOAD_PORT)) {
-                Ok(listener) => listener,
-                Err(error) => {
-                    eprintln!("Failed to start local book cover upload server: {}", error);
-                    return;
-                }
-            };
+fn ensure_book_cover_upload_server(app: &AppHandle) -> Result<(), AppError> {
+    if BOOK_COVER_UPLOAD_SERVER.get().is_some() {
+        return Ok(());
+    }
 
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        if let Err(error) = process_book_cover_upload_connection(&app_handle, stream) {
-                            eprintln!("Book cover upload request failed: {}", error);
-                        }
+    let listener = TcpListener::bind(("0.0.0.0", BOOK_COVER_UPLOAD_PORT))?;
+    let app_handle = app.clone();
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    if let Err(error) = process_book_cover_upload_connection(&app_handle, stream) {
+                        eprintln!("Book cover upload request failed: {}", error);
                     }
-                    Err(error) => {
-                        eprintln!("Book cover upload connection failed: {}", error);
-                    }
+                }
+                Err(error) => {
+                    eprintln!("Book cover upload connection failed: {}", error);
                 }
             }
-        });
+        }
     });
+
+    let _ = BOOK_COVER_UPLOAD_SERVER.set(());
+    Ok(())
 }
 
 fn import_book_cover_file(app: &AppHandle, source_path: &str) -> Result<String, AppError> {
@@ -1531,11 +1598,20 @@ pub fn import_book_cover(app: AppHandle, source_path: String) -> Result<String, 
 pub fn start_book_cover_upload_session(
     app: AppHandle,
 ) -> Result<StartBookCoverUploadSessionResult, AppError> {
-    ensure_book_cover_upload_server(&app);
+    ensure_book_cover_upload_server(&app)?;
     let token = format!("cover-{}", uuid::Uuid::new_v4());
     let expires_at_unix = chrono::Utc::now().timestamp() + (15 * 60);
-    let local_ip = detect_local_ip_address()?;
-    let url = format!("http://{local_ip}:{BOOK_COVER_UPLOAD_PORT}/cover-upload/{token}");
+    let local_ips = detect_local_ip_addresses();
+    if local_ips.is_empty() {
+        return Err(AppError::Validation(
+            "Could not determine a local network address for phone upload.".into(),
+        ));
+    }
+    let urls = local_ips
+        .iter()
+        .map(|ip| format!("http://{ip}:{BOOK_COVER_UPLOAD_PORT}/cover-upload/{token}"))
+        .collect::<Vec<_>>();
+    let url = urls[0].clone();
 
     let mut sessions = book_cover_upload_sessions()
         .lock()
@@ -1549,7 +1625,7 @@ pub fn start_book_cover_upload_session(
         },
     );
 
-    Ok(StartBookCoverUploadSessionResult { token, url })
+    Ok(StartBookCoverUploadSessionResult { token, url, urls })
 }
 
 #[tauri::command]

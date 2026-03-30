@@ -9,6 +9,7 @@ const cargoTomlPath = join(repoRoot, 'src-tauri', 'Cargo.toml')
 const appVersionPath = join(repoRoot, 'lib', 'app-version.ts')
 const bundleDir = join(repoRoot, 'src-tauri', 'target', 'release', 'bundle')
 const msiDir = join(bundleDir, 'msi')
+const envLocalPath = join(repoRoot, '.env.local')
 
 const nextVersion = process.argv[2]?.trim()
 
@@ -53,6 +54,32 @@ function capture(command, args) {
   }
 
   return (result.stdout || '').trim()
+}
+
+function loadLocalEnvFile(filePath) {
+  if (!existsSync(filePath)) return
+
+  const source = readFileSync(filePath, 'utf8')
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+
+    const separatorIndex = line.indexOf('=')
+    if (separatorIndex <= 0) continue
+
+    const key = line.slice(0, separatorIndex).trim()
+    if (!key || process.env[key]?.trim()) continue
+
+    let value = line.slice(separatorIndex + 1).trim()
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1)
+    }
+
+    process.env[key] = value
+  }
 }
 
 function parseGithubRepoFullName(remoteUrl) {
@@ -219,6 +246,7 @@ if (existingTag) {
 const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'])
 const originUrl = capture('git', ['remote', 'get-url', 'origin'])
 const repoFullName = parseGithubRepoFullName(originUrl)
+loadLocalEnvFile(envLocalPath)
 const githubToken = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim()
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
