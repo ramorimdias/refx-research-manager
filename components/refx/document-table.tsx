@@ -28,7 +28,7 @@ import {
 import { useDocumentListSelection } from '@/lib/hooks/use-document-list-selection'
 import { cn } from '@/lib/utils'
 import type { Document, DocumentEphemeralUiFlags, ReadingStage } from '@/lib/types'
-import { NewBadge, OcrStatusBadge, ReadingStageBadge, StarRating } from './common'
+import { NewBadge, ReadingStageBadge, StarRating } from './common'
 import { DocumentBulkActions } from './document-bulk-actions'
 import { useAppStore } from '@/lib/store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
@@ -81,8 +81,12 @@ function getTableMetadataState(document: Document) {
   const hasYear = typeof document.year === 'number'
   const hasDoi = (document.doi ?? '').trim().length > 0
 
-  if (hasTitle && hasAuthors && hasYear) {
+  if (hasTitle && hasAuthors && hasYear && hasDoi) {
     return { label: 'Complete', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' }
+  }
+
+  if (hasTitle && hasAuthors && hasYear && !hasDoi) {
+    return { label: 'Missing DOI', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' }
   }
 
   if (hasDoi) {
@@ -382,7 +386,6 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {doc.hasOcr && <OcrStatusBadge status={doc.ocrStatus} />}
             </div>
           </TableCell>
         )
@@ -406,7 +409,11 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
                   </Link>
                 ) : (
                   <Badge className={cn('border-0', metadataState.className)}>
-                    {metadataState.label === 'Complete' ? t('common.complete') : t('common.missing')}
+                    {metadataState.label === 'Complete'
+                      ? t('common.complete')
+                      : metadataState.label === 'Missing DOI'
+                        ? t('libraries.missingDoi')
+                        : t('common.missing')}
                   </Badge>
                 )
               )

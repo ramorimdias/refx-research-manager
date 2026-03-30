@@ -253,15 +253,15 @@ export default function SettingsPage() {
 
       if (!result.update) {
         setAvailableUpdate(null)
-        setUpdateStatus('You are on the latest version.')
+        setUpdateStatus(t('settings.latestVersion'))
         return
       }
 
       setAvailableUpdate(result.update)
-      setUpdateStatus(`Refx ${result.update.version} is available.`)
+      setUpdateStatus(t('settings.updateAvailable', { version: result.update.version }))
       setIsUpdateDialogOpen(true)
     } catch (error) {
-      setUpdateStatus(error instanceof Error ? error.message : 'Unable to check for updates.')
+      setUpdateStatus(error instanceof Error ? error.message : t('settings.unableToCheckForUpdates'))
     } finally {
       setIsCheckingUpdates(false)
     }
@@ -269,13 +269,13 @@ export default function SettingsPage() {
 
   const handleInstallUpdate = async () => {
     setIsInstallingUpdate(true)
-    setUpdateStatus('Preparing update...')
+    setUpdateStatus(t('settings.preparingUpdate'))
     try {
       await downloadAndInstallAppUpdate((message) => {
         setUpdateStatus(message)
       })
     } catch (error) {
-      setUpdateStatus(error instanceof Error ? error.message : 'Update install failed.')
+      setUpdateStatus(error instanceof Error ? error.message : t('settings.updateInstallFailed'))
       setIsInstallingUpdate(false)
     }
   }
@@ -547,14 +547,14 @@ export default function SettingsPage() {
               <>
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">App Updates</CardTitle>
-                    <CardDescription>Check for signed releases published on GitHub.</CardDescription>
+                    <CardTitle className="text-base">{t('settings.appUpdates')}</CardTitle>
+                    <CardDescription>{t('settings.appUpdatesDescription')}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label className="text-sm font-medium">Check automatically</Label>
-                        <p className="mt-1 text-xs text-muted-foreground">Look for updates when REFX starts.</p>
+                        <Label className="text-sm font-medium">{t('settings.checkAutomatically')}</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">{t('settings.checkAutomaticallyHelp')}</p>
                       </div>
                       <Checkbox
                         checked={settings.autoCheckForUpdates}
@@ -567,11 +567,11 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Button variant="outline" onClick={() => void handleCheckForUpdates()} disabled={isCheckingUpdates}>
                         {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        {isCheckingUpdates ? 'Checking...' : 'Check for Updates'}
+                        {isCheckingUpdates ? t('settings.checking') : t('settings.checkForUpdates')}
                       </Button>
                       <Button onClick={() => void handleInstallUpdate()} disabled={isInstallingUpdate || !availableUpdate}>
                         {isInstallingUpdate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {isInstallingUpdate ? 'Installing...' : 'Download & Install'}
+                        {isInstallingUpdate ? t('updateDialog.installing') : t('settings.downloadInstall')}
                       </Button>
                     </div>
 

@@ -139,14 +139,20 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!availableUpdate) return
 
     setIsInstallingUpdate(true)
-    setUpdateInstallStatus('Preparing update...')
+    setUpdateInstallStatus(translate(appSettings?.locale ?? 'en', 'settings.preparingUpdate'))
     try {
-      await downloadAndInstallAppUpdate((message) => {
-        setUpdateInstallStatus(message)
+      await downloadAndInstallAppUpdate((messageKey, params) => {
+        const locale = appSettings?.locale ?? 'en'
+        const translatedMessage = translate(locale, messageKey, params)
+        setUpdateInstallStatus(translatedMessage)
       })
     } catch (error) {
       console.error('Failed to install app update:', error)
-      setUpdateInstallStatus(error instanceof Error ? error.message : 'Update install failed.')
+      setUpdateInstallStatus(
+        error instanceof Error
+          ? error.message
+          : translate(appSettings?.locale ?? 'en', 'settings.updateInstallFailed'),
+      )
       setIsInstallingUpdate(false)
     }
   }

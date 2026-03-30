@@ -23,7 +23,7 @@ import {
 import { convertFileSrc, isTauri } from '@/lib/tauri/client'
 import { cn } from '@/lib/utils'
 import type { Document, DocumentEphemeralUiFlags, ReadingStage } from '@/lib/types'
-import { NewBadge, OcrStatusBadge, ReadingStageBadge, StarRating } from './common'
+import { NewBadge, ReadingStageBadge, StarRating } from './common'
 import { useAppStore } from '@/lib/store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
 
@@ -236,7 +236,6 @@ export function DocumentCard({ document: doc, ephemeralFlags, variant = 'grid' }
                 stage={doc.readingStage}
                 onChange={(readingStage) => void updateDocument(doc.id, { readingStage })}
               />
-              {doc.hasOcr && <OcrStatusBadge status={doc.ocrStatus} />}
             </div>
             <div className="flex items-center gap-2">
               {doc.commentCount > 0 && (

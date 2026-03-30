@@ -665,15 +665,25 @@ fn process_book_cover_upload_connection(
     mut stream: TcpStream,
 ) -> Result<(), AppError> {
     let mut buffer = Vec::new();
-    stream.read_to_end(&mut buffer)?;
+    let mut header_end = None;
 
-    let header_end = buffer
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
+    while header_end.is_none() {
+        let mut chunk = [0_u8; 4096];
+        let bytes_read = stream.read(&mut chunk)?;
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+        header_end = buffer
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| index + 4);
+    }
+
+    let header_end = header_end
         .ok_or_else(|| AppError::Validation("Malformed HTTP request.".into()))?;
 
-    let header_text = String::from_utf8_lossy(&buffer[..header_end]);
+    let header_text = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
     let mut lines = header_text.lines();
     let request_line = lines
         .next()
@@ -681,11 +691,37 @@ fn process_book_cover_upload_connection(
     let mut request_parts = request_line.split_whitespace();
     let method = request_parts
         .next()
-        .ok_or_else(|| AppError::Validation("Missing HTTP method.".into()))?;
+        .ok_or_else(|| AppError::Validation("Missing HTTP method.".into()))?
+        .to_string();
     let path = request_parts
         .next()
-        .ok_or_else(|| AppError::Validation("Missing HTTP path.".into()))?;
-    let body = &buffer[header_end..];
+        .ok_or_else(|| AppError::Validation("Missing HTTP path.".into()))?
+        .to_string();
+    let content_length = lines
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if !name.eq_ignore_ascii_case("Content-Length") {
+                return None;
+            }
+            value.trim().parse::<usize>().ok()
+        })
+        .unwrap_or(0);
+
+    while buffer.len().saturating_sub(header_end) < content_length {
+        let mut chunk = [0_u8; 4096];
+        let bytes_read = stream.read(&mut chunk)?;
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..bytes_read]);
+    }
+
+    let available_body_len = buffer.len().saturating_sub(header_end);
+    if available_body_len < content_length {
+        return Err(AppError::Validation("Incomplete HTTP request body.".into()));
+    }
+
+    let body = &buffer[header_end..header_end + content_length];
 
     if path == "/" {
         return write_http_response(
@@ -697,7 +733,7 @@ fn process_book_cover_upload_connection(
     }
 
     if path.starts_with("/cover-upload/") {
-        return handle_book_cover_upload_request(app, &mut stream, method, path, body);
+        return handle_book_cover_upload_request(app, &mut stream, &method, &path, body);
     }
 
     write_http_response(&mut stream, "404 Not Found", "text/plain; charset=utf-8", b"Not found")

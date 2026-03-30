@@ -293,12 +293,9 @@ export async function extractLocalPdfMetadata(filePath: string, titleFallbackPat
   const fileNameTitle = titleFromFilePath(titleFallbackPath ?? filePath)
   const provenance: DocumentMetadataProvenance = {}
 
-  const embeddedTitle = normalizeExtractedTitle(rawMetadata.title)
-  const title = embeddedTitle ?? fileNameTitle
+  const title = fileNameTitle
 
-  if (embeddedTitle) {
-    provenance.title = provenanceEntry('embedded_pdf_metadata', 'Embedded PDF title metadata.', 0.95)
-  } else if (fileNameTitle) {
+  if (fileNameTitle) {
     provenance.title = provenanceEntry('filename_fallback', 'Filename fallback.', 0.25)
   }
 

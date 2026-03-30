@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Clock3, FileText, Plus, Search } from 'lucide-react'
+import { ArrowRight, Clock3, FileText, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -147,13 +147,6 @@ export default function NotesPage() {
     selectedNote !== null &&
     (draftTitle !== selectedNote.title || draftContent !== selectedNote.content)
 
-  const handleCreateNote = async () => {
-    if (!isDesktopApp) return
-    const note = await repo.createNote({ title: 'New note', content: '', documentId: undefined, pageNumber: undefined })
-    await loadNotes()
-    setSelectedNoteId(note.id)
-  }
-
   const handleSave = async () => {
     if (!selectedNote || !isDesktopApp) return
 
@@ -204,11 +197,6 @@ export default function NotesPage() {
               </SelectContent>
             </Select>
           </div>
-
-          <Button className="w-full" onClick={() => void handleCreateNote()}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('notesPage.newNote')}
-          </Button>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

@@ -18,6 +18,7 @@ export type ReadingStage = 'unread' | 'reading' | 'finished'
 export type ProcessingStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'failed' | 'skipped'
 export type OcrStatus = 'pending' | 'processing' | 'complete' | 'failed' | 'not_needed'
 export type MetadataStatus = 'missing' | 'partial' | 'complete'
+export type LibraryMetadataState = 'missing' | 'fetch_possible' | 'missing_doi' | 'complete'
 export type DocumentType = 'pdf' | 'physical_book' | 'my_work'
 export type TextExtractionStatus = ProcessingStatus
 export type IndexingStatus = ProcessingStatus
@@ -320,7 +321,7 @@ export interface DocumentFilters {
   libraryId?: string
   tags?: string[]
   readingStage?: ReadingStage[]
-  metadataStatus?: MetadataStatus[]
+  metadataStatus?: LibraryMetadataState[]
   year?: { min?: number; max?: number }
   favorite?: boolean
   hasComments?: boolean

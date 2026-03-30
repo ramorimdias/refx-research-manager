@@ -23,7 +23,7 @@ function summarizeUpdate(update: NonNullable<RawUpdate>): AppUpdateSummary {
   return {
     version: update.version,
     currentVersion: update.currentVersion,
-    notes: update.body?.trim() || 'A new version of Refx is available.',
+    notes: update.body?.trim() || '',
     publishedAt: update.date ?? null,
   }
 }
@@ -57,7 +57,7 @@ export async function checkForAppUpdate(): Promise<AppUpdateCheckResult> {
 }
 
 export async function downloadAndInstallAppUpdate(
-  onProgress?: (message: string) => void,
+  onProgress?: (messageKey: string, params?: Record<string, string | number>) => void,
 ) {
   let update = pendingUpdate
 
@@ -74,13 +74,15 @@ export async function downloadAndInstallAppUpdate(
   await update.downloadAndInstall((event) => {
     switch (event.event) {
       case 'Started':
-        onProgress?.('Downloading update...')
+        onProgress?.('updateDialog.downloading')
         break
       case 'Progress':
-        onProgress?.(`Downloading update... ${Math.max(1, Math.round(event.data.chunkLength / 1024))} KB`)
+        onProgress?.('updateDialog.downloadingKb', {
+          size: Math.max(1, Math.round(event.data.chunkLength / 1024)),
+        })
         break
       case 'Finished':
-        onProgress?.('Installing update...')
+        onProgress?.('updateDialog.installingStatus')
         break
       default:
         break
@@ -88,7 +90,7 @@ export async function downloadAndInstallAppUpdate(
   })
 
   pendingUpdate = null
-  onProgress?.('Restarting...')
+  onProgress?.('updateDialog.restarting')
   await relaunch()
   return true
 }

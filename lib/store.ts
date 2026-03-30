@@ -39,6 +39,7 @@ import type {
   DocumentSort,
   Library,
   MetadataStatus,
+  LibraryMetadataState,
   PersistentSearchState,
   ReadingStage,
   ViewMode,
@@ -509,6 +510,18 @@ function compareValues(a: Document, b: Document, field: DocumentSort['field']) {
     default:
       return a.title.localeCompare(b.title)
   }
+}
+
+function getLibraryMetadataFilterState(document: Document): LibraryMetadataState {
+  const hasTitle = document.title.trim().length > 0
+  const hasAuthors = document.authors.length > 0
+  const hasYear = typeof document.year === 'number'
+  const hasDoi = (document.doi ?? '').trim().length > 0
+
+  if (hasTitle && hasAuthors && hasYear && hasDoi) return 'complete'
+  if (hasTitle && hasAuthors && hasYear && !hasDoi) return 'missing_doi'
+  if (hasDoi) return 'fetch_possible'
+  return 'missing'
 }
 
 function defaultPersistentSearch(): PersistentSearchState {
@@ -1522,7 +1535,10 @@ export const useFilteredDocuments = () => {
     if (filters.hasComments && document.commentCount <= 0) return false
     if (filters.hasNotes && document.notesCount <= 0) return false
     if (filters.readingStage?.length && !filters.readingStage.includes(document.readingStage)) return false
-    if (filters.metadataStatus?.length && !filters.metadataStatus.includes(document.metadataStatus)) return false
+    if (
+      filters.metadataStatus?.length
+      && !filters.metadataStatus.includes(getLibraryMetadataFilterState(document))
+    ) return false
     if (filters.tags?.length && !filters.tags.some((tag) => document.tags.includes(tag))) return false
 
     if (filters.year?.min && (document.year ?? 0) < filters.year.min) return false

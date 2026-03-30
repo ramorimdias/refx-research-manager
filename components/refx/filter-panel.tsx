@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/collapsible'
 import { Separator } from '@/components/ui/separator'
 import { useAppStore } from '@/lib/store'
-import type { MetadataStatus, ReadingStage } from '@/lib/types'
+import type { LibraryMetadataState, ReadingStage } from '@/lib/types'
 import { useT } from '@/lib/localization'
 
 const readingStages: { value: ReadingStage; label: string }[] = [
@@ -22,9 +22,10 @@ const readingStages: { value: ReadingStage; label: string }[] = [
   { value: 'finished', label: 'Finished' },
 ]
 
-const metadataStatuses: { value: MetadataStatus; label: string }[] = [
+const metadataStatuses: { value: LibraryMetadataState; label: string }[] = [
   { value: 'missing', label: 'Missing' },
-  { value: 'partial', label: 'Partial' },
+  { value: 'fetch_possible', label: 'Fetch Possible' },
+  { value: 'missing_doi', label: 'Missing DOI' },
   { value: 'complete', label: 'Complete' },
 ]
 
@@ -62,7 +63,7 @@ export function FilterPanel() {
     setFilters({ ...filters, readingStage: updated.length > 0 ? updated : undefined })
   }
 
-  const toggleMetadataStatus = (status: MetadataStatus) => {
+  const toggleMetadataStatus = (status: LibraryMetadataState) => {
     const current = filters.metadataStatus || []
     const updated = current.includes(status) ? current.filter((value) => value !== status) : [...current, status]
     setFilters({ ...filters, metadataStatus: updated.length > 0 ? updated : undefined })
@@ -171,7 +172,11 @@ export function FilterPanel() {
                   onCheckedChange={() => toggleMetadataStatus(status.value)}
                 />
                 <Label htmlFor={`meta-${status.value}`} className="cursor-pointer">
-                  {t(`common.${status.value}`)}
+                  {status.value === 'fetch_possible'
+                    ? t('documentTable.fetchPossible')
+                    : status.value === 'missing_doi'
+                      ? t('libraries.missingDoi')
+                      : t(`common.${status.value}`)}
                 </Label>
               </div>
             ))}
