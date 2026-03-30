@@ -275,7 +275,7 @@ export function deriveMetadataStatus(input: {
   return 'missing'
 }
 
-export async function extractLocalPdfMetadata(filePath: string): Promise<LocalPdfMetadata> {
+export async function extractLocalPdfMetadata(filePath: string, titleFallbackPath?: string): Promise<LocalPdfMetadata> {
   const rawMetadata = await readRawPdfMetadata(filePath)
   let firstPageMetadata: FirstPageMetadataSignals = {}
 
@@ -290,7 +290,7 @@ export async function extractLocalPdfMetadata(filePath: string): Promise<LocalPd
     console.info('First-page metadata extraction skipped:', error)
   }
 
-  const fileNameTitle = titleFromFilePath(filePath)
+  const fileNameTitle = titleFromFilePath(titleFallbackPath ?? filePath)
   const provenance: DocumentMetadataProvenance = {}
 
   const embeddedTitle = normalizeExtractedTitle(rawMetadata.title)

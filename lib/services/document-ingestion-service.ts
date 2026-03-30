@@ -337,7 +337,7 @@ async function runLocalMetadataExtractionStage(
 
   try {
     await updateStageStart(context.documentId, stage)
-    const metadata = await extractLocalPdfMetadata(metadataFilePath(context))
+    const metadata = await extractLocalPdfMetadata(metadataFilePath(context), context.sourcePath)
     context.localMetadata = metadata
     await applyMetadata(document, metadata)
     await refreshContextDocument(context)
