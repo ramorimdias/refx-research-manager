@@ -3,14 +3,10 @@ mod backup;
 
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
-use tauri::{LogicalPosition, LogicalSize, Manager, Position, Size, WindowEvent};
+use tauri::{Manager, WindowEvent};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct PersistedWindowState {
-    x: Option<f64>,
-    y: Option<f64>,
-    width: Option<f64>,
-    height: Option<f64>,
     maximized: bool,
     fullscreen: bool,
 }
@@ -37,18 +33,6 @@ fn save_window_state<R: tauri::Runtime>(window: &tauri::Window<R>) {
     state.maximized = window.is_maximized().unwrap_or(false);
     state.fullscreen = window.is_fullscreen().unwrap_or(false);
 
-    if !state.maximized && !state.fullscreen {
-        if let Ok(position) = window.outer_position() {
-            state.x = Some(position.x as f64);
-            state.y = Some(position.y as f64);
-        }
-
-        if let Ok(size) = window.outer_size() {
-            state.width = Some(size.width as f64);
-            state.height = Some(size.height as f64);
-        }
-    }
-
     if let Ok(json) = serde_json::to_string_pretty(&state) {
         let _ = fs::write(path, json);
     }
@@ -66,14 +50,6 @@ fn restore_window_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     let Ok(state) = serde_json::from_str::<PersistedWindowState>(&raw) else {
         return;
     };
-
-    if let (Some(width), Some(height)) = (state.width, state.height) {
-        let _ = window.set_size(Size::Logical(LogicalSize::new(width, height)));
-    }
-
-    if let (Some(x), Some(y)) = (state.x, state.y) {
-        let _ = window.set_position(Position::Logical(LogicalPosition::new(x, y)));
-    }
 
     if state.maximized {
         let _ = window.maximize();
@@ -117,6 +93,10 @@ pub fn run() {
             commands::update_document_relation,
             commands::delete_document_relation,
             commands::list_document_relations_for_library,
+            commands::list_document_doi_references_for_document,
+            commands::list_document_doi_references_pointing_to_document,
+            commands::replace_document_doi_references,
+            commands::recheck_document_doi_references,
             commands::rebuild_auto_citation_relations,
             commands::rebuild_auto_citation_relations_for_document,
             commands::list_graph_views,

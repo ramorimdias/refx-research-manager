@@ -66,6 +66,8 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateSummary | null>(null)
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
+  const [isRecheckingDoiReferences, setIsRecheckingDoiReferences] = useState(false)
+  const [doiReferenceStatus, setDoiReferenceStatus] = useState<string | null>(null)
   const [restoreTargetPath, setRestoreTargetPath] = useState<string | null>(null)
   const [isRestoreWarningOpen, setIsRestoreWarningOpen] = useState(false)
   const hasLoadedSettingsRef = useRef(false)
@@ -179,6 +181,26 @@ export default function SettingsPage() {
       await scanDocumentsOcr()
     } finally {
       setIsScanningOcr(false)
+    }
+  }
+
+  const handleRecheckDoiReferences = async () => {
+    if (!isDesktopApp) return
+
+    setIsRecheckingDoiReferences(true)
+    setDoiReferenceStatus(null)
+    try {
+      const references = await repo.recheckDocumentDoiReferences()
+      const matchedCount = references.filter((reference) => reference.matchedDocumentId).length
+      setDoiReferenceStatus(
+        references.length > 0
+          ? `Rechecked ${references.length} DOI reference${references.length === 1 ? '' : 's'}. ${matchedCount} matched a document.`
+          : 'No stored DOI references to recheck yet.',
+      )
+    } catch (error) {
+      setDoiReferenceStatus(error instanceof Error ? error.message : 'Could not recheck DOI references.')
+    } finally {
+      setIsRecheckingDoiReferences(false)
     }
   }
 
@@ -539,6 +561,24 @@ export default function SettingsPage() {
                     <Button variant="outline" onClick={() => void handleScanAllOcr()} disabled={isScanningOcr || documents.length === 0}>
                       {isScanningOcr ? 'Scanning...' : 'Scan All OCR'}
                     </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">DOI Links</CardTitle>
+                    <CardDescription>Recheck stored DOI references against all documents after new imports.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Button variant="outline" onClick={() => void handleRecheckDoiReferences()} disabled={isRecheckingDoiReferences}>
+                      {isRecheckingDoiReferences ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {isRecheckingDoiReferences ? 'Rechecking...' : 'Recheck DOI Links'}
+                    </Button>
+                    {doiReferenceStatus ? (
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                        {doiReferenceStatus}
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
               </>

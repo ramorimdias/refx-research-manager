@@ -171,6 +171,20 @@ export type DbBookCoverUploadSessionStatus = {
   imagePath?: string
 }
 
+export type DbDocumentDoiReference = {
+  id: string
+  sourceDocumentId: string
+  doi: string
+  matchedDocumentId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DbReplaceDocumentDoiReferencesInput = {
+  sourceDocumentId: string
+  dois: string[]
+}
+
 export type DbNote = {
   id: string
   documentId?: string
@@ -452,6 +466,22 @@ export async function deleteRelation(id: string) {
 
 export async function listRelationsForLibrary(libraryId: string) {
   return invoke<DbDocumentRelation[]>('list_document_relations_for_library', { libraryId })
+}
+
+export async function listDocumentDoiReferencesForDocument(documentId: string) {
+  return invoke<DbDocumentDoiReference[]>('list_document_doi_references_for_document', { documentId })
+}
+
+export async function listDocumentDoiReferencesPointingToDocument(documentId: string) {
+  return invoke<DbDocumentDoiReference[]>('list_document_doi_references_pointing_to_document', { documentId })
+}
+
+export async function replaceDocumentDoiReferences(input: DbReplaceDocumentDoiReferencesInput) {
+  return invoke<DbDocumentDoiReference[]>('replace_document_doi_references', { input })
+}
+
+export async function recheckDocumentDoiReferences() {
+  return invoke<DbDocumentDoiReference[]>('recheck_document_doi_references')
 }
 
 export async function rebuildAutoCitationRelations(libraryId: string) {

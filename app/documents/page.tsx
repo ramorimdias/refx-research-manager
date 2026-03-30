@@ -56,6 +56,7 @@ import {
   type MetadataCandidateProvider,
   type DocumentMetadataCandidate,
 } from '@/lib/services/document-enrichment-service'
+import { scanDocumentForDoiReferences } from '@/lib/services/document-doi-reference-service'
 import { loadPdfJsModule } from '@/lib/services/document-processing'
 import { useAppStore } from '@/lib/store'
 import { convertFileSrc, isTauri, open as openFileDialog, readFile } from '@/lib/tauri/client'
@@ -73,6 +74,8 @@ type RelationListItem = {
   relationId: string
   relatedDocumentId: string
 }
+
+type DocumentDoiReferenceItem = repo.DbDocumentDoiReference
 
 type BookCoverPhoneSession = {
   token: string
@@ -403,10 +406,17 @@ export default function DocumentDetailPage() {
   const [isCreatingRelation, setIsCreatingRelation] = useState(false)
   const [isOutgoingRelationPickerOpen, setIsOutgoingRelationPickerOpen] = useState(false)
   const [isIncomingRelationPickerOpen, setIsIncomingRelationPickerOpen] = useState(false)
+  const [doiReferences, setDoiReferences] = useState<DocumentDoiReferenceItem[]>([])
+  const [incomingDoiReferences, setIncomingDoiReferences] = useState<DocumentDoiReferenceItem[]>([])
+  const [isFindingReferences, setIsFindingReferences] = useState(false)
+  const [doiReferenceStatus, setDoiReferenceStatus] = useState('')
 
   const [detailsExpanded, setDetailsExpanded] = useState(true)
-  const [tagsExpanded, setTagsExpanded] = useState(true)
+  const [tagsExpanded, setTagsExpanded] = useState(false)
   const [linksExpanded, setLinksExpanded] = useState(true)
+  const [outgoingLinksExpanded, setOutgoingLinksExpanded] = useState(true)
+  const [incomingLinksExpanded, setIncomingLinksExpanded] = useState(true)
+  const [doiOnlyReferencesExpanded, setDoiOnlyReferencesExpanded] = useState(false)
   const [bibtexExpanded, setBibtexExpanded] = useState(false)
   const metadataAutoOpenHandledRef = useRef<string | null>(null)
   const metadataAutoSearchPendingRef = useRef<string | null>(null)
@@ -437,9 +447,41 @@ export default function DocumentDetailPage() {
     setBibtexExpanded(false)
     setBookCoverPhoneSession(null)
     setBookCoverPhoneStatus('')
+    setDoiReferences([])
+    setIncomingDoiReferences([])
+    setDoiReferenceStatus('')
     metadataAutoOpenHandledRef.current = null
     metadataAutoSearchPendingRef.current = null
   }, [document, setActiveDocument])
+
+  useEffect(() => {
+    if (!document) return
+
+    let cancelled = false
+
+    const loadDoiReferences = async () => {
+      try {
+        const [nextReferences, nextIncomingReferences] = await Promise.all([
+          repo.listDocumentDoiReferencesForDocument(document.id),
+          repo.listDocumentDoiReferencesPointingToDocument(document.id),
+        ])
+        if (!cancelled) {
+          setDoiReferences(nextReferences)
+          setIncomingDoiReferences(nextIncomingReferences)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load document DOI references:', error)
+        }
+      }
+    }
+
+    void loadDoiReferences()
+
+    return () => {
+      cancelled = true
+    }
+  }, [document])
 
   useEffect(() => {
     if (!document || !autoSearchMetadata) return
@@ -499,6 +541,45 @@ export default function DocumentDetailPage() {
       .filter((entry) => entry.id !== document.id)
       .sort((left, right) => left.title.localeCompare(right.title))
   }, [document, documents])
+
+  const doiReferenceBuckets = useMemo(() => {
+    const linkedTargetIds = new Set(relationItems.outgoing.map((item) => item.relatedDocumentId))
+    const seenMatchedTargetIds = new Set<string>()
+    const seenUnmatchedDois = new Set<string>()
+
+    const matched = doiReferences.filter((reference) => {
+      const targetId = reference.matchedDocumentId
+      if (!targetId || !documentById.has(targetId)) return false
+      if (linkedTargetIds.has(targetId)) return false
+      if (seenMatchedTargetIds.has(targetId)) return false
+      seenMatchedTargetIds.add(targetId)
+      return true
+    })
+
+    const unmatched = doiReferences.filter((reference) => {
+      const targetId = reference.matchedDocumentId
+      if (targetId && documentById.has(targetId)) return false
+      if (seenUnmatchedDois.has(reference.doi)) return false
+      seenUnmatchedDois.add(reference.doi)
+      return true
+    })
+
+    return { matched, unmatched }
+  }, [documentById, doiReferences, relationItems.outgoing])
+
+  const incomingDoiMatches = useMemo(() => {
+    const linkedSourceIds = new Set(relationItems.incoming.map((item) => item.relatedDocumentId))
+    const seenSourceIds = new Set<string>()
+
+    return incomingDoiReferences.filter((reference) => {
+      const sourceId = reference.sourceDocumentId
+      if (!documentById.has(sourceId)) return false
+      if (linkedSourceIds.has(sourceId)) return false
+      if (seenSourceIds.has(sourceId)) return false
+      seenSourceIds.add(sourceId)
+      return true
+    })
+  }, [documentById, incomingDoiReferences, relationItems.incoming])
 
   const normalizedAuthors = useMemo(
     () =>
@@ -814,17 +895,66 @@ export default function DocumentDetailPage() {
     }
   }
 
+  const handleFindReferences = async () => {
+    if (!document) return
+
+    setIsFindingReferences(true)
+    setDoiReferenceStatus('')
+    try {
+      const dois = await scanDocumentForDoiReferences(document)
+      const nextReferences = await repo.replaceDocumentDoiReferences({
+        sourceDocumentId: document.id,
+        dois,
+      })
+      setDoiReferences(nextReferences)
+      setDoiReferenceStatus(
+        dois.length > 0
+          ? `Found ${dois.length} DOI reference${dois.length === 1 ? '' : 's'}.`
+          : 'No DOI references found in this document.',
+      )
+    } catch (error) {
+      console.error('Failed to find DOI references:', error)
+      setDoiReferenceStatus(error instanceof Error ? error.message : 'Could not scan DOI references.')
+    } finally {
+      setIsFindingReferences(false)
+    }
+  }
+
   const renderRelationList = (
     titleText: string,
     items: RelationListItem[],
     emptyText: string,
     direction: 'outbound' | 'inbound',
-  ) => (
+  ) => {
+    const isExpanded = direction === 'outbound' ? outgoingLinksExpanded : incomingLinksExpanded
+    const matchedDoiItems = direction === 'outbound' ? doiReferenceBuckets.matched : incomingDoiMatches
+    const unmatchedDoiItems = direction === 'outbound' ? doiReferenceBuckets.unmatched : []
+    const totalItemsCount = items.length + matchedDoiItems.length + unmatchedDoiItems.length
+    const toggleExpanded = () => {
+      if (direction === 'outbound') {
+        setOutgoingLinksExpanded((current) => !current)
+      } else {
+        setIncomingLinksExpanded((current) => !current)
+      }
+    }
+
+    return (
     <section className="rounded-lg border border-border p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Link2 className="h-4 w-4 text-muted-foreground" />
-        <Label className="text-sm font-medium">{titleText}</Label>
-      </div>
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        className="mb-3 flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-muted-foreground" />
+          <Label className="cursor-pointer text-sm font-medium">
+            {titleText} ({totalItemsCount})
+          </Label>
+        </div>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+      {isExpanded ? (
+        <>
       <div className="mb-4 flex gap-2">
         <Popover
           open={direction === 'outbound' ? isOutgoingRelationPickerOpen : isIncomingRelationPickerOpen}
@@ -952,11 +1082,100 @@ export default function DocumentDetailPage() {
             )
           })}
         </div>
-      ) : (
+      ) : totalItemsCount === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyText}</p>
-      )}
+      ) : null}
+      {direction === 'outbound' && matchedDoiItems.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {matchedDoiItems.map((reference) => {
+            const relatedDocument = reference.matchedDocumentId ? documentById.get(reference.matchedDocumentId) : null
+            if (!relatedDocument) return null
+
+            return (
+              <div
+                key={reference.id}
+                className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <Link href={`/documents?id=${relatedDocument.id}`} className="font-medium hover:text-primary">
+                    {relatedDocument.title}
+                  </Link>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {relatedDocument.authors.join(', ') || 'Unknown author'}
+                    {relatedDocument.year ? ` - ${relatedDocument.year}` : ''}
+                    {libraryNameById.get(relatedDocument.libraryId) ? ` - ${libraryNameById.get(relatedDocument.libraryId)}` : ''}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    DOI match: {reference.doi}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      {direction === 'inbound' && matchedDoiItems.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {matchedDoiItems.map((reference) => {
+            const sourceDocument = documentById.get(reference.sourceDocumentId)
+            if (!sourceDocument) return null
+
+            return (
+              <div
+                key={reference.id}
+                className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <Link href={`/documents?id=${sourceDocument.id}`} className="font-medium hover:text-primary">
+                    {sourceDocument.title}
+                  </Link>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {sourceDocument.authors.join(', ') || 'Unknown author'}
+                    {sourceDocument.year ? ` - ${sourceDocument.year}` : ''}
+                    {libraryNameById.get(sourceDocument.libraryId) ? ` - ${libraryNameById.get(sourceDocument.libraryId)}` : ''}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    DOI match: {reference.doi}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      {direction === 'outbound' && doiReferenceBuckets.unmatched.length > 0 ? (
+        <div className="mt-3 rounded-md border border-dashed border-border bg-muted/10">
+          <button
+            type="button"
+            onClick={() => setDoiOnlyReferencesExpanded((current) => !current)}
+            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+          >
+            <span className="text-sm font-medium text-foreground">
+              DOI-only references ({doiReferenceBuckets.unmatched.length})
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform ${doiOnlyReferencesExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {doiOnlyReferencesExpanded ? (
+            <div className="space-y-2 border-t border-border/70 px-3 py-3">
+              {doiReferenceBuckets.unmatched.map((reference) => (
+                <div
+                  key={reference.id}
+                  className="rounded-md border border-dashed border-border bg-background/60 px-3 py-2 text-sm text-muted-foreground"
+                >
+                  {reference.doi}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+        </>
+      ) : null}
     </section>
-  )
+    )
+  }
 
   const showPdfPreview = document.documentType === 'pdf' && Boolean(document.filePath)
   const bookCoverPreviewUrl = coverImagePath
@@ -1359,21 +1578,35 @@ export default function DocumentDetailPage() {
         <Card>
           <Collapsible open={linksExpanded} onOpenChange={setLinksExpanded}>
             <CardHeader>
-              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
-                <div className="flex items-center gap-2">
-                  <Link2 className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <CardTitle>Document Links</CardTitle>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Add and manage inbound and outbound references
+              <div className="flex items-start justify-between gap-3">
+                <CollapsibleTrigger className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <CardTitle>References &amp; Citations</CardTitle>
                     </div>
                   </div>
-                </div>
-                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${linksExpanded ? 'rotate-180' : ''}`} />
-              </CollapsibleTrigger>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${linksExpanded ? 'rotate-180' : ''}`} />
+                </CollapsibleTrigger>
+                <Button type="button" variant="outline" size="sm" onClick={() => void handleFindReferences()} disabled={isFindingReferences}>
+                  {isFindingReferences ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Finding...
+                    </>
+                  ) : (
+                    'Find references'
+                  )}
+                </Button>
+              </div>
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="space-y-4">
+                {doiReferenceStatus ? (
+                  <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                    {doiReferenceStatus}
+                  </div>
+                ) : null}
                 {renderRelationList(
                   'Makes reference to',
                   relationItems.outgoing,

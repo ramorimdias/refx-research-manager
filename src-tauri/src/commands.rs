@@ -148,6 +148,17 @@ pub struct DocumentRelation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DocumentDoiReference {
+    pub id: String,
+    pub source_document_id: String,
+    pub doi: String,
+    pub matched_document_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GraphView {
     pub id: String,
     pub library_id: String,
@@ -295,6 +306,13 @@ pub struct UpdateDocumentInput {
     pub commentary_text: Option<String>,
     pub commentary_updated_at: Option<String>,
     pub cover_image_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaceDocumentDoiReferencesInput {
+    pub source_document_id: String,
+    pub dois: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1109,6 +1127,17 @@ CREATE TABLE IF NOT EXISTS document_relations (
   FOREIGN KEY (target_document_id) REFERENCES documents(id) ON DELETE CASCADE,
   UNIQUE (source_document_id, target_document_id, link_type, link_origin)
 );
+CREATE TABLE IF NOT EXISTS document_doi_references (
+  id TEXT PRIMARY KEY,
+  source_document_id TEXT NOT NULL,
+  doi TEXT NOT NULL,
+  matched_document_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (source_document_id) REFERENCES documents(id) ON DELETE CASCADE,
+  FOREIGN KEY (matched_document_id) REFERENCES documents(id) ON DELETE SET NULL,
+  UNIQUE (source_document_id, doi)
+);
 CREATE TABLE IF NOT EXISTS graph_views (
   id TEXT PRIMARY KEY,
   library_id TEXT NOT NULL,
@@ -1154,6 +1183,8 @@ CREATE INDEX IF NOT EXISTS idx_annotations_document_id ON annotations(document_i
 CREATE INDEX IF NOT EXISTS idx_document_relations_source_document_id ON document_relations(source_document_id);
 CREATE INDEX IF NOT EXISTS idx_document_relations_target_document_id ON document_relations(target_document_id);
 CREATE INDEX IF NOT EXISTS idx_document_relations_link_origin ON document_relations(link_origin);
+CREATE INDEX IF NOT EXISTS idx_document_doi_references_source_document_id ON document_doi_references(source_document_id);
+CREATE INDEX IF NOT EXISTS idx_document_doi_references_matched_document_id ON document_doi_references(matched_document_id);
 CREATE INDEX IF NOT EXISTS idx_graph_views_library_id ON graph_views(library_id);
 CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_view_node_layouts(graph_view_id);
         "#,
@@ -1818,6 +1849,19 @@ fn map_graph_view_node_layout_row(
     })
 }
 
+fn map_document_doi_reference_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<DocumentDoiReference> {
+    Ok(DocumentDoiReference {
+        id: row.get(0)?,
+        source_document_id: row.get(1)?,
+        doi: row.get(2)?,
+        matched_document_id: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
 fn document_exists(conn: &Connection, id: &str) -> Result<bool, AppError> {
     let exists: Option<String> = conn
         .query_row("SELECT id FROM documents WHERE id = ?1", params![id], |row| row.get(0))
@@ -1860,6 +1904,96 @@ fn list_relations_for_library(
         "#,
     )?;
     let rows = stmt.query_map(params![library_id], map_document_relation_row)?;
+    Ok(rows.filter_map(Result::ok).collect())
+}
+
+fn normalize_doi_value(input: &str) -> String {
+    input
+        .trim()
+        .trim_matches(|character: char| matches!(character, '.' | ',' | ';' | ':' | ')' | ']' | '}' | '"' | '\''))
+        .to_lowercase()
+        .replace("https://doi.org/", "")
+        .replace("http://doi.org/", "")
+        .replace("doi:", "")
+        .trim()
+        .to_string()
+}
+
+fn resolve_matching_document_id_for_doi(
+    conn: &Connection,
+    source_document_id: &str,
+    doi: &str,
+) -> Result<Option<String>, AppError> {
+    let normalized_doi = normalize_doi_value(doi);
+    if normalized_doi.is_empty() {
+        return Ok(None);
+    }
+
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, doi
+        FROM documents
+        WHERE id != ?1
+          AND doi IS NOT NULL
+          AND TRIM(doi) != ''
+        ORDER BY updated_at DESC, created_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![source_document_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    for row in rows {
+        let (document_id, candidate_doi) = row?;
+        if normalize_doi_value(&candidate_doi) == normalized_doi {
+            return Ok(Some(document_id));
+        }
+    }
+
+    Ok(None)
+}
+
+fn list_document_doi_references_for_source(
+    conn: &Connection,
+    source_document_id: &str,
+) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          id,
+          source_document_id,
+          doi,
+          matched_document_id,
+          created_at,
+          updated_at
+        FROM document_doi_references
+        WHERE source_document_id = ?1
+        ORDER BY updated_at DESC, created_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![source_document_id], map_document_doi_reference_row)?;
+    Ok(rows.filter_map(Result::ok).collect())
+}
+
+fn list_document_doi_references_pointing_to_target_document(
+    conn: &Connection,
+    document_id: &str,
+) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          id,
+          source_document_id,
+          doi,
+          matched_document_id,
+          created_at,
+          updated_at
+        FROM document_doi_references
+        WHERE matched_document_id = ?1
+        ORDER BY updated_at DESC, created_at DESC
+        "#,
+    )?;
+    let rows = stmt.query_map(params![document_id], map_document_doi_reference_row)?;
     Ok(rows.filter_map(Result::ok).collect())
 }
 
@@ -3163,6 +3297,133 @@ pub fn list_document_relations_for_library(
 ) -> Result<Vec<DocumentRelation>, AppError> {
     let conn = open_db(&app)?;
     list_relations_for_library(&conn, &library_id)
+}
+
+#[tauri::command]
+pub fn list_document_doi_references_for_document(
+    app: AppHandle,
+    document_id: String,
+) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let conn = open_db(&app)?;
+    list_document_doi_references_for_source(&conn, &document_id)
+}
+
+#[tauri::command]
+pub fn list_document_doi_references_pointing_to_document(
+    app: AppHandle,
+    document_id: String,
+) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let conn = open_db(&app)?;
+    list_document_doi_references_pointing_to_target_document(&conn, &document_id)
+}
+
+#[tauri::command]
+pub fn replace_document_doi_references(
+    app: AppHandle,
+    input: ReplaceDocumentDoiReferencesInput,
+) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let mut conn = open_db(&app)?;
+    let tx = conn.transaction()?;
+    let now = now_iso();
+
+    tx.execute(
+        "DELETE FROM document_doi_references WHERE source_document_id = ?1",
+        params![input.source_document_id.clone()],
+    )?;
+
+    let unique_dois = input
+        .dois
+        .into_iter()
+        .map(|doi| normalize_doi_value(&doi))
+        .filter(|doi| !doi.is_empty())
+        .collect::<BTreeSet<_>>();
+
+    for doi in unique_dois {
+        let matched_document_id =
+            resolve_matching_document_id_for_doi(&tx, &input.source_document_id, &doi)?;
+        tx.execute(
+            r#"
+            INSERT INTO document_doi_references (
+              id,
+              source_document_id,
+              doi,
+              matched_document_id,
+              created_at,
+              updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+            "#,
+            params![
+                format!("dref-{}", uuid::Uuid::new_v4()),
+                input.source_document_id,
+                doi,
+                matched_document_id,
+                now,
+            ],
+        )?;
+    }
+
+    let references = list_document_doi_references_for_source(&tx, &input.source_document_id)?;
+    tx.commit()?;
+    Ok(references)
+}
+
+#[tauri::command]
+pub fn recheck_document_doi_references(app: AppHandle) -> Result<Vec<DocumentDoiReference>, AppError> {
+    let mut conn = open_db(&app)?;
+    let tx = conn.transaction()?;
+
+    let references: Vec<(String, String, String)> = {
+        let mut stmt = tx.prepare(
+            r#"
+            SELECT id, source_document_id, doi
+            FROM document_doi_references
+            ORDER BY updated_at DESC, created_at DESC
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.filter_map(Result::ok).collect()
+    };
+
+    let now = now_iso();
+    for (reference_id, source_document_id, doi) in references {
+        let matched_document_id = resolve_matching_document_id_for_doi(&tx, &source_document_id, &doi)?;
+        tx.execute(
+            r#"
+            UPDATE document_doi_references
+            SET matched_document_id = ?1,
+                updated_at = ?2
+            WHERE id = ?3
+            "#,
+            params![matched_document_id, now, reference_id],
+        )?;
+    }
+
+    let refreshed = {
+        let mut stmt = tx.prepare(
+            r#"
+            SELECT
+              id,
+              source_document_id,
+              doi,
+              matched_document_id,
+              created_at,
+              updated_at
+            FROM document_doi_references
+            ORDER BY updated_at DESC, created_at DESC
+            "#,
+        )?;
+        let rows = stmt.query_map([], map_document_doi_reference_row)?;
+        rows.filter_map(Result::ok).collect::<Vec<_>>()
+    };
+    tx.commit()?;
+    Ok(refreshed)
 }
 
 #[tauri::command]
