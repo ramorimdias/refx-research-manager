@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -351,6 +351,7 @@ export default function DocumentDetailPage() {
   const id = params.get('id')
   const metadataMode = params.get('metadata')
   const autoSearchMetadata = params.get('autoSearchMetadata') === '1'
+  const router = useRouter()
   const {
     documents,
     libraries,
@@ -514,6 +515,13 @@ export default function DocumentDetailPage() {
     setIsMetadataDialogOpen(true)
     metadataAutoOpenHandledRef.current = document.id
     metadataAutoSearchPendingRef.current = document.id
+    try {
+  const currentSearch = new URLSearchParams(window.location.search)
+  currentSearch.delete('autoSearchMetadata')
+  const newSearch = currentSearch.toString()
+  const newUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`
+  router.replace(newUrl, { scroll: false })
+} catch {}
   }, [autoSearchMetadata, document, metadataMode])
 
   useEffect(() => {

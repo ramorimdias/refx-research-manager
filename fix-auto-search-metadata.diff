@@ -1,0 +1,43 @@
+*** Begin Patch
+*** Update File: app/documents/page.tsx
+@@
+-import { useSearchParams } from 'next/navigation'
++import { useSearchParams, useRouter } from 'next/navigation'
+@@ export default function DocumentDetailPage() {
+   const params = useSearchParams()
+   const id = params.get('id')
+   const metadataMode = params.get('metadata')
+   const autoSearchMetadata = params.get('autoSearchMetadata') === '1'
++
++  // Router is used to manipulate the URL without reloading the page.  In particular, we
++  // remove the `autoSearchMetadata` query parameter after it triggers an automatic
++  // metadata search.  This prevents subsequent state updates (such as refreshing tag
++  // suggestions or saving the document) from re-triggering the metadata dialog due to
++  // the lingering query parameter.
++  const router = useRouter()
+@@ useEffect(() => {
+     setMetadataDialogError('')
+     setMetadataCandidates([])
+     setSelectedMetadataCandidateId('')
+     setIsMetadataDialogOpen(true)
+     metadataAutoOpenHandledRef.current = document.id
+     metadataAutoSearchPendingRef.current = document.id
++
++    // Remove the `autoSearchMetadata` query parameter from the URL after it has been
++    // handled.  We construct a new search string from the current parameters,
++    // delete the flag, and update the browser's history without causing a page
++    // navigation.  Notably, this effect runs on the client only; usage of
++    // `window.location` is safe here because this file is marked `'use client'`.
++    try {
++      const currentSearch = new URLSearchParams(window.location.search)
++      currentSearch.delete('autoSearchMetadata')
++      const newSearch = currentSearch.toString()
++      const newUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`
++      router.replace(newUrl, { scroll: false })
++    } catch {
++      // If URL manipulation fails (e.g. during hydration), silently ignore.  It
++      // simply means the query parameter remains, but the ref-based guard will
++      // prevent repeated auto opens.
++    }
+   }, [autoSearchMetadata, document, metadataMode])
+*** End Patch
