@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-macos:
+  build:
     runs-on: macos-latest
 
     steps:
@@ -23,21 +23,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create env file
-        run: |
-          cat > local.env <<EOF
-          YOUR_SECRET_1=${{ secrets.YOUR_SECRET_1 }}
-          YOUR_SECRET_2=${{ secrets.YOUR_SECRET_2 }}
-          EOF
-
-      - name: Build macOS app
+    
+      - name: Build app
+        env:
+          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: npm run tauri build
 
-      - name: Upload artifacts
+      - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: |
-            src-tauri/target/release/bundle/**/*.app
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app.tar.gz
+          path: src-tauri/target/release/bundle/
