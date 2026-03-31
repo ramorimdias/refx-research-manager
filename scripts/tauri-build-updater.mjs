@@ -40,11 +40,15 @@ if ((tauriBuild.status ?? 1) !== 0) {
   process.exit(tauriBuild.status ?? 1)
 }
 
-const manifestBuild = spawnSync('node', ['scripts/generate-updater-manifest.mjs'], {
-  cwd: repoRoot,
-  env,
-  stdio: 'inherit',
-  shell: true,
-})
+if (process.platform === 'win32') {
+  const manifestBuild = spawnSync('node', ['scripts/generate-updater-manifest.mjs'], {
+    cwd: repoRoot,
+    env,
+    stdio: 'inherit',
+    shell: true,
+  })
 
-process.exit(manifestBuild.status ?? 1)
+  process.exit(manifestBuild.status ?? 1)
+}
+
+process.exit(0)
