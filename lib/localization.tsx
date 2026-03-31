@@ -1207,7 +1207,7 @@ const translations = {
       importing: 'Import...',
       book: 'Livre',
       noDocuments: 'Aucun document trouvé',
-      noDocumentsFiltered: 'Essayez d'ajuster les filtres ou la recherche.',
+      noDocumentsFiltered: "Essayez d'ajuster les filtres ou la recherche.",
       noDocumentsEmpty: 'Importez des PDF ou enregistrez un livre pour commencer.',
       importPdfs: 'Importer des PDF',
       importingPdfs: 'Import des PDF...',
