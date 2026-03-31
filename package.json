@@ -1,6 +1,6 @@
 {
   "name": "refx",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "private": true,
   "scripts": {
     "dev": "pnpm ocr:assets && pnpm exec next dev --webpack -p 3001",
