@@ -1,10 +1,11 @@
 import type { DbNote } from '@/lib/repositories/local-db'
-import { parseAreaNoteAnchor } from '@/lib/services/document-note-anchor-service'
+import { parseAreaNoteAnchor, parseNoteAnchorColor } from '@/lib/services/document-note-anchor-service'
 
 export type PositionedComment = DbNote & {
   commentNumber: number
   positionX?: number
   positionY?: number
+  color?: string
   areaRect?: {
     x: number
     y: number
@@ -40,6 +41,7 @@ export function getDocumentPageComments(notes: DbNote[], documentId: string, pag
     .filter((note) => note.pageNumber === pageNumber)
     .map((note) => ({
       ...note,
+      color: parseNoteAnchorColor(note.locationHint) ?? undefined,
       areaRect: parseAreaNoteAnchor(note.locationHint) ?? undefined,
     }))
 }

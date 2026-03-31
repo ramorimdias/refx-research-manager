@@ -33,7 +33,7 @@ import {
 } from '@/lib/services/document-processing'
 import { findDocumentPageHits } from '@/lib/services/document-search-service'
 import { DETACHED_READER_QUERY_VALUE, openDetachedReaderWindow } from '@/lib/services/reader-window-service'
-import { parseAreaNoteAnchor, serializeAreaNoteAnchor, type NoteAreaRect } from '@/lib/services/document-note-anchor-service'
+import { parseAreaNoteAnchor, parseNoteAnchorColor, serializeAreaNoteAnchor, serializePointNoteAnchor, type NoteAreaRect } from '@/lib/services/document-note-anchor-service'
 import { cn } from '@/lib/utils'
 import { useT } from '@/lib/localization'
 
@@ -42,6 +42,69 @@ type ReaderAreaHighlight = {
   pageNumber: number
   rect: { x: number; y: number; width: number; height: number }
   color: string
+}
+
+const READER_HIGHLIGHT_COLOR_KEY = 'refx-reader-highlight-color'
+const READER_NOTE_COLOR_KEY = 'refx-reader-note-color'
+
+const READER_COLOR_OPTIONS = [
+  { id: 'yellow', highlight: '#fde047', note: '#f59e0b' },
+  { id: 'blue', highlight: '#7dd3fc', note: '#0ea5e9' },
+  { id: 'red', highlight: '#fda4af', note: '#ef4444' },
+  { id: 'green', highlight: '#86efac', note: '#22c55e' },
+  { id: 'purple', highlight: '#d8b4fe', note: '#a855f7' },
+] as const
+
+type ReaderColorId = (typeof READER_COLOR_OPTIONS)[number]['id']
+
+function isReaderColorId(value: string): value is ReaderColorId {
+  return READER_COLOR_OPTIONS.some((option) => option.id === value)
+}
+
+function getReaderColorOption(id: ReaderColorId) {
+  return READER_COLOR_OPTIONS.find((option) => option.id === id) ?? READER_COLOR_OPTIONS[0]
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '')
+  if (normalized.length !== 6) return hex
+  const red = Number.parseInt(normalized.slice(0, 2), 16)
+  const green = Number.parseInt(normalized.slice(2, 4), 16)
+  const blue = Number.parseInt(normalized.slice(4, 6), 16)
+  if ([red, green, blue].some((value) => Number.isNaN(value))) return hex
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function ReaderColorPalette({
+  selectedColorId,
+  onSelect,
+  type,
+}: {
+  selectedColorId: ReaderColorId
+  onSelect: (colorId: ReaderColorId) => void
+  type: 'highlight' | 'note'
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-full border border-border/80 bg-background/95 px-2 py-1 shadow-sm">
+      {READER_COLOR_OPTIONS.map((option) => {
+        const swatchColor = type === 'highlight' ? option.highlight : option.note
+        const isSelected = option.id === selectedColorId
+        return (
+          <button
+            key={`${type}-${option.id}`}
+            type="button"
+            aria-label={`${type} color ${option.id}`}
+            onClick={() => onSelect(option.id)}
+            className={cn(
+              'h-5 w-5 rounded-full border transition-transform hover:scale-105',
+              isSelected ? 'border-foreground/70 ring-2 ring-foreground/15' : 'border-border/70',
+            )}
+            style={{ backgroundColor: swatchColor }}
+          />
+        )
+      })}
+    </div>
+  )
 }
 
 function highlightText(text: string, query: string) {
@@ -210,6 +273,8 @@ export default function ReaderViewPage() {
   const [isRunningOcr, setIsRunningOcr] = useState(false)
   const [isHighlightMode, setIsHighlightMode] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
+  const [selectedHighlightColorId, setSelectedHighlightColorId] = useState<ReaderColorId>('yellow')
+  const [selectedNoteColorId, setSelectedNoteColorId] = useState<ReaderColorId>('yellow')
   const [notePlacementCursor, setNotePlacementCursor] = useState<{ x: number; y: number } | null>(null)
   const [highlightPlacementCursor, setHighlightPlacementCursor] = useState<{ x: number; y: number } | null>(null)
   const [pdfDocument, setPdfDocument] = useState<{ numPages: number; getPage: (pageNumber: number) => Promise<unknown>; destroy?: () => Promise<void> } | null>(null)
@@ -235,6 +300,28 @@ export default function ReaderViewPage() {
   const notePlacementStartRef = useRef<{ x: number; y: number } | null>(null)
   const highlightDragStartRef = useRef<{ x: number; y: number } | null>(null)
   const [draftHighlightRect, setDraftHighlightRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const storedHighlightColor = window.localStorage.getItem(READER_HIGHLIGHT_COLOR_KEY)
+    const storedNoteColor = window.localStorage.getItem(READER_NOTE_COLOR_KEY)
+    if (storedHighlightColor && isReaderColorId(storedHighlightColor)) {
+      setSelectedHighlightColorId(storedHighlightColor)
+    }
+    if (storedNoteColor && isReaderColorId(storedNoteColor)) {
+      setSelectedNoteColorId(storedNoteColor)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(READER_HIGHLIGHT_COLOR_KEY, selectedHighlightColorId)
+  }, [selectedHighlightColorId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(READER_NOTE_COLOR_KEY, selectedNoteColorId)
+  }, [selectedNoteColorId])
 
   useEffect(() => {
     setSearchQuery(queryFromRoute)
@@ -451,6 +538,8 @@ export default function ReaderViewPage() {
   }, [document?.filePath, page, viewerMode, isTextSelectionGestureActive, isTextSelectionMode])
 
   const activeOccurrence = searchOccurrences[activeOccurrenceIndex] ?? null
+  const selectedHighlightColor = getReaderColorOption(selectedHighlightColorId)
+  const selectedNoteColor = getReaderColorOption(selectedNoteColorId)
   const zoomPreviewScale = renderZoom > 0 ? zoom / renderZoom : 1
   const currentPageOccurrences = useMemo(
     () => searchOccurrences.filter((occurrence) => occurrence.estimatedPage === page),
@@ -996,6 +1085,7 @@ export default function ReaderViewPage() {
         positionX: number
         positionY: number
         areaRect: NoteAreaRect | null
+        color: string
       }>>()
 
       for (const note of notes) {
@@ -1009,6 +1099,7 @@ export default function ReaderViewPage() {
           positionX: note.positionX,
           positionY: note.positionY,
           areaRect: parseAreaNoteAnchor(note.locationHint),
+          color: parseNoteAnchorColor(note.locationHint) ?? getReaderColorOption('yellow').note,
         })
         noteOverlaysByPage.set(note.pageNumber, existing)
       }
@@ -1098,9 +1189,9 @@ export default function ReaderViewPage() {
             const top = highlight.rect.y * renderViewport.height
             const width = highlight.rect.width * renderViewport.width
             const height = highlight.rect.height * renderViewport.height
-            renderContext.fillStyle = 'rgba(254, 240, 138, 0.38)'
+            renderContext.fillStyle = hexToRgba(highlight.color, 0.38)
             renderContext.fillRect(left, top, width, height)
-            renderContext.strokeStyle = 'rgba(202, 138, 4, 0.22)'
+            renderContext.strokeStyle = hexToRgba(highlight.color, 0.22)
             renderContext.lineWidth = Math.max(1, scaleX * 0.6)
             renderContext.strokeRect(left, top, width, height)
           }
@@ -1119,15 +1210,15 @@ export default function ReaderViewPage() {
               const top = note.areaRect.y * renderViewport.height
               const width = note.areaRect.width * renderViewport.width
               const height = note.areaRect.height * renderViewport.height
-              renderContext.fillStyle = 'rgba(254, 240, 138, 0.34)'
+              renderContext.fillStyle = hexToRgba(note.color, 0.28)
               renderContext.fillRect(left, top, width, height)
-              renderContext.strokeStyle = 'rgba(202, 138, 4, 0.18)'
+              renderContext.strokeStyle = hexToRgba(note.color, 0.18)
               renderContext.lineWidth = Math.max(1, scaleX * 0.6)
               renderContext.strokeRect(left, top, width, height)
 
               const badgeX = left + 6 * scaleX
               const badgeY = top + 6 * scaleY
-              renderContext.fillStyle = '#f59e0b'
+              renderContext.fillStyle = note.color
               renderContext.beginPath()
               renderContext.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, badgeRadius)
               renderContext.fill()
@@ -1140,7 +1231,7 @@ export default function ReaderViewPage() {
 
             const centerX = note.positionX * renderViewport.width
             const centerY = note.positionY * renderViewport.height - badgeHeight / 2
-            renderContext.fillStyle = '#f59e0b'
+            renderContext.fillStyle = note.color
             renderContext.beginPath()
             renderContext.roundRect(centerX - badgeWidth / 2, centerY - badgeHeight / 2, badgeWidth, badgeHeight, badgeRadius)
             renderContext.fill()
@@ -1403,7 +1494,7 @@ export default function ReaderViewPage() {
       kind: 'highlight',
       content: JSON.stringify({
         rect,
-        color: '#fde047',
+        color: selectedHighlightColor.highlight,
       }),
     })
     await refreshData()
@@ -1476,7 +1567,9 @@ export default function ReaderViewPage() {
           pageNumber: page,
           title: selectedComment.title || buildDocumentCommentTitle(selectedComment.commentNumber ?? nextCommentNumber),
           content: commentDraftContent.trim(),
-          locationHint: commentDraftAreaRect ? serializeAreaNoteAnchor(commentDraftAreaRect) : '',
+          locationHint: commentDraftAreaRect
+            ? serializeAreaNoteAnchor(commentDraftAreaRect, selectedComment.color ?? selectedNoteColor.note)
+            : serializePointNoteAnchor(selectedComment.color ?? selectedNoteColor.note),
           positionX: commentDraftPosition.x,
           positionY: commentDraftPosition.y,
         })
@@ -1486,7 +1579,9 @@ export default function ReaderViewPage() {
           pageNumber: page,
           title: buildDocumentCommentTitle(nextCommentNumber),
           content: commentDraftContent.trim(),
-          locationHint: commentDraftAreaRect ? serializeAreaNoteAnchor(commentDraftAreaRect) : undefined,
+          locationHint: commentDraftAreaRect
+            ? serializeAreaNoteAnchor(commentDraftAreaRect, selectedNoteColor.note)
+            : serializePointNoteAnchor(selectedNoteColor.note),
           positionX: commentDraftPosition.x,
           positionY: commentDraftPosition.y,
         })
@@ -1514,6 +1609,23 @@ export default function ReaderViewPage() {
     setCommentDraftAreaRect(null)
     setIsSelectingCommentPosition(false)
     setIsNoteEditorOpen(false)
+  }
+
+  const handleDeleteCommentById = async (commentId: string) => {
+    if (!isDesktopApp) return
+
+    await repo.deleteNote(commentId)
+    await loadNotes()
+
+    if (selectedCommentId === commentId) {
+      setIsDeleteCommentDialogOpen(false)
+      setSelectedCommentId(null)
+      setCommentDraftContent('')
+      setCommentDraftPosition(null)
+      setCommentDraftAreaRect(null)
+      setIsSelectingCommentPosition(false)
+      setIsNoteEditorOpen(false)
+    }
   }
 
   if (!document) {
@@ -1608,6 +1720,13 @@ export default function ReaderViewPage() {
           >
             <Highlighter className="h-4 w-4" />
           </ReaderToolbarIconButton>
+          {isHighlightMode ? (
+            <ReaderColorPalette
+              selectedColorId={selectedHighlightColorId}
+              onSelect={setSelectedHighlightColorId}
+              type="highlight"
+            />
+          ) : null}
           <ReaderToolbarIconButton
             label={isSelectingCommentPosition ? 'Cancel note placement' : 'New note'}
             onClick={() => {
@@ -1623,6 +1742,13 @@ export default function ReaderViewPage() {
           >
             <StickyNote className="h-4 w-4" />
           </ReaderToolbarIconButton>
+          {isSelectingCommentPosition ? (
+            <ReaderColorPalette
+              selectedColorId={selectedNoteColorId}
+              onSelect={setSelectedNoteColorId}
+              type="note"
+            />
+          ) : null}
           <ReaderToolbarIconButton
             label={isTextSelectionLayerVisible ? 'Exit text selection' : 'Select text'}
             onClick={() => {
@@ -1762,6 +1888,7 @@ export default function ReaderViewPage() {
                     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
                       {notePointComments.map((comment) => {
                         const isActive = comment.id === selectedCommentId
+                        const noteColor = comment.color ?? getReaderColorOption('yellow').note
                         return (
                           <button
                             key={comment.id}
@@ -1770,23 +1897,32 @@ export default function ReaderViewPage() {
                               event.stopPropagation()
                               handleSelectComment(comment.id, { scrollIntoView: true })
                             }}
+                            onContextMenu={(event) => {
+                              if (!isHighlightMode) return
+                              event.preventDefault()
+                              event.stopPropagation()
+                              void handleDeleteCommentById(comment.id)
+                            }}
                             className={cn(
                               'pointer-events-auto absolute flex h-8 w-8 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full border border-white text-xs font-semibold text-white shadow-lg transition hover:scale-105',
-                              isActive ? 'z-20 bg-primary ring-2 ring-primary/30' : 'bg-amber-500 hover:bg-amber-600',
+                              isActive && 'z-20 ring-2 ring-foreground/20',
                             )}
                             style={{
                               left: `${(comment.positionX ?? 0) * renderedPageSize.width}px`,
                               top: `${(comment.positionY ?? 0) * renderedPageSize.height}px`,
+                              backgroundColor: noteColor,
                             }}
                             aria-label={`Select ${buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}`}
-                            title={buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}
+                            title={
+                              isHighlightMode
+                                ? 'Right-click to delete'
+                                : buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)
+                            }
                           >
                             {comment.commentNumber}
                             <span
-                              className={cn(
-                                'absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-white',
-                                isActive ? 'bg-primary' : 'bg-amber-500',
-                              )}
+                              className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-white"
+                              style={{ backgroundColor: noteColor }}
                               aria-hidden="true"
                             />
                           </button>
@@ -1797,6 +1933,7 @@ export default function ReaderViewPage() {
                       {noteAreaComments.map((comment) => {
                         const isActive = comment.id === selectedCommentId
                         if (!comment.areaRect) return null
+                        const noteColor = comment.color ?? getReaderColorOption('yellow').note
 
                         return (
                           <button
@@ -1806,24 +1943,33 @@ export default function ReaderViewPage() {
                               event.stopPropagation()
                               handleSelectComment(comment.id, { scrollIntoView: true })
                             }}
+                            onContextMenu={(event) => {
+                              if (!isHighlightMode) return
+                              event.preventDefault()
+                              event.stopPropagation()
+                              void handleDeleteCommentById(comment.id)
+                            }}
                             className={cn(
-                              'pointer-events-auto absolute rounded-sm bg-yellow-200/35 transition hover:bg-yellow-200/45',
-                              isActive && 'bg-yellow-200/45 ring-2 ring-yellow-400/55',
+                              'pointer-events-auto absolute rounded-sm transition',
+                              isActive && 'ring-2 ring-foreground/20',
                             )}
                             style={{
                               left: `${comment.areaRect.x * renderedPageSize.width}px`,
                               top: `${comment.areaRect.y * renderedPageSize.height}px`,
                               width: `${comment.areaRect.width * renderedPageSize.width}px`,
                               height: `${comment.areaRect.height * renderedPageSize.height}px`,
+                              backgroundColor: hexToRgba(noteColor, isActive ? 0.34 : 0.26),
                             }}
                             aria-label={`Select ${buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}`}
-                            title={buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)}
+                            title={
+                              isHighlightMode
+                                ? 'Right-click to delete'
+                                : buildDocumentCommentTitle(comment.commentNumber ?? nextCommentNumber)
+                            }
                           >
                             <span
-                              className={cn(
-                                'absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white shadow-sm',
-                                isActive ? 'bg-primary' : 'bg-amber-500',
-                              )}
+                              className="absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white shadow-sm"
+                              style={{ backgroundColor: noteColor }}
                             >
                               {comment.commentNumber}
                             </span>
@@ -1832,15 +1978,20 @@ export default function ReaderViewPage() {
                       })}
                       {draftNotePreview?.areaRect && !isSelectingCommentPosition ? (
                         <div
-                          className="pointer-events-none absolute rounded-sm bg-yellow-200/60 ring-2 ring-dashed ring-amber-400/70"
+                          className="pointer-events-none absolute rounded-sm ring-2 ring-dashed"
                           style={{
                             left: `${draftNotePreview.areaRect.x * renderedPageSize.width}px`,
                             top: `${draftNotePreview.areaRect.y * renderedPageSize.height}px`,
                             width: `${draftNotePreview.areaRect.width * renderedPageSize.width}px`,
                             height: `${draftNotePreview.areaRect.height * renderedPageSize.height}px`,
+                            backgroundColor: hexToRgba(selectedNoteColor.note, 0.3),
+                            borderColor: hexToRgba(selectedNoteColor.note, 0.55),
                           }}
                         >
-                          <span className="absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white shadow-sm">
+                          <span
+                            className="absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white shadow-sm"
+                            style={{ backgroundColor: selectedNoteColor.note }}
+                          >
                             {draftNotePreview.commentNumber}
                           </span>
                         </div>
@@ -1872,15 +2023,17 @@ export default function ReaderViewPage() {
                     {draftNotePreview?.position && !draftNotePreview.areaRect && !isSelectingCommentPosition ? (
                       <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
                         <div
-                          className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full border border-white bg-amber-500 text-xs font-semibold text-white shadow-lg opacity-85"
+                          className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full border border-white text-xs font-semibold text-white shadow-lg opacity-85"
                           style={{
                             left: `${draftNotePreview.position.x * renderedPageSize.width}px`,
                             top: `${draftNotePreview.position.y * renderedPageSize.height}px`,
+                            backgroundColor: selectedNoteColor.note,
                           }}
                         >
                           {draftNotePreview.commentNumber}
                           <span
-                            className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-white bg-amber-500"
+                            className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-white"
+                            style={{ backgroundColor: selectedNoteColor.note }}
                             aria-hidden="true"
                           />
                         </div>
@@ -1915,15 +2068,19 @@ export default function ReaderViewPage() {
                       ) : null}
                       {isSelectingCommentPosition && commentDraftAreaRect ? (
                         <div
-                          className="pointer-events-none absolute rounded-sm bg-yellow-200/35"
+                          className="pointer-events-none absolute rounded-sm"
                           style={{
                             left: `${commentDraftAreaRect.x * renderedPageSize.width}px`,
                             top: `${commentDraftAreaRect.y * renderedPageSize.height}px`,
                             width: `${commentDraftAreaRect.width * renderedPageSize.width}px`,
                             height: `${commentDraftAreaRect.height * renderedPageSize.height}px`,
+                            backgroundColor: hexToRgba(selectedNoteColor.note, 0.26),
                           }}
                         >
-                          <span className="absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white shadow-sm">
+                          <span
+                            className="absolute left-0 top-0 flex h-6 min-w-6 -translate-x-[calc(100%+0.375rem)] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white shadow-sm"
+                            style={{ backgroundColor: selectedNoteColor.note }}
+                          >
                             {selectedComment?.commentNumber ?? nextCommentNumber}
                           </span>
                         </div>
@@ -1962,12 +2119,13 @@ export default function ReaderViewPage() {
                         <button
                           key={highlight.id}
                           type="button"
-                          className="pointer-events-auto absolute rounded-sm bg-yellow-200/32 transition hover:bg-yellow-200/42"
+                          className="pointer-events-auto absolute rounded-sm transition"
                           style={{
                             left: `${highlight.rect.x * renderedPageSize.width}px`,
                             top: `${highlight.rect.y * renderedPageSize.height}px`,
                             width: `${highlight.rect.width * renderedPageSize.width}px`,
                             height: `${highlight.rect.height * renderedPageSize.height}px`,
+                            backgroundColor: hexToRgba(highlight.color, 0.32),
                           }}
                           onContextMenu={(event) => {
                             event.preventDefault()
@@ -1979,12 +2137,13 @@ export default function ReaderViewPage() {
                       ))}
                       {draftHighlightRect ? (
                         <div
-                          className="pointer-events-none absolute rounded-sm bg-yellow-200/36"
+                          className="pointer-events-none absolute rounded-sm"
                           style={{
                             left: `${draftHighlightRect.x * renderedPageSize.width}px`,
                             top: `${draftHighlightRect.y * renderedPageSize.height}px`,
                             width: `${draftHighlightRect.width * renderedPageSize.width}px`,
                             height: `${draftHighlightRect.height * renderedPageSize.height}px`,
+                            backgroundColor: hexToRgba(selectedHighlightColor.highlight, 0.36),
                           }}
                         />
                       ) : null}
