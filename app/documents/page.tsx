@@ -1335,10 +1335,17 @@ export default function DocumentDetailPage() {
             <CollapsibleContent>
               <CardContent>
                 <div className="mb-4 flex justify-end">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                     <Button variant="outline" size="sm" onClick={() => void handleFetchOnlineMetadata()} disabled={isFetchingOnlineMetadata}>
                       <Globe className="mr-2 h-4 w-4" />
                       {isFetchingOnlineMetadata ? 'Searchingâ€¦' : 'Find Metadata Online'}
                     </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={8}>
+                      Try fetching cleaner metadata from Crossref or Semantic Scholar.
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <div className="mb-4 rounded-lg border border-border">
                   <Collapsible open={bibtexExpanded} onOpenChange={setBibtexExpanded}>
