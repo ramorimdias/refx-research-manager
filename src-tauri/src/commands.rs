@@ -994,6 +994,13 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
     Ok(())
 }
 
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, AppError> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let columns: Vec<String> = rows.filter_map(Result::ok).collect();
+    Ok(columns.iter().any(|existing| existing == column))
+}
+
 fn document_tags(conn: &Connection, document_id: &str) -> Result<Vec<String>, AppError> {
     let mut stmt = conn.prepare(
         r#"SELECT tags.name
@@ -3502,6 +3509,7 @@ pub fn replace_document_keywords(
 ) -> Result<(), AppError> {
     let mut conn = open_db(&app)?;
     let tx = conn.transaction()?;
+    let has_api_tier = has_column(&tx, "document_keywords", "api_tier")?;
 
     tx.execute(
         "DELETE FROM document_keywords WHERE document_id = ?1",
@@ -3514,29 +3522,53 @@ pub fn replace_document_keywords(
             continue;
         }
 
-        tx.execute(
-            r#"
-            INSERT INTO document_keywords (
-              document_id,
-              keyword,
-              score,
-              summary,
-              source,
-              api_mode,
-              api_tier
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            "#,
-            params![
-                document_id,
-                normalized_keyword,
-                keyword.score,
-                keyword.summary,
-                keyword.source,
-                keyword.api_mode,
-                keyword.api_mode,
-            ],
-        )?;
+        if has_api_tier {
+            tx.execute(
+                r#"
+                INSERT INTO document_keywords (
+                  document_id,
+                  keyword,
+                  score,
+                  summary,
+                  source,
+                  api_mode,
+                  api_tier
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "#,
+                params![
+                    document_id,
+                    normalized_keyword,
+                    keyword.score,
+                    keyword.summary,
+                    keyword.source,
+                    keyword.api_mode,
+                    keyword.api_mode,
+                ],
+            )?;
+        } else {
+            tx.execute(
+                r#"
+                INSERT INTO document_keywords (
+                  document_id,
+                  keyword,
+                  score,
+                  summary,
+                  source,
+                  api_mode
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "#,
+                params![
+                    document_id,
+                    normalized_keyword,
+                    keyword.score,
+                    keyword.summary,
+                    keyword.source,
+                    keyword.api_mode,
+                ],
+            )?;
+        }
     }
 
     tx.commit()?;
