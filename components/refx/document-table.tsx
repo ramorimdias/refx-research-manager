@@ -32,7 +32,7 @@ import { NewBadge, ReadingStageBadge, StarRating } from './common'
 import { DocumentBulkActions } from './document-bulk-actions'
 import { useAppStore } from '@/lib/store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
-import { useT } from '@/lib/localization'
+import { translate, useLocale, useT } from '@/lib/localization'
 import { hasUsableMetadataTitle } from '@/lib/services/document-metadata-service'
 
 interface DocumentTableProps {
@@ -142,6 +142,11 @@ function loadStoredColumnWidths() {
 function emitTableConfigChanged() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(TABLE_CONFIG_EVENT))
+}
+
+function getMinimumColumnWidth(column: ColumnDefinition, label: string) {
+  const estimatedLabelWidth = Math.ceil(label.length * 7.5)
+  return Math.max(column.minWidth, estimatedLabelWidth + 40)
 }
 
 export function DocumentTableColumnControls() {
@@ -273,25 +278,51 @@ export function DocumentTableColumnControls() {
 
 export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTableProps) {
   const t = useT()
-  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(DEFAULT_WIDTHS)
-  const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(DEFAULT_VISIBILITY)
-  const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(DEFAULT_ORDER)
+  const { locale } = useLocale()
+  const minimumColumnWidths = useMemo(
+    () => Object.fromEntries(
+      COLUMN_DEFINITIONS.map((column) => [
+        column.key,
+        getMinimumColumnWidth(column, translate(locale, `documentTable.${column.label}`)),
+      ]),
+    ) as Record<ColumnKey, number>,
+    [locale],
+  )
+
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(() => {
+    const storedWidths = loadStoredColumnWidths()
+    return Object.fromEntries(
+      COLUMN_DEFINITIONS.map((column) => [
+        column.key,
+        Math.max(storedWidths[column.key], minimumColumnWidths[column.key]),
+      ]),
+    ) as Record<ColumnKey, number>
+  })
+  const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() => loadStoredColumnVisibility())
+  const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => loadStoredColumnOrder())
   const [resizingColumn, setResizingColumn] = useState<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
   const { toggleFavorite, updateDocument, refreshTagSuggestionsForDocuments } = useAppStore()
   const selection = useDocumentListSelection(documents.map((document) => document.id))
 
   useEffect(() => {
     const syncFromStorage = () => {
-      setColumnWidths(loadStoredColumnWidths())
+      const storedWidths = loadStoredColumnWidths()
+      setColumnWidths(
+        Object.fromEntries(
+          COLUMN_DEFINITIONS.map((column) => [
+            column.key,
+            Math.max(storedWidths[column.key], minimumColumnWidths[column.key]),
+          ]),
+        ) as Record<ColumnKey, number>,
+      )
       setColumnVisibility(loadStoredColumnVisibility())
       setColumnOrder(loadStoredColumnOrder())
     }
 
-    syncFromStorage()
     window.addEventListener(TABLE_CONFIG_EVENT, syncFromStorage)
 
     return () => window.removeEventListener(TABLE_CONFIG_EVENT, syncFromStorage)
-  }, [])
+  }, [minimumColumnWidths])
 
   useEffect(() => {
     window.localStorage.setItem(TABLE_WIDTHS_KEY, JSON.stringify(columnWidths))
@@ -312,12 +343,14 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
       const definition = COLUMN_DEFINITIONS.find((column) => column.key === resizingColumn.key)
       if (!definition) return
 
-      const nextWidth = Math.max(definition.minWidth, resizingColumn.startWidth + event.clientX - resizingColumn.startX)
+      const nextWidth = Math.max(
+        minimumColumnWidths[definition.key],
+        resizingColumn.startWidth + event.clientX - resizingColumn.startX,
+      )
       setColumnWidths((current) => ({
         ...current,
         [resizingColumn.key]: nextWidth,
       }))
-      emitTableConfigChanged()
     }
 
     const handlePointerUp = () => {
@@ -337,7 +370,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
-  }, [resizingColumn])
+  }, [minimumColumnWidths, resizingColumn])
 
   const visibleColumns = useMemo(
     () => columnOrder
@@ -403,7 +436,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
     <div
       role="presentation"
       onMouseDown={(event) => beginResize(key, event)}
-      className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+      className="absolute right-0 top-0 z-20 h-full w-4 translate-x-1/2 cursor-col-resize select-none touch-none"
     />
   )
 
@@ -605,7 +638,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
                 <TableHead
                   key={column.key}
                   className={cn(
-                    'relative overflow-hidden border-r border-border/70 last:border-r-0',
+                    'relative overflow-visible border-r border-border/70 last:border-r-0',
                     centered && 'text-center',
                   )}
                 >

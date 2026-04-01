@@ -47,11 +47,10 @@ import {
   ChevronUp,
   GitBranch,
   Loader2,
-  Pin,
   Plus,
   Save,
   Trash2,
-  Waypoints,
+  WandSparkles,
   ChevronsUpDown,
 } from 'lucide-react'
 import { DocumentGraphControls } from '@/components/refx/document-graph-controls'
@@ -2100,7 +2099,7 @@ function MapsPageContent() {
                       onClick={() => void handleReheatLayout()}
                       disabled={isReheatingLayout || visibleDocuments.length === 0}
                     >
-                      <Waypoints className={cn('mr-2 h-4 w-4', isReheatingLayout && 'animate-pulse')} />
+                      <WandSparkles className={cn('mr-2 h-4 w-4', isReheatingLayout && 'animate-pulse')} />
                       {t('mapsPage.rebuildLayout')}
                     </Button>
                   </TooltipTrigger>
@@ -2161,17 +2160,6 @@ function MapsPageContent() {
                       <Plus className="mr-2 h-4 w-4" />
                       {t('mapsPage.duplicateView')}
                     </Button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button size="sm" variant="outline" onClick={() => void handleResetCurrentViewPositions()}>
-                          <Pin className="mr-2 h-4 w-4" />
-                          {t('mapsPage.resetLayout')}
-                        </Button>
-                      </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>
-                      {t('mapsPage.resetLayoutHelp')}
-                    </TooltipContent>
-                  </Tooltip>
                   </div>
                 ) : null}
               </div>

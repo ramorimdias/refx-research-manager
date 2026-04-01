@@ -1670,7 +1670,7 @@ export default function ReaderViewPage() {
             {backLabel}
           </Button>
           <ReaderToolbarIconButton
-            label="Previous page"
+            label={t('common.goToPreviousPage')}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
           >
             <ChevronLeft className="h-4 w-4" />
@@ -1679,7 +1679,7 @@ export default function ReaderViewPage() {
             <Input
               value={page}
               onChange={(event) => setPage(Math.max(1, Number(event.target.value) || 1))}
-              aria-label="Current page"
+              aria-label={t('common.currentPage')}
               className="h-8 w-24 border-border/70 bg-background pr-8 text-center shadow-none"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
@@ -1687,7 +1687,7 @@ export default function ReaderViewPage() {
             </span>
           </div>
           <ReaderToolbarIconButton
-            label="Next page"
+            label={t('common.goToNextPage')}
             onClick={() => setPage((current) => current + 1)}
           >
             <ChevronRight className="h-4 w-4" />
@@ -1884,7 +1884,7 @@ export default function ReaderViewPage() {
                             WebkitUserSelect: 'text',
                           }}
                         >
-                          {word.text}
+                          {word.trailingSpace ? `${word.text} ` : word.text}
                         </span>
                       ))}
                     </div>

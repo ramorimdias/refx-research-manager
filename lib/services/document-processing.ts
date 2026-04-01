@@ -20,6 +20,7 @@ export type PdfWord = {
   width: number
   height: number
   confidence: number
+  trailingSpace?: boolean
 }
 
 export type PdfPageWords = {
@@ -90,6 +91,21 @@ function buildPageLines(words: PdfWord[]) {
       ),
     )
     .filter(Boolean)
+}
+
+function shouldInsertTrailingSpace(current: PdfWord, next: PdfWord | undefined) {
+  if (!next) return false
+  if (current.text.endsWith('-')) return false
+  if (/^[,.;:!?)}\]]/.test(next.text)) return false
+
+  const sameLineTolerance = Math.max(4, Math.min(current.height, next.height) * 0.5)
+  if (Math.abs(next.top - current.top) > sameLineTolerance) {
+    return false
+  }
+
+  const currentRight = current.left + current.width
+  const horizontalGap = next.left - currentRight
+  return horizontalGap >= Math.max(1.5, Math.min(current.height, next.height) * 0.08)
 }
 
 function unique<T>(items: T[]) {
@@ -396,6 +412,10 @@ async function extractPdfPages(filePath: string) {
             })
             cursorX += width + 2
           }
+        }
+
+        for (let index = 0; index < words.length; index += 1) {
+          words[index]!.trailingSpace = shouldInsertTrailingSpace(words[index]!, words[index + 1])
         }
 
         pages.push({

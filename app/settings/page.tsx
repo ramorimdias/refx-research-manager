@@ -67,6 +67,8 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateSummary | null>(null)
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
+  const [ocrScanTargetIds, setOcrScanTargetIds] = useState<string[]>([])
+  const [ocrScanStatus, setOcrScanStatus] = useState<string | null>(null)
   const [isRecheckingDoiReferences, setIsRecheckingDoiReferences] = useState(false)
   const [doiReferenceStatus, setDoiReferenceStatus] = useState<string | null>(null)
   const [restoreTargetPath, setRestoreTargetPath] = useState<string | null>(null)
@@ -179,6 +181,34 @@ export default function SettingsPage() {
     }
   }, [])
 
+  const ocrScanDocuments = useMemo(
+    () => documents.filter((document) => ocrScanTargetIds.includes(document.id)),
+    [documents, ocrScanTargetIds],
+  )
+  const eligibleOcrDocuments = useMemo(
+    () => documents.filter((document) =>
+      document.filePath
+      && !document.hasOcrText
+      && (document.ocrStatus === 'pending' || document.ocrStatus === 'failed' || !document.hasExtractedText),
+    ),
+    [documents],
+  )
+  const ocrScanProgress = useMemo(() => {
+    const total = ocrScanDocuments.length
+    const processing = ocrScanDocuments.filter((document) => document.ocrStatus === 'processing').length
+    const complete = ocrScanDocuments.filter((document) => document.ocrStatus === 'complete').length
+    const failed = ocrScanDocuments.filter((document) => document.ocrStatus === 'failed').length
+    const finished = complete + failed
+    return {
+      total,
+      processing,
+      complete,
+      failed,
+      finished,
+      percent: total > 0 ? Math.round((finished / total) * 100) : 0,
+    }
+  }, [ocrScanDocuments])
+
   const handleClearLocalData = async () => {
     setIsClearing(true)
     try {
@@ -191,13 +221,39 @@ export default function SettingsPage() {
   }
 
   const handleScanAllOcr = async () => {
+    const candidates = eligibleOcrDocuments
+
+    if (candidates.length === 0) {
+      setOcrScanTargetIds([])
+      setOcrScanStatus('No eligible documents need OCR right now.')
+      return
+    }
+
+    setOcrScanTargetIds(candidates.map((document) => document.id))
+    setOcrScanStatus(`Preparing OCR for ${candidates.length} document${candidates.length === 1 ? '' : 's'}...`)
     setIsScanningOcr(true)
     try {
       await scanDocumentsOcr()
+      const latestDocuments = useAppStore.getState().documents
+      const scannedDocuments = latestDocuments.filter((document) => candidates.some((candidate) => candidate.id === document.id))
+      const complete = scannedDocuments.filter((document) => document.ocrStatus === 'complete').length
+      const failed = scannedDocuments.filter((document) => document.ocrStatus === 'failed').length
+      setOcrScanStatus(
+        failed > 0
+          ? `OCR scan finished. ${complete} completed, ${failed} failed.`
+          : `OCR scan finished for ${complete} document${complete === 1 ? '' : 's'}.`,
+      )
     } finally {
       setIsScanningOcr(false)
     }
   }
+
+  useEffect(() => {
+    if (!isScanningOcr || ocrScanProgress.total === 0) return
+    setOcrScanStatus(
+      `Scanning OCR: ${ocrScanProgress.finished}/${ocrScanProgress.total} finished, ${ocrScanProgress.processing} in progress.`,
+    )
+  }, [isScanningOcr, ocrScanProgress])
 
   const handleRecheckDoiReferences = async () => {
     if (!isDesktopApp) return
@@ -679,10 +735,34 @@ export default function SettingsPage() {
                   <CardDescription>Scan stored documents and persist OCR/search state.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-muted-foreground">{documents.length} documents available.</p>
-                    <Button variant="outline" onClick={() => void handleScanAllOcr()} disabled={isScanningOcr || documents.length === 0}>
+                    <p className="text-sm text-muted-foreground">{eligibleOcrDocuments.length} OCR-eligible document{eligibleOcrDocuments.length === 1 ? '' : 's'} available.</p>
+                    <Button variant="outline" onClick={() => void handleScanAllOcr()} disabled={isScanningOcr || eligibleOcrDocuments.length === 0}>
                       {isScanningOcr ? 'Scanning...' : 'Scan All OCR'}
                     </Button>
+                    {ocrScanProgress.total > 0 ? (
+                      <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">OCR progress</span>
+                          <span className="text-muted-foreground">{ocrScanProgress.finished}/{ocrScanProgress.total}</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${Math.max(ocrScanProgress.percent, ocrScanProgress.finished > 0 ? 8 : 0)}%` }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <span>{ocrScanProgress.complete} completed</span>
+                          <span>{ocrScanProgress.processing} processing</span>
+                          <span>{ocrScanProgress.failed} failed</span>
+                        </div>
+                      </div>
+                    ) : null}
+                    {ocrScanStatus ? (
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                        {ocrScanStatus}
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
 
@@ -708,56 +788,6 @@ export default function SettingsPage() {
 
             {activeSection === 'data' && (
               <>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t('settings.appUpdates')}</CardTitle>
-                    <CardDescription>{t('settings.appUpdatesDescription')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-medium">{t('settings.checkAutomatically')}</Label>
-                        <p className="mt-1 text-xs text-muted-foreground">{t('settings.checkAutomaticallyHelp')}</p>
-                      </div>
-                      <Checkbox
-                        checked={settings.autoCheckForUpdates}
-                        onCheckedChange={(checked) => updateSettings('autoCheckForUpdates', !!checked)}
-                      />
-                    </div>
-
-                    <Separator />
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button variant="outline" onClick={() => void handleCheckForUpdates()} disabled={isCheckingUpdates}>
-                        {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        {isCheckingUpdates ? t('settings.checking') : t('settings.checkForUpdates')}
-                      </Button>
-                      <Button onClick={() => void handleInstallUpdate()} disabled={isInstallingUpdate || !availableUpdate}>
-                        {isInstallingUpdate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {isInstallingUpdate ? t('updateDialog.installing') : t('settings.downloadInstall')}
-                      </Button>
-                    </div>
-
-                    {updateStatus ? (
-                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                        {updateStatus}
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Local Data</CardTitle>
-                  <CardDescription>Reset local content while keeping app preferences.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-                      This removes documents, notes, comments, tags, and imported files, then recreates one empty library.
-                    </div>
-                  </CardContent>
-                </Card>
-
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Backups</CardTitle>
@@ -920,22 +950,62 @@ export default function SettingsPage() {
             )}
 
             {activeSection === 'about' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Application</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Mode</span>
-                    <Badge variant="secondary">{isDesktopApp ? 'Desktop' : 'Preview'}</Badge>
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Version</span>
-                    <Badge variant="secondary">v{APP_VERSION}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Application</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Mode</span>
+                      <Badge variant="secondary">{isDesktopApp ? 'Desktop' : 'Preview'}</Badge>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Version</span>
+                      <Badge variant="secondary">v{APP_VERSION}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t('settings.appUpdates')}</CardTitle>
+                    <CardDescription>{t('settings.appUpdatesDescription')}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm font-medium">{t('settings.checkAutomatically')}</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">{t('settings.checkAutomaticallyHelp')}</p>
+                      </div>
+                      <Checkbox
+                        checked={settings.autoCheckForUpdates}
+                        onCheckedChange={(checked) => updateSettings('autoCheckForUpdates', !!checked)}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" onClick={() => void handleCheckForUpdates()} disabled={isCheckingUpdates}>
+                        {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        {isCheckingUpdates ? t('settings.checking') : t('settings.checkForUpdates')}
+                      </Button>
+                      <Button onClick={() => void handleInstallUpdate()} disabled={isInstallingUpdate || !availableUpdate}>
+                        {isInstallingUpdate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                        {isInstallingUpdate ? t('updateDialog.installing') : t('settings.downloadInstall')}
+                      </Button>
+                    </div>
+
+                    {updateStatus ? (
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                        {updateStatus}
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </>
             )}
           </div>
         </div>

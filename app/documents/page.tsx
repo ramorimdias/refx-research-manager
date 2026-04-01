@@ -69,6 +69,7 @@ import type { Document as RefxDocument, ReadingStage } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import * as repo from '@/lib/repositories/local-db'
 import { normalizeErrorMessage } from '@/lib/utils/error'
+import { useT } from '@/lib/localization'
 
 const readingStages: Array<{ value: ReadingStage; label: string }> = [
   { value: 'unread', label: 'Unread' },
@@ -105,6 +106,7 @@ type PreviewPdfDocument = {
 }
 
 function DocumentPdfPreview({ document }: { document: RefxDocument }) {
+  const t = useT()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{
@@ -287,10 +289,10 @@ function DocumentPdfPreview({ document }: { document: RefxDocument }) {
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={!pdfDocument || page <= 1}>
             <ChevronLeft className="mr-1 h-4 w-4" />
-            Prev
+            {t('common.previous')}
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pdfDocument?.numPages ?? current, current + 1))} disabled={!pdfDocument || page >= (pdfDocument?.numPages ?? 1)}>
-            Next
+            {t('common.next')}
             <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
           <div className="ml-auto flex items-center gap-2">

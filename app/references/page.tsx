@@ -47,6 +47,7 @@ import {
   normalizeWhitespace,
   seedReferenceFromDocument,
 } from '@/lib/services/work-reference-service'
+import { useT } from '@/lib/localization'
 import { cn } from '@/lib/utils'
 
 type ReferenceFormState = {
@@ -97,6 +98,7 @@ function buildDocumentResumeHref(document: Document) {
 
 export default function ReferencesPage() {
   const router = useRouter()
+  const t = useT()
   const libraries = useAppStore((state) => state.libraries)
   const documents = useAppStore((state) => state.documents)
   const activeLibraryId = useAppStore((state) => state.activeLibraryId)
@@ -147,7 +149,7 @@ export default function ReferencesPage() {
         if (!cancelled) setAllReferences(nextReferences)
       } catch (error) {
         if (!cancelled) {
-          setStatusMessage(error instanceof Error ? error.message : 'Could not load references.')
+          setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotLoadReferences'))
         }
       }
     }
@@ -173,7 +175,7 @@ export default function ReferencesPage() {
         if (!cancelled) setWorkReferences(nextReferences)
       } catch (error) {
         if (!cancelled) {
-          setStatusMessage(error instanceof Error ? error.message : 'Could not load work references.')
+          setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotLoadWorkReferences'))
         }
       } finally {
         if (!cancelled) setIsLoadingReferences(false)
@@ -234,7 +236,7 @@ export default function ReferencesPage() {
     },
   ) => {
     if (!selectedWork) {
-      throw new Error('Select a work before adding references.')
+      throw new Error(t('referencesPage.selectWorkBeforeAddingReferences'))
     }
 
     const reusable = findReusableReference(allReferences, referenceDraft)
@@ -263,13 +265,13 @@ export default function ReferencesPage() {
   const handleCreateWork = async () => {
     const title = normalizeWhitespace(newWorkTitle)
     if (!title) {
-      setStatusMessage('A work name is required.')
+      setStatusMessage(t('referencesPage.workNameRequired'))
       return
     }
 
     const libraryId = activeLibraryId ?? libraries[0]?.id
     if (!libraryId) {
-      setStatusMessage('Create a library before adding a work.')
+      setStatusMessage(t('referencesPage.createLibraryBeforeAddingWork'))
       return
     }
 
@@ -286,10 +288,10 @@ export default function ReferencesPage() {
         setSelectedWorkId(created.id)
         setNewWorkTitle('')
         setIsAddingWork(false)
-        setStatusMessage(`Created "${created.title}".`)
+        setStatusMessage(t('referencesPage.createdWork', { title: created.title }))
       }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not create the work.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotCreateWork'))
     } finally {
       setIsSavingWork(false)
     }
@@ -297,7 +299,7 @@ export default function ReferencesPage() {
 
   const handleUseSuggestion = async (document: Document) => {
     if (!selectedWork) {
-      setStatusMessage('Select a work before adding references.')
+      setStatusMessage(t('referencesPage.selectWorkBeforeAddingReferences'))
       return
     }
 
@@ -313,9 +315,9 @@ export default function ReferencesPage() {
       })
       setIsAddingReference(false)
       resetReferenceDialog()
-      setStatusMessage(`Added "${document.title}" to this work.`)
+      setStatusMessage(t('referencesPage.addedDocumentToWork', { title: document.title }))
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not add the reference.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotAddReference'))
     } finally {
       setIsSubmittingReference(false)
     }
@@ -323,13 +325,13 @@ export default function ReferencesPage() {
 
   const handleAddReference = async () => {
     if (!selectedWork) {
-      setStatusMessage('Select a work before adding references.')
+      setStatusMessage(t('referencesPage.selectWorkBeforeAddingReferences'))
       return
     }
 
     const title = normalizeWhitespace(referenceForm.title)
     if (!title) {
-      setStatusMessage('Reference title is required.')
+      setStatusMessage(t('referencesPage.referenceTitleRequired'))
       return
     }
 
@@ -367,9 +369,9 @@ export default function ReferencesPage() {
       await saveReferenceToSelectedWork(referenceDraft, matched)
       setIsAddingReference(false)
       resetReferenceDialog()
-      setStatusMessage('Reference added.')
+      setStatusMessage(t('referencesPage.referenceAdded'))
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not add the reference.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotAddReference'))
     } finally {
       setIsSubmittingReference(false)
     }
@@ -386,7 +388,7 @@ export default function ReferencesPage() {
         )
       }, 1600)
     } catch {
-      setStatusMessage('Could not copy the reference.')
+      setStatusMessage(t('referencesPage.couldNotCopyReference'))
     }
   }
 
@@ -395,9 +397,9 @@ export default function ReferencesPage() {
       await repo.deleteWorkReference(id)
       const nextReferences = selectedWork ? await repo.listWorkReferences(selectedWork.id) : []
       setWorkReferences(nextReferences)
-      setStatusMessage('Reference removed from this work.')
+      setStatusMessage(t('referencesPage.referenceRemovedFromWork'))
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not remove the reference.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotRemoveReference'))
     }
   }
 
@@ -409,9 +411,9 @@ export default function ReferencesPage() {
     try {
       const refreshed = await repo.recheckWorkReferenceMatches(selectedWork.id)
       setWorkReferences(refreshed)
-      setStatusMessage('Reference matches refreshed.')
+      setStatusMessage(t('referencesPage.referenceMatchesRefreshed'))
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not refresh matches.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotRefreshMatches'))
     } finally {
       setIsRecheckingMatches(false)
     }
@@ -437,7 +439,7 @@ export default function ReferencesPage() {
       )
       setWorkReferences(reordered)
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not reorder references.')
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotReorderReferences'))
       const restored = await repo.listWorkReferences(selectedWork.id)
       setWorkReferences(restored)
     }
@@ -452,15 +454,15 @@ export default function ReferencesPage() {
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">My References</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('referencesPage.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Build reusable bibliographies for your work, mix matched documents and freeform references, and copy them in your preferred style.
+            {t('referencesPage.subtitle')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={selectedStyle} onValueChange={(value) => setSelectedStyle(value as CitationStyle)}>
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Citation style" />
+              <SelectValue placeholder={t('referencesPage.citationStyle')} />
             </SelectTrigger>
             <SelectContent>
               {CITATION_STYLES.map((style) => (
@@ -472,7 +474,7 @@ export default function ReferencesPage() {
           </Select>
           <Button type="button" variant="outline" onClick={() => setIsAddingWork(true)}>
             <Plus className="h-4 w-4" />
-            Add work
+            {t('referencesPage.addWork')}
           </Button>
         </div>
       </div>
@@ -482,17 +484,17 @@ export default function ReferencesPage() {
           <CardHeader>
             <Tooltip>
               <TooltipTrigger asChild>
-                <CardTitle className="w-fit cursor-help">Works</CardTitle>
+                <CardTitle className="w-fit cursor-help">{t('referencesPage.works')}</CardTitle>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={8}>
-                Choose a My work item or create a new one.
+                {t('referencesPage.worksHelp')}
               </TooltipContent>
             </Tooltip>
           </CardHeader>
           <CardContent className="space-y-3">
             <Select value={selectedWorkId} onValueChange={setSelectedWorkId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a work" />
+                <SelectValue placeholder={t('referencesPage.selectWork')} />
               </SelectTrigger>
               <SelectContent>
                 {myWorks.map((work) => (
@@ -507,14 +509,14 @@ export default function ReferencesPage() {
               <div className="rounded-2xl bg-muted/60 p-4">
                 <div className="text-sm font-medium">{selectedWork.title}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {workReferences.length} reference{workReferences.length === 1 ? '' : 's'}
+                  {t('referencesPage.referencesCount', { count: workReferences.length, suffix: workReferences.length === 1 ? '' : 's' })}
                 </div>
               </div>
             ) : (
               <EmptyState
                 icon={BookOpen}
-                title="No work selected"
-                description={myWorks.length ? 'Select a work to manage its bibliography.' : 'Create your first work to start collecting references.'}
+                title={t('referencesPage.noWorkSelected')}
+                description={myWorks.length ? t('referencesPage.selectWorkToManage') : t('referencesPage.createFirstWork')}
               />
             )}
           </CardContent>
@@ -525,10 +527,10 @@ export default function ReferencesPage() {
             <div>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <CardTitle className="w-fit cursor-help">Bibliography</CardTitle>
+                  <CardTitle className="w-fit cursor-help">{t('referencesPage.bibliography')}</CardTitle>
                 </TooltipTrigger>
                 <TooltipContent side="top" sideOffset={8}>
-                  {`Drag to reorder. Copy any entry in ${selectedStyle.toUpperCase()} format.`}
+                  {t('referencesPage.bibliographyHelp', { style: selectedStyle.toUpperCase() })}
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -540,7 +542,7 @@ export default function ReferencesPage() {
                 disabled={!selectedWork}
               >
                 <Plus className="h-4 w-4" />
-                Add reference
+                {t('referencesPage.addReference')}
               </Button>
               <Button
                 type="button"
@@ -549,7 +551,7 @@ export default function ReferencesPage() {
                 disabled={!selectedWork || isRecheckingMatches}
               >
                 {isRecheckingMatches ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Recheck matches
+                {t('referencesPage.recheckMatches')}
               </Button>
             </div>
           </CardHeader>
@@ -563,19 +565,19 @@ export default function ReferencesPage() {
             {!selectedWork ? (
               <EmptyState
                 icon={BookOpen}
-                title="Select a work"
-                description="Choose a My work item on the left to manage its references."
+                title={t('referencesPage.selectWork')}
+                description={t('referencesPage.selectWorkToManage')}
               />
             ) : isLoadingReferences ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading references...
+                {t('referencesPage.loadingReferences')}
               </div>
             ) : workReferences.length === 0 ? (
               <EmptyState
                 icon={Sparkles}
-                title="No references yet"
-                description="Add references to build the bibliography for this work."
+                title={t('referencesPage.noReferencesYet')}
+                description={t('referencesPage.noReferencesYetDescription')}
               />
             ) : (
               <div className="space-y-3">
@@ -601,12 +603,12 @@ export default function ReferencesPage() {
                         draggingWorkReferenceId === workReference.id && 'opacity-60',
                       )}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 cursor-grab text-muted-foreground">
+                      <div className="flex h-full items-center gap-3">
+                        <div className="flex h-full items-center cursor-grab text-muted-foreground">
                           <GripVertical className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1 space-y-1.5">
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2">
                                 <span className="shrink-0 text-xs font-medium text-muted-foreground">
@@ -615,7 +617,7 @@ export default function ReferencesPage() {
                                 <div className="truncate text-sm font-semibold">{workReference.reference.title}</div>
                                 {matchedDocument ? (
                                   <span className="shrink-0 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700">
-                                    Exists in libraries
+                                    {t('referencesPage.existsInLibraries')}
                                   </span>
                                 ) : null}
                               </div>
@@ -623,7 +625,7 @@ export default function ReferencesPage() {
                                 {formatReference(workReference.reference, selectedStyle)}
                               </div>
                             </div>
-                            <div className="ml-auto flex shrink-0 items-start gap-2 self-start">
+                            <div className="ml-auto flex shrink-0 items-center gap-2 self-center">
                               <Button
                                 type="button"
                                 variant="outline"
@@ -632,7 +634,7 @@ export default function ReferencesPage() {
                                   event.stopPropagation()
                                   void handleCopyReference(workReference.reference)
                                 }}
-                                aria-label="Copy reference"
+                                aria-label={t('referencesPage.copyReference')}
                                 className={cn(
                                   copiedWorkReferenceId === workReference.id
                                     ? 'border-emerald-300 text-emerald-600'
@@ -653,7 +655,7 @@ export default function ReferencesPage() {
                                   event.stopPropagation()
                                   setPendingDeleteWorkReferenceId(workReference.id)
                                 }}
-                                aria-label="Remove reference"
+                                aria-label={t('referencesPage.removeReference')}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -673,25 +675,25 @@ export default function ReferencesPage() {
       <Dialog open={isAddingWork} onOpenChange={setIsAddingWork}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add work</DialogTitle>
-            <DialogDescription>Create a My work item that can hold an ordered bibliography.</DialogDescription>
+            <DialogTitle>{t('referencesPage.addWork')}</DialogTitle>
+            <DialogDescription>{t('referencesPage.addWorkDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="new-work-title">Work name</Label>
+            <Label htmlFor="new-work-title">{t('referencesPage.workName')}</Label>
             <Input
               id="new-work-title"
               value={newWorkTitle}
               onChange={(event) => setNewWorkTitle(event.target.value)}
-              placeholder="My article draft"
+              placeholder={t('referencesPage.workNamePlaceholder')}
             />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setIsAddingWork(false)}>
-              Cancel
+              {t('referencesPage.cancel')}
             </Button>
             <Button type="button" onClick={() => void handleCreateWork()} disabled={isSavingWork}>
               {isSavingWork ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Create work
+              {t('referencesPage.createWork')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -706,35 +708,35 @@ export default function ReferencesPage() {
       >
         <DialogContent className="w-[72vw] max-w-[1080px] sm:max-w-[1080px]">
           <DialogHeader>
-            <DialogTitle>Add reference</DialogTitle>
+            <DialogTitle>{t('referencesPage.addReference')}</DialogTitle>
             <DialogDescription>
-              Match one of your documents when possible, or save a freeform reference that only exists in this bibliography.
+              {t('referencesPage.addReferenceDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="reference-title">Title</Label>
+                <Label htmlFor="reference-title">{t('metadataFields.title')}</Label>
                 <Input
                   id="reference-title"
                   value={referenceForm.title}
                   onChange={(event) => setReferenceForm((current) => ({ ...current, title: event.target.value }))}
-                  placeholder="Reference title"
+                  placeholder={t('referencesPage.referenceTitlePlaceholder')}
                 />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="reference-authors">Authors</Label>
+                  <Label htmlFor="reference-authors">{t('metadataFields.authors')}</Label>
                   <Input
                     id="reference-authors"
                     value={referenceForm.authors}
                     onChange={(event) => setReferenceForm((current) => ({ ...current, authors: event.target.value }))}
-                    placeholder="Author One; Author Two"
+                    placeholder={t('referencesPage.authorsPlaceholder')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reference-year">Year</Label>
+                  <Label htmlFor="reference-year">{t('metadataFields.year')}</Label>
                   <Input
                     id="reference-year"
                     value={referenceForm.year}
@@ -746,7 +748,7 @@ export default function ReferencesPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="reference-doi">DOI</Label>
+                  <Label htmlFor="reference-doi">{t('metadataFields.doi')}</Label>
                   <Input
                     id="reference-doi"
                     value={referenceForm.doi}
@@ -755,22 +757,22 @@ export default function ReferencesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reference-type">Type</Label>
+                  <Label htmlFor="reference-type">{t('referencesPage.type')}</Label>
                   <Select
                     value={referenceForm.type}
                     onValueChange={(value) => setReferenceForm((current) => ({ ...current, type: value }))}
                   >
                     <SelectTrigger id="reference-type">
-                      <SelectValue placeholder="Reference type" />
+                      <SelectValue placeholder={t('referencesPage.referenceType')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="article">Article</SelectItem>
-                      <SelectItem value="book">Book</SelectItem>
-                      <SelectItem value="inproceedings">Conference</SelectItem>
-                      <SelectItem value="thesis">Thesis</SelectItem>
-                      <SelectItem value="report">Report</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="misc">Misc</SelectItem>
+                      <SelectItem value="article">{t('referencesPage.referenceTypeArticle')}</SelectItem>
+                      <SelectItem value="book">{t('referencesPage.referenceTypeBook')}</SelectItem>
+                      <SelectItem value="inproceedings">{t('referencesPage.referenceTypeConference')}</SelectItem>
+                      <SelectItem value="thesis">{t('referencesPage.referenceTypeThesis')}</SelectItem>
+                      <SelectItem value="report">{t('referencesPage.referenceTypeReport')}</SelectItem>
+                      <SelectItem value="online">{t('referencesPage.referenceTypeOnline')}</SelectItem>
+                      <SelectItem value="misc">{t('referencesPage.referenceTypeMisc')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -778,53 +780,53 @@ export default function ReferencesPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="reference-publisher">Publisher / source</Label>
+                  <Label htmlFor="reference-publisher">{t('referencesPage.publisherSource')}</Label>
                   <Input
                     id="reference-publisher"
                     value={referenceForm.publisher}
                     onChange={(event) => setReferenceForm((current) => ({ ...current, publisher: event.target.value }))}
-                    placeholder="Publisher"
+                    placeholder={t('referencesPage.publisherPlaceholder')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reference-journal">Journal</Label>
+                  <Label htmlFor="reference-journal">{t('referencesPage.journal')}</Label>
                   <Input
                     id="reference-journal"
                     value={referenceForm.journal}
                     onChange={(event) => setReferenceForm((current) => ({ ...current, journal: event.target.value }))}
-                    placeholder="Journal name"
+                    placeholder={t('referencesPage.journalPlaceholder')}
                   />
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="reference-booktitle">Booktitle / collection</Label>
+                  <Label htmlFor="reference-booktitle">{t('referencesPage.booktitleCollection')}</Label>
                   <Input
                     id="reference-booktitle"
                     value={referenceForm.booktitle}
                     onChange={(event) => setReferenceForm((current) => ({ ...current, booktitle: event.target.value }))}
-                    placeholder="Book or proceedings"
+                    placeholder={t('referencesPage.booktitlePlaceholder')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reference-url">URL</Label>
+                  <Label htmlFor="reference-url">{t('referencesPage.url')}</Label>
                   <Input
                     id="reference-url"
                     value={referenceForm.url}
                     onChange={(event) => setReferenceForm((current) => ({ ...current, url: event.target.value }))}
-                    placeholder="https://example.org"
+                    placeholder={t('referencesPage.urlPlaceholder')}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reference-abstract">Abstract / note</Label>
+                <Label htmlFor="reference-abstract">{t('referencesPage.abstractNote')}</Label>
                 <Textarea
                   id="reference-abstract"
                   value={referenceForm.abstract}
                   onChange={(event) => setReferenceForm((current) => ({ ...current, abstract: event.target.value }))}
-                  placeholder="Optional summary or note"
+                  placeholder={t('referencesPage.abstractPlaceholder')}
                   rows={4}
                 />
               </div>
@@ -832,9 +834,9 @@ export default function ReferencesPage() {
 
             <div className="flex max-h-[70vh] min-h-0 flex-col rounded-2xl bg-muted/50 p-5">
               <div>
-                <div className="text-base font-medium">Matching suggestions</div>
+                <div className="text-base font-medium">{t('referencesPage.matchingSuggestions')}</div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  Existing documents are suggested by DOI first, then title, author, and year.
+                  {t('referencesPage.matchingSuggestionsDescription')}
                 </div>
               </div>
 
@@ -857,16 +859,16 @@ export default function ReferencesPage() {
                     >
                       <div className="line-clamp-2 text-base font-medium leading-6">{document.title}</div>
                       <div className="mt-1 text-sm text-muted-foreground">
-                        {document.authors.join(', ') || 'Unknown author'}
+                        {document.authors.join(', ') || t('searchPage.unknownAuthor')}
                         {document.year ? ` • ${document.year}` : ''}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <span className="text-xs text-muted-foreground">
-                          Match {Math.round(score * 100)}%
+                          {t('referencesPage.matchPercent', { percent: Math.round(score * 100) })}
                         </span>
                         {alreadyInWork ? (
                           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">
-                            Already in this work
+                            {t('referencesPage.alreadyInWork')}
                           </span>
                         ) : null}
                       </div>
@@ -876,17 +878,17 @@ export default function ReferencesPage() {
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-                  Type a title, DOI, or author to see matching documents from your library.
+                  {t('referencesPage.matchingSuggestionsEmpty')}
                 </div>
               )}
 
               {preferredMatchDocumentId ? (
                 <div className="mt-4 rounded-2xl bg-sky-100 px-4 py-3 text-sm text-sky-700">
-                  This reference will be linked to an existing document if the match stays valid.
+                  {t('referencesPage.referenceWillBeLinked')}
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
-                  You can still save a freeform unmatched reference.
+                  {t('referencesPage.freeformReferenceHelp')}
                 </div>
               )}
             </div>
@@ -901,11 +903,11 @@ export default function ReferencesPage() {
                 resetReferenceDialog()
               }}
             >
-              Cancel
+              {t('referencesPage.cancel')}
             </Button>
             <Button type="button" onClick={() => void handleAddReference()} disabled={isSubmittingReference}>
               {isSubmittingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Add reference
+              {t('referencesPage.addReference')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -919,16 +921,16 @@ export default function ReferencesPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Remove reference</DialogTitle>
+            <DialogTitle>{t('referencesPage.removeReference')}</DialogTitle>
             <DialogDescription>
               {pendingDeleteWorkReference
-                ? `Remove "${pendingDeleteWorkReference.reference.title}" from this work?`
-                : 'Remove this reference from the current work?'}
+                ? t('referencesPage.removeReferenceConfirmNamed', { title: pendingDeleteWorkReference.reference.title })
+                : t('referencesPage.removeReferenceConfirm')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setPendingDeleteWorkReferenceId(null)}>
-              Cancel
+              {t('referencesPage.cancel')}
             </Button>
             <Button
               type="button"
@@ -939,7 +941,7 @@ export default function ReferencesPage() {
                 setPendingDeleteWorkReferenceId(null)
               }}
             >
-              Remove
+              {t('referencesPage.remove')}
             </Button>
           </DialogFooter>
         </DialogContent>

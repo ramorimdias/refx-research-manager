@@ -338,8 +338,16 @@ export default function LibrariesPage() {
   const bookCoverQrSectionRef = useRef<HTMLDivElement | null>(null)
 
   const activeLibrary = libraries.find((lib) => lib.id === activeLibraryId)
+  const visibleLibraryDocuments = useMemo(
+    () => documents.filter((document) => document.documentType !== 'my_work'),
+    [documents],
+  )
   const activeLibraryDocuments = useMemo(
-    () => (activeLibrary ? storedDocuments.filter((document) => document.libraryId === activeLibrary.id) : []),
+    () => (
+      activeLibrary
+        ? storedDocuments.filter((document) => document.libraryId === activeLibrary.id && document.documentType !== 'my_work')
+        : []
+    ),
     [activeLibrary, storedDocuments],
   )
   const paginationSessionKey = JSON.stringify({
@@ -347,8 +355,8 @@ export default function LibrariesPage() {
     filters,
     sort,
   })
-  const totalPages = Math.max(1, Math.ceil(documents.length / DOCUMENTS_PER_PAGE))
-  const paginatedDocuments = documents.slice(
+  const totalPages = Math.max(1, Math.ceil(visibleLibraryDocuments.length / DOCUMENTS_PER_PAGE))
+  const paginatedDocuments = visibleLibraryDocuments.slice(
     (currentPage - 1) * DOCUMENTS_PER_PAGE,
     currentPage * DOCUMENTS_PER_PAGE,
   )
@@ -857,7 +865,7 @@ export default function LibrariesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary">{t('libraries.documentsCount', { count: documents.length })}</Badge>
+                <Badge variant="secondary">{t('libraries.documentsCount', { count: visibleLibraryDocuments.length })}</Badge>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9 min-w-[11rem] max-w-[16rem] justify-start rounded-full">
@@ -946,7 +954,7 @@ export default function LibrariesPage() {
             )}
             <div className="flex min-h-full flex-col">
               <div className="flex-1">
-                {documents.length === 0 ? (
+                {visibleLibraryDocuments.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/70">
                       <FolderOpen className="h-8 w-8 text-muted-foreground" />
@@ -983,14 +991,14 @@ export default function LibrariesPage() {
                 )}
               </div>
 
-              {documents.length > 0 && totalPages > 1 && (
+              {visibleLibraryDocuments.length > 0 && totalPages > 1 && (
                 <div className="sticky bottom-0 mt-6 -mx-5 border-t border-transparent bg-muted px-5 py-4">
                 <div className="flex flex-col gap-3">
                 <div className="text-sm text-muted-foreground">
                   {t('libraries.showingRange', {
                     start: (currentPage - 1) * DOCUMENTS_PER_PAGE + 1,
-                    end: Math.min(currentPage * DOCUMENTS_PER_PAGE, documents.length),
-                    total: documents.length,
+                    end: Math.min(currentPage * DOCUMENTS_PER_PAGE, visibleLibraryDocuments.length),
+                    total: visibleLibraryDocuments.length,
                   })}
                 </div>
                 <Pagination>

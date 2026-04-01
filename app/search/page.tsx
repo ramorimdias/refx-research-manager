@@ -142,6 +142,7 @@ function buildSearchQuery(groups: KeywordGroup[], groupJoinOperator: GroupJoinOp
 }
 
 function parseSelectedLibraryIds(params: URLSearchParams) {
+  if (params.get('libs') === 'none') return []
   return normalizeSelectedIds(params.getAll('lib'))
 }
 
@@ -212,10 +213,20 @@ export default function SearchPage() {
   const initialGroupJoinOperator = useMemo(() => parseGroupJoinOperator(new URLSearchParams(paramString)), [paramString])
   const initialSimpleQuery = useMemo(() => parseInitialSimpleQuery(new URLSearchParams(paramString)), [paramString])
   const initialSelectedLibraryIds = useMemo(() => parseSelectedLibraryIds(new URLSearchParams(paramString)), [paramString])
+  const hasExplicitNoLibraries = useMemo(() => new URLSearchParams(paramString).get('libs') === 'none', [paramString])
   const [queryMode, setQueryMode] = useState<'simple' | 'complex'>(initialMode)
   const [simpleQueryInput, setSimpleQueryInput] = useState(initialSimpleQuery)
   const [draftGroups, setDraftGroups] = useState<KeywordGroup[]>(initialGroups.length > 0 ? initialGroups : [createKeywordGroup('AND')])
   const [draftGroupJoinOperator, setDraftGroupJoinOperator] = useState<GroupJoinOperator>(initialGroupJoinOperator)
+  const [draftSelectedLibraryIds, setDraftSelectedLibraryIds] = useState<string[]>(
+    initialSelectedLibraryIds.length > 0 || hasExplicitNoLibraries
+      ? initialSelectedLibraryIds
+      : libraries.map((library) => library.id),
+  )
+  const [draftReadingStage, setDraftReadingStage] = useState<'all' | ReadingStage>(persistentSearch.readingStage)
+  const [draftMetadataStatus, setDraftMetadataStatus] = useState<'all' | MetadataStatus>(persistentSearch.metadataStatus)
+  const [draftFavoriteOnly, setDraftFavoriteOnly] = useState(persistentSearch.favoriteOnly)
+  const [draftFlexibility, setDraftFlexibility] = useState(persistentSearch.flexibility)
   const [groupInputs, setGroupInputs] = useState<Record<string, string>>({})
   const [results, setResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -229,9 +240,9 @@ export default function SearchPage() {
   const metadataStatus = persistentSearch.metadataStatus
   const favoriteOnly = persistentSearch.favoriteOnly
   const flexibility = persistentSearch.flexibility
-  const effectiveSelectedLibraryIds = useMemo(
-    () => (selectedLibraryIds.length > 0 ? selectedLibraryIds : libraries.map((library) => library.id)),
-    [libraries, selectedLibraryIds],
+  const executedSelectedLibraryIds = useMemo(
+    () => (hasExplicitNoLibraries ? [] : selectedLibraryIds.length > 0 ? selectedLibraryIds : libraries.map((library) => library.id)),
+    [hasExplicitNoLibraries, libraries, selectedLibraryIds],
   )
   const executedGroups = useMemo(() => normalizeGroups(initialGroups), [initialGroups])
   const executedGroupJoinOperator = useMemo(() => initialGroupJoinOperator, [initialGroupJoinOperator])
@@ -260,6 +271,15 @@ export default function SearchPage() {
     setDraftGroupJoinOperator(initialGroupJoinOperator)
     const nextGroups = initialGroups.length > 0 ? initialGroups : [createKeywordGroup('AND')]
     setDraftGroups(nextGroups)
+    setDraftSelectedLibraryIds(
+      initialSelectedLibraryIds.length > 0 || hasExplicitNoLibraries
+        ? initialSelectedLibraryIds
+        : libraries.map((library) => library.id),
+    )
+    setDraftReadingStage(persistentSearch.readingStage)
+    setDraftMetadataStatus(persistentSearch.metadataStatus)
+    setDraftFavoriteOnly(persistentSearch.favoriteOnly)
+    setDraftFlexibility(persistentSearch.flexibility)
     const persistedQuery = initialMode === 'simple' ? initialSimpleQuery : flattenKeywords(initialGroups).join(', ')
     setGlobalSearchQuery(persistedQuery)
     setPersistentSearch({
@@ -269,17 +289,17 @@ export default function SearchPage() {
       groupJoinOperator: initialMode === 'simple' ? 'AND' : initialGroupJoinOperator,
       selectedLibraryIds: initialSelectedLibraryIds,
     })
-  }, [initialGroupJoinOperator, initialGroups, initialMode, initialSelectedLibraryIds, initialSimpleQuery, setGlobalSearchQuery, setPersistentSearch])
+  }, [hasExplicitNoLibraries, initialGroupJoinOperator, initialGroups, initialMode, initialSelectedLibraryIds, initialSimpleQuery, libraries, persistentSearch.favoriteOnly, persistentSearch.flexibility, persistentSearch.metadataStatus, persistentSearch.readingStage, setGlobalSearchQuery, setPersistentSearch])
 
   const filteredDocuments = useMemo(() => {
     return documents.filter((document) => {
-      if (effectiveSelectedLibraryIds.length > 0 && !effectiveSelectedLibraryIds.includes(document.libraryId)) return false
+      if (executedSelectedLibraryIds.length > 0 && !executedSelectedLibraryIds.includes(document.libraryId)) return false
       if (readingStage !== 'all' && document.readingStage !== readingStage) return false
       if (metadataStatus !== 'all' && document.metadataStatus !== metadataStatus) return false
       if (favoriteOnly && !document.favorite) return false
       return true
     })
-  }, [documents, effectiveSelectedLibraryIds, favoriteOnly, metadataStatus, readingStage])
+  }, [documents, executedSelectedLibraryIds, favoriteOnly, metadataStatus, readingStage])
   const searchableDocumentIds = useMemo(() => filteredDocuments.map((document) => document.id), [filteredDocuments])
   const searchableDocumentsById = useMemo(() => new Map(filteredDocuments.map((document) => [document.id, document])), [filteredDocuments])
   const executedSearchQuery = useMemo(() => {
@@ -305,9 +325,13 @@ export default function SearchPage() {
   }) => {
     const nextParams = new URLSearchParams()
     nextParams.set('mode', mode)
-    const normalizedLibraryIds = normalizeSelectedIds(libraryIds ?? effectiveSelectedLibraryIds)
-    for (const libraryId of normalizedLibraryIds) {
-      nextParams.append('lib', libraryId)
+    const normalizedLibraryIds = normalizeSelectedIds(libraryIds ?? draftSelectedLibraryIds)
+    if (normalizedLibraryIds.length === 0) {
+      nextParams.set('libs', 'none')
+    } else {
+      for (const libraryId of normalizedLibraryIds) {
+        nextParams.append('lib', libraryId)
+      }
     }
 
     if (mode === 'simple') {
@@ -338,6 +362,11 @@ export default function SearchPage() {
       keywords: parseSimpleSearchTerms(trimmedQuery),
       keywordGroups: [],
       groupJoinOperator: 'AND',
+      selectedLibraryIds: normalizeSelectedIds(draftSelectedLibraryIds),
+      readingStage: draftReadingStage,
+      metadataStatus: draftMetadataStatus,
+      favoriteOnly: draftFavoriteOnly,
+      flexibility: draftFlexibility,
     })
 
     const href = nextParams.toString() ? `/search?${nextParams.toString()}` : '/search'
@@ -496,6 +525,11 @@ export default function SearchPage() {
       keywords: flattenedKeywords,
       keywordGroups: preparedGroups,
       groupJoinOperator: draftGroupJoinOperator,
+      selectedLibraryIds: normalizeSelectedIds(draftSelectedLibraryIds),
+      readingStage: draftReadingStage,
+      metadataStatus: draftMetadataStatus,
+      favoriteOnly: draftFavoriteOnly,
+      flexibility: draftFlexibility,
     })
 
     if (preparedGroups.length === 0) {
@@ -512,19 +546,7 @@ export default function SearchPage() {
   }
 
   const updateSelectedLibraries = (nextLibraryIds: string[]) => {
-    const normalizedLibraryIds = normalizeSelectedIds(nextLibraryIds)
-    setPersistentSearch({ selectedLibraryIds: normalizedLibraryIds })
-
-    const nextParams = queryMode === 'simple'
-      ? buildQueryParams({ mode: 'simple', query: executedSimpleQuery, libraryIds: normalizedLibraryIds })
-      : buildQueryParams({
-          mode: 'complex',
-          groups: executedGroups,
-          groupJoin: executedGroupJoinOperator,
-          libraryIds: normalizedLibraryIds,
-        })
-
-    router.replace(nextParams.toString() ? `/search?${nextParams.toString()}` : '/search')
+    setDraftSelectedLibraryIds(normalizeSelectedIds(nextLibraryIds))
   }
 
   const switchMode = (nextMode: 'simple' | 'complex') => {
@@ -593,12 +615,6 @@ export default function SearchPage() {
                     <SearchHelpTooltip content={t('searchPage.keywordQueryHelp')}>
                       <label className="text-sm font-medium">{t('searchPage.keywordQuery')}</label>
                     </SearchHelpTooltip>
-                    {queryMode === 'complex' && (
-                      <Button type="button" variant="outline" size="sm" onClick={addGroup}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        {t('searchPage.addGroup')}
-                      </Button>
-                    )}
                   </div>
 
                   {queryMode === 'simple' ? (
@@ -650,9 +666,11 @@ export default function SearchPage() {
                     <div key={group.id} className="space-y-3 rounded-xl border p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <SearchHelpTooltip content={group.operator === 'AND' ? t('searchPage.addKeywordsHelpAnd') : t('searchPage.addKeywordsHelpOr')}>
-                            <span className="text-sm font-medium">{t('searchPage.group', { index: index + 1 })}</span>
-                          </SearchHelpTooltip>
+                          {draftGroups.length > 1 ? (
+                            <SearchHelpTooltip content={group.operator === 'AND' ? t('searchPage.addKeywordsHelpAnd') : t('searchPage.addKeywordsHelpOr')}>
+                              <span className="text-sm font-medium">{t('searchPage.group', { index: index + 1 })}</span>
+                            </SearchHelpTooltip>
+                          ) : null}
                           <Select value={group.operator} onValueChange={(value) => updateGroup(group.id, { operator: value as KeywordGroup['operator'] })}>
                             <SelectTrigger className="h-8 w-24">
                               <SelectValue />
@@ -690,14 +708,17 @@ export default function SearchPage() {
                               </button>
                             </Badge>
                           ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            {group.operator === 'AND' ? t('searchPage.addKeywordsHelpAnd') : t('searchPage.addKeywordsHelpOr')}
-                          </p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   ))}
+
+                  {queryMode === 'complex' && (
+                    <Button type="button" variant="outline" size="sm" onClick={addGroup} className="w-full">
+                      <Plus className="mr-2 h-4 w-4" />
+                      {t('searchPage.addGroup')}
+                    </Button>
+                  )}
                 </div>
 
                 {queryMode === 'complex' && (
@@ -713,15 +734,15 @@ export default function SearchPage() {
                 </SearchHelpTooltip>
                 <div className="rounded-lg border px-3 py-4">
                   <div className="mb-3 flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{flexibility < 20 ? t('searchPage.strict') : flexibility < 45 ? t('searchPage.balanced') : flexibility < 70 ? t('searchPage.flexible') : t('searchPage.veryFlexible')}</span>
-                    <span className="font-medium">{flexibility}%</span>
+                    <span className="text-muted-foreground">{draftFlexibility < 20 ? t('searchPage.strict') : draftFlexibility < 45 ? t('searchPage.balanced') : draftFlexibility < 70 ? t('searchPage.flexible') : t('searchPage.veryFlexible')}</span>
+                    <span className="font-medium">{draftFlexibility}%</span>
                   </div>
                   <Slider
-                    value={[flexibility]}
+                    value={[draftFlexibility]}
                     min={0}
                     max={100}
                     step={1}
-                    onValueChange={([value]) => setPersistentSearch({ flexibility: value ?? 0 })}
+                    onValueChange={([value]) => setDraftFlexibility(value ?? 0)}
                   />
                 </div>
               </div>
@@ -749,7 +770,7 @@ export default function SearchPage() {
                   </div>
                   <div className="space-y-2">
                     {libraries.map((library) => {
-                      const checked = effectiveSelectedLibraryIds.includes(library.id)
+                      const checked = draftSelectedLibraryIds.includes(library.id)
                       return (
                         <label
                           key={library.id}
@@ -760,8 +781,8 @@ export default function SearchPage() {
                             onCheckedChange={(nextChecked) => {
                               updateSelectedLibraries(
                                 nextChecked
-                                  ? [...effectiveSelectedLibraryIds, library.id]
-                                  : effectiveSelectedLibraryIds.filter((value) => value !== library.id),
+                                  ? [...draftSelectedLibraryIds, library.id]
+                                  : draftSelectedLibraryIds.filter((value) => value !== library.id),
                               )
                             }}
                           />
@@ -775,7 +796,7 @@ export default function SearchPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('searchPage.readingStage')}</label>
-                <Select value={readingStage} onValueChange={(value) => setPersistentSearch({ readingStage: value as 'all' | ReadingStage })}>
+                <Select value={draftReadingStage} onValueChange={(value) => setDraftReadingStage(value as 'all' | ReadingStage)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -790,7 +811,7 @@ export default function SearchPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('searchPage.metadataQuality')}</label>
-                <Select value={metadataStatus} onValueChange={(value) => setPersistentSearch({ metadataStatus: value as 'all' | MetadataStatus })}>
+                <Select value={draftMetadataStatus} onValueChange={(value) => setDraftMetadataStatus(value as 'all' | MetadataStatus)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -805,11 +826,11 @@ export default function SearchPage() {
 
               <Button
                 type="button"
-                variant={favoriteOnly ? 'default' : 'outline'}
+                variant={draftFavoriteOnly ? 'default' : 'outline'}
                 className="w-full"
-                onClick={() => setPersistentSearch({ favoriteOnly: !favoriteOnly })}
+                onClick={() => setDraftFavoriteOnly((current) => !current)}
               >
-                {favoriteOnly ? t('searchPage.favoritesOnly') : t('searchPage.filterFavorites')}
+                {draftFavoriteOnly ? t('searchPage.favoritesOnly') : t('searchPage.filterFavorites')}
               </Button>
             </CardContent>
           </Card>
