@@ -1,0 +1,189 @@
+name: Release Desktop Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version number without v prefix, example 0.1.27
+        required: true
+        type: string
+      release_notes:
+        description: Optional release notes
+        required: false
+        type: string
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      version: ${{ steps.meta.outputs.version }}
+      release_notes: ${{ steps.meta.outputs.release_notes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Define release metadata
+        id: meta
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          TAG_NAME="v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_notes<<EOF"
+            echo "${{ github.event.inputs.release_notes }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate semver
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $VERSION"
+            exit 1
+          fi
+
+      - name: Update versions
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          node -e "
+          const fs = require('fs');
+
+          const pkgPath = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          pkg.version = process.argv[1];
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+          const tauriPath = 'src-tauri/tauri.conf.json';
+          const tauri = JSON.parse(fs.readFileSync(tauriPath, 'utf8'));
+          tauri.version = process.argv[1];
+          fs.writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + '\n');
+
+          const cargoPath = 'src-tauri/Cargo.toml';
+          const cargo = fs.readFileSync(cargoPath, 'utf8').replace(
+            /^version = \"[^\"]+\"$/m,
+            'version = \"' + process.argv[1] + '\"'
+          );
+          fs.writeFileSync(cargoPath, cargo);
+
+          const appVersionPath = 'lib/app-version.ts';
+          const appVersion = fs.readFileSync(appVersionPath, 'utf8').replace(
+            /APP_VERSION = '[^']+'/,
+            \"APP_VERSION = '\" + process.argv[1] + \"'\"
+          );
+          fs.writeFileSync(appVersionPath, appVersion);
+          " "$VERSION"
+
+      - name: Commit and tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml lib/app-version.ts
+          git commit -m "Release $VERSION"
+          git tag "$TAG_NAME"
+          git push origin HEAD
+          git push origin "$TAG_NAME"
+
+  build:
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            artifact_name: windows-artifacts
+          - platform: macos-latest
+            artifact_name: macos-artifacts
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build release artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: pnpm tauri:build
+
+      - name: Upload platform artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.app
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.tar.gz
+            src-tauri/target/release/bundle/**/*.sig
+            src-tauri/target/release/bundle/**/latest.json
+
+  publish-release:
+    needs: [prepare-release, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: release-assets/windows
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+          path: release-assets/macos
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag_name }}
+          name: Refx ${{ needs.prepare-release.outputs.tag_name }}
+          body: ${{ needs.prepare-release.outputs.release_notes }}
+          generate_release_notes: true
+          files: |
+            release-assets/windows/**/*
+            release-assets/macos/**/*

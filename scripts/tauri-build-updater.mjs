@@ -16,18 +16,20 @@ if (!('TAURI_SIGNING_PRIVATE_KEY_PASSWORD' in env)) {
   env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 }
 
-const build = spawnSync('pnpm.cmd', ['tauri:icons'], {
+const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+
+const buildIcons = spawnSync(pnpmCommand, ['tauri:icons'], {
   cwd: repoRoot,
   env,
   stdio: 'inherit',
   shell: true,
 })
 
-if ((build.status ?? 1) !== 0) {
-  process.exit(build.status ?? 1)
+if ((buildIcons.status ?? 1) !== 0) {
+  process.exit(buildIcons.status ?? 1)
 }
 
-const tauriBuild = spawnSync('pnpm.cmd', ['exec', 'tauri', 'build'], {
+const tauriBuild = spawnSync(pnpmCommand, ['exec', 'tauri', 'build'], {
   cwd: repoRoot,
   env,
   stdio: 'inherit',
@@ -38,11 +40,15 @@ if ((tauriBuild.status ?? 1) !== 0) {
   process.exit(tauriBuild.status ?? 1)
 }
 
-const manifestBuild = spawnSync('node', ['scripts/generate-updater-manifest.mjs'], {
-  cwd: repoRoot,
-  env,
-  stdio: 'inherit',
-  shell: true,
-})
+if (process.platform === 'win32') {
+  const manifestBuild = spawnSync('node', ['scripts/generate-updater-manifest.mjs'], {
+    cwd: repoRoot,
+    env,
+    stdio: 'inherit',
+    shell: true,
+  })
 
-process.exit(manifestBuild.status ?? 1)
+  process.exit(manifestBuild.status ?? 1)
+}
+
+process.exit(0)

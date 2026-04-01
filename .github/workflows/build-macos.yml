@@ -27,16 +27,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build frontend
-        env:
-          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm build
-
-      - name: Verify exported frontend
-        run: ls -la out
-
       - name: Build macOS app
         env:
           NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}

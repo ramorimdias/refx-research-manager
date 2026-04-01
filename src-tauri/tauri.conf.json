@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Refx",
-  "version": "0.1.26",
+  "version": "0.2.2",
   "identifier": "com.refx.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -61,7 +61,7 @@
       ]
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwOTJCMjUxMzk0NkQwNEMKUldSTTBFWTVVYktTVUFmTG1FK2R6cWN3ZWhGTVBTMjlDdk1yMzhwNGQyeUNFM0s1QmFqRmpxMnEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENBMUU1NzlFMkE0Mzk4NjAKUldSZ21FTXFubGNleWtxR3J3a0RWUE5HL3BjVnhIMWtIajdtaGxGYTJtR3lXY0dCZVhwSEhzV0gK",
       "endpoints": [
         "https://github.com/ramorimdias/refx-research-manager/releases/latest/download/latest.json"
       ],
