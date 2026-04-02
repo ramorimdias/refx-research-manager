@@ -71,14 +71,27 @@ export async function downloadAndInstallAppUpdate(
 
   if (!update) return false
 
+  let totalBytes = 0
+  let downloadedBytes = 0
+
   await update.downloadAndInstall((event) => {
     switch (event.event) {
       case 'Started':
+        totalBytes = event.data.contentLength ?? 0
+        downloadedBytes = 0
         onProgress?.('updateDialog.downloading')
         break
       case 'Progress':
+        downloadedBytes += event.data.chunkLength
+        if (totalBytes > 0) {
+          onProgress?.('updateDialog.downloadingProgress', {
+            downloaded: Math.max(1, Math.round(downloadedBytes / 1024)),
+            total: Math.max(1, Math.round(totalBytes / 1024)),
+          })
+          break
+        }
         onProgress?.('updateDialog.downloadingKb', {
-          size: Math.max(1, Math.round(event.data.chunkLength / 1024)),
+          size: Math.max(1, Math.round(downloadedBytes / 1024)),
         })
         break
       case 'Finished':

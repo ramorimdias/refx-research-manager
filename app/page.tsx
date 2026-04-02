@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, Clock, FilePlus2, FolderPlus, Highlighter, type LucideIcon, StickyNote } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ChevronDown, Clock, FilePlus2, FolderPlus, Highlighter, Home, type LucideIcon, StickyNote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyState } from '@/components/refx/common'
 import { useAppStore } from '@/lib/store'
 import { loadAppSettings } from '@/lib/app-settings'
@@ -34,6 +35,44 @@ type DashboardActivity = {
   href: string
   occurredAt: Date
   icon: LucideIcon
+  category: 'library' | 'document' | 'note' | 'annotation' | 'finished'
+  bundledItems?: DashboardActivity[]
+}
+
+function bundleSequentialActivities(activities: DashboardActivity[], bundledActivitySummary: string) {
+  const bundled: Array<DashboardActivity & { groupedDetails: string[]; bundledItems: DashboardActivity[] }> = []
+
+  for (const activity of activities) {
+    const previous = bundled[bundled.length - 1]
+    if (!previous || previous.category !== activity.category) {
+      bundled.push({
+        ...activity,
+        groupedDetails: activity.detail ? [activity.detail] : [],
+        bundledItems: [activity],
+      })
+      continue
+    }
+
+    const previousCountMatch = previous.title.match(/\((\d+)\)$/)
+    const previousCount = previousCountMatch ? Number(previousCountMatch[1]) : 1
+    const nextCount = previousCount + 1
+    const baseTitle = previousCountMatch
+      ? previous.title.replace(/\s*\(\d+\)$/, '')
+      : previous.title
+    const groupedDetails = Array.from(new Set([...previous.groupedDetails, activity.detail].filter(Boolean)))
+    const nextDetail = bundledActivitySummary
+
+    bundled[bundled.length - 1] = {
+      ...previous,
+      title: `${baseTitle} (${nextCount})`,
+      detail: nextDetail,
+      occurredAt: activity.occurredAt,
+      groupedDetails,
+      bundledItems: [...previous.bundledItems, activity],
+    }
+  }
+
+  return bundled.map(({ groupedDetails: _groupedDetails, ...activity }) => activity)
 }
 
 function formatRelativeTime(date: Date, t: ReturnType<typeof useT>) {
@@ -62,6 +101,7 @@ export default function HomePage() {
   const { libraries, documents, notes, annotations, isDesktopApp, setActiveLibrary } = useAppStore()
   const [userName, setUserName] = useState('')
   const [greetingIndex, setGreetingIndex] = useState(0)
+  const [expandedActivityIds, setExpandedActivityIds] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -100,6 +140,7 @@ export default function HomePage() {
       href: '/libraries',
       occurredAt: library.createdAt,
       icon: FolderPlus,
+      category: 'library' as const,
     }))
 
     const addedDocumentActivities = documents.map((document) => ({
@@ -109,6 +150,7 @@ export default function HomePage() {
       href: getDocumentHref(document),
       occurredAt: document.createdAt,
       icon: FilePlus2,
+      category: 'document' as const,
     }))
 
     const noteActivities = notes.map((note) => ({
@@ -122,6 +164,7 @@ export default function HomePage() {
       href: note.documentId ? (documentsById.get(note.documentId) ? getDocumentHref(documentsById.get(note.documentId)!) : '/notes') : '/notes',
       occurredAt: new Date(note.createdAt),
       icon: StickyNote,
+      category: 'note' as const,
     }))
 
     const annotationActivities = annotations
@@ -139,6 +182,7 @@ export default function HomePage() {
           href: getDocumentHref(document),
           occurredAt: new Date(annotation.createdAt),
           icon: Highlighter,
+          category: 'annotation' as const,
         }
       })
       .filter((activity): activity is DashboardActivity => Boolean(activity))
@@ -152,11 +196,15 @@ export default function HomePage() {
         href: getDocumentHref(document),
         occurredAt: document.updatedAt,
         icon: CheckCircle2,
+        category: 'finished' as const,
       }))
 
-    return [...libraryActivities, ...addedDocumentActivities, ...noteActivities, ...annotationActivities, ...finishedActivities]
-      .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())
-      .slice(0, 10)
+    return bundleSequentialActivities(
+      [...libraryActivities, ...addedDocumentActivities, ...noteActivities, ...annotationActivities, ...finishedActivities]
+        .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime()),
+      t('home.bundledActivitySummary'),
+    )
+      .slice(0, 100)
   }, [annotations, documents, libraries, notes, t])
 
   const recentlyOpened = useMemo(
@@ -164,7 +212,7 @@ export default function HomePage() {
       [...documents]
         .filter((document) => document.lastOpenedAt)
         .sort((left, right) => (right.lastOpenedAt?.getTime() ?? 0) - (left.lastOpenedAt?.getTime() ?? 0))
-        .slice(0, 8),
+        .slice(0, 20),
     [documents],
   )
 
@@ -212,9 +260,14 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{greeting.title}</h1>
-        <p className="text-muted-foreground">{greeting.subtitle}</p>
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <Home className="h-6 w-6" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-semibold">{greeting.title}</h1>
+          <p className="text-muted-foreground">{greeting.subtitle}</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -250,45 +303,111 @@ export default function HomePage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="gap-0 pb-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               {t('home.recentActivity')}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-0">
             {activities.length > 0 ? (
-              <div className="space-y-2">
-                {activities.map((activity) => {
-                  const Icon = activity.icon
+              <ScrollArea className="h-[32rem] pr-3">
+                <div className="space-y-2 pb-3">
+                  {activities.map((activity) => {
+                    const Icon = activity.icon
+                    const isBundled = (activity.bundledItems?.length ?? 0) > 1
+                    const isExpanded = expandedActivityIds.includes(activity.id)
 
-                  return (
-                    <Link
-                      key={activity.id}
-                      href={activity.href}
-                      className="block rounded-xl border border-border/70 p-3 transition hover:bg-muted/30"
-                    >
-                      <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate font-medium text-foreground">{activity.title}</div>
-                              <div className="truncate text-sm text-muted-foreground">{activity.detail}</div>
+                    return (
+                      <div
+                        key={activity.id}
+                        className="rounded-xl border border-border/70 p-3 transition hover:bg-muted/30"
+                      >
+                        {isBundled ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedActivityIds((current) =>
+                                current.includes(activity.id)
+                                  ? current.filter((id) => id !== activity.id)
+                                  : [...current, activity.id],
+                              )}
+                            className="flex w-full items-start gap-3 text-left"
+                          >
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
+                              <Icon className="h-4 w-4" />
                             </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {formatRelativeTime(activity.occurredAt, t)}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-foreground">{activity.title}</div>
+                                  <div className="truncate text-sm text-muted-foreground">{activity.detail}</div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <span className="shrink-0 text-xs text-muted-foreground">
+                                    {formatRelativeTime(activity.occurredAt, t)}
+                                  </span>
+                                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        ) : (
+                          <Link
+                            href={activity.href}
+                            className="flex items-start gap-3"
+                          >
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-foreground">{activity.title}</div>
+                                  <div className="truncate text-sm text-muted-foreground">{activity.detail}</div>
+                                </div>
+                                <span className="shrink-0 text-xs text-muted-foreground">
+                                  {formatRelativeTime(activity.occurredAt, t)}
+                                </span>
+                              </div>
+                            </div>
+                          </Link>
+                        )}
+                        {isBundled && isExpanded ? (
+                          <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+                            {activity.bundledItems?.map((item) => {
+                              const BundledIcon = item.icon
+                              return (
+                                <Link
+                                  key={item.id}
+                                  href={item.href}
+                                  className="flex items-start gap-3 rounded-lg px-2 py-2 transition hover:bg-muted/40"
+                                >
+                                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground">
+                                    <BundledIcon className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                                        <div className="truncate text-xs text-muted-foreground">{item.detail}</div>
+                                      </div>
+                                      <span className="shrink-0 text-xs text-muted-foreground">
+                                        {formatRelativeTime(item.occurredAt, t)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </Link>
+                              )
+                            })}
                           </div>
-                        </div>
+                        ) : null}
                       </div>
-                    </Link>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
             ) : (
               <EmptyState
                 icon={Clock}
@@ -304,37 +423,39 @@ export default function HomePage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-0 pb-0">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ArrowRight className="h-4 w-4" />
               {t('readerIndex.recentlyOpened')}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-0">
             {recentlyOpened.length > 0 ? (
-              <div className="space-y-2">
-                {recentlyOpened.map((document) => (
-                  <Link
-                    key={`recent-opened-${document.id}`}
-                    href={getDocumentHref(document)}
-                    className="block rounded-xl border border-border/70 p-3 transition hover:bg-muted/30"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-foreground">{document.title}</div>
-                        <div className="truncate text-sm text-muted-foreground">
-                          {document.authors[0] || t('searchPage.unknownAuthor')}
-                          {document.lastReadPage ? ` - ${t('searchPage.page', { page: document.lastReadPage })}` : ''}
+              <ScrollArea className="h-[32rem] pr-3">
+                <div className="space-y-2 pb-3">
+                  {recentlyOpened.map((document) => (
+                    <Link
+                      key={`recent-opened-${document.id}`}
+                      href={getDocumentHref(document)}
+                      className="block rounded-xl border border-border/70 p-3 transition hover:bg-muted/30"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-foreground">{document.title}</div>
+                          <div className="truncate text-sm text-muted-foreground">
+                            {document.authors[0] || t('searchPage.unknownAuthor')}
+                            {document.lastReadPage ? ` - ${t('searchPage.page', { page: document.lastReadPage })}` : ''}
+                          </div>
                         </div>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {document.lastOpenedAt ? formatRelativeTime(document.lastOpenedAt, t) : ''}
+                        </span>
                       </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {document.lastOpenedAt ? formatRelativeTime(document.lastOpenedAt, t) : ''}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+                    </Link>
+                  ))}
+                </div>
+              </ScrollArea>
             ) : (
               <EmptyState
                 icon={ArrowRight}

@@ -44,6 +44,14 @@ export type DocumentClassificationResult = {
   textHash?: string
 }
 
+export type IncomingDocumentClassification = {
+  category: string
+  topic: string
+  confidence?: number
+  matchedKeywords?: string[]
+  suggestedTags?: Array<string | SuggestedTag>
+}
+
 export interface DocumentSemanticClassifier {
   id: SemanticClassificationProvider
   label: string
@@ -398,7 +406,12 @@ export function parseDocumentClassification(document: ClassificationSource) {
     category: candidate.category,
     topic: candidate.topic,
     confidence: candidate.confidence,
-    provider: candidate.provider === 'local_heuristic' ? 'local_heuristic' : 'local_heuristic',
+    provider:
+      candidate.provider === 'gemini_page1'
+      || candidate.provider === 'gemini_full'
+      || candidate.provider === 'local_heuristic'
+        ? candidate.provider
+        : 'local_heuristic',
     model: typeof candidate.model === 'string' ? candidate.model : 'heuristic-taxonomy-v1',
     classifiedAt: candidate.classifiedAt ? new Date(candidate.classifiedAt) : new Date(),
     matchedKeywords: Array.isArray(candidate.matchedKeywords)
@@ -413,6 +426,61 @@ export function parseDocumentClassification(document: ClassificationSource) {
           .filter((entry) => entry.name.length > 0)
       : undefined,
   } satisfies DocumentClassification
+}
+
+export function coerceIncomingDocumentClassification(
+  candidate: IncomingDocumentClassification | null | undefined,
+  options: {
+    provider: SemanticClassificationProvider
+    model: string
+  },
+): DocumentClassification | null {
+  if (!candidate) return null
+
+  const category = normalizeWhitespace(candidate.category ?? '')
+  const topic = normalizeWhitespace(candidate.topic ?? '')
+  if (!category || !topic) return null
+
+  const confidence = typeof candidate.confidence === 'number'
+    ? Number(Math.max(0.2, Math.min(0.99, candidate.confidence)).toFixed(2))
+    : 0.72
+
+  const matchedKeywords = Array.isArray(candidate.matchedKeywords)
+    ? candidate.matchedKeywords
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => normalizeTerm(entry))
+        .filter(Boolean)
+        .slice(0, 8)
+    : []
+
+  const suggestedTags = Array.isArray(candidate.suggestedTags)
+    ? candidate.suggestedTags
+        .map((entry) => {
+          if (typeof entry === 'string') {
+            return { name: normalizeTerm(entry), confidence: undefined }
+          }
+          if (entry && typeof entry.name === 'string') {
+            return {
+              name: normalizeTerm(entry.name),
+              confidence: typeof entry.confidence === 'number' ? entry.confidence : undefined,
+            }
+          }
+          return null
+        })
+        .filter((entry): entry is SuggestedTag => !!entry?.name)
+        .slice(0, 5)
+    : []
+
+  return {
+    category,
+    topic,
+    confidence,
+    provider: options.provider,
+    model: options.model,
+    classifiedAt: new Date(),
+    matchedKeywords,
+    suggestedTags,
+  }
 }
 
 function resolveClassifier(mode: SemanticClassificationMode) {

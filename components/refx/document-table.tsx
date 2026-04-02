@@ -144,6 +144,16 @@ function emitTableConfigChanged() {
   window.dispatchEvent(new CustomEvent(TABLE_CONFIG_EVENT))
 }
 
+function persistColumnVisibility(value: Record<ColumnKey, boolean>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(TABLE_VISIBILITY_KEY, JSON.stringify(value))
+}
+
+function persistColumnOrder(value: ColumnKey[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(TABLE_ORDER_KEY, JSON.stringify(value))
+}
+
 function getMinimumColumnWidth(column: ColumnDefinition, label: string) {
   const estimatedLabelWidth = Math.ceil(label.length * 7.5)
   return Math.max(column.minWidth, estimatedLabelWidth + 40)
@@ -167,11 +177,11 @@ export function DocumentTableColumnControls() {
   }, [])
 
   useEffect(() => {
-    window.localStorage.setItem(TABLE_VISIBILITY_KEY, JSON.stringify(columnVisibility))
+    persistColumnVisibility(columnVisibility)
   }, [columnVisibility])
 
   useEffect(() => {
-    window.localStorage.setItem(TABLE_ORDER_KEY, JSON.stringify(columnOrder))
+    persistColumnOrder(columnOrder)
   }, [columnOrder])
 
   const visibleColumns = useMemo(
@@ -195,19 +205,24 @@ export function DocumentTableColumnControls() {
       ...current,
       [key]: visible,
     }))
+    const nextVisibility = {
+      ...columnVisibility,
+      [key]: visible,
+    }
+    persistColumnVisibility(nextVisibility)
     emitTableConfigChanged()
   }
 
   const moveColumn = (key: ColumnKey, direction: 'up' | 'down') => {
-    setColumnOrder((current) => {
-      const index = current.indexOf(key)
-      if (index === -1) return current
-      const targetIndex = direction === 'up' ? index - 1 : index + 1
-      if (targetIndex < 0 || targetIndex >= current.length) return current
-      const next = [...current]
-      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
-      return next
-    })
+    const index = columnOrder.indexOf(key)
+    if (index === -1) return
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= columnOrder.length) return
+    const nextOrder = [...columnOrder]
+    ;[nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]]
+
+    setColumnOrder(nextOrder)
+    persistColumnOrder(nextOrder)
     emitTableConfigChanged()
   }
 

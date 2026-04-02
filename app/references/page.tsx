@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Brackets,
   BookOpen,
   Check,
   Copy,
@@ -103,6 +104,7 @@ export default function ReferencesPage() {
   const documents = useAppStore((state) => state.documents)
   const activeLibraryId = useAppStore((state) => state.activeLibraryId)
   const createDocumentRecord = useAppStore((state) => state.createDocumentRecord)
+  const deleteDocument = useAppStore((state) => state.deleteDocument)
   const myWorks = useMemo(
     () =>
       documents
@@ -128,6 +130,8 @@ export default function ReferencesPage() {
   const [draggingWorkReferenceId, setDraggingWorkReferenceId] = useState<string | null>(null)
   const [copiedWorkReferenceId, setCopiedWorkReferenceId] = useState<string | null>(null)
   const [pendingDeleteWorkReferenceId, setPendingDeleteWorkReferenceId] = useState<string | null>(null)
+  const [isDeleteWorkDialogOpen, setIsDeleteWorkDialogOpen] = useState(false)
+  const [isDeletingWork, setIsDeletingWork] = useState(false)
 
   useEffect(() => {
     if (!selectedWorkId && myWorks[0]?.id) {
@@ -450,14 +454,40 @@ export default function ReferencesPage() {
     [pendingDeleteWorkReferenceId, workReferences],
   )
 
+  const handleDeleteSelectedWork = async () => {
+    if (!selectedWork) return
+
+    setIsDeletingWork(true)
+    setStatusMessage(null)
+    try {
+      const deleted = await deleteDocument(selectedWork.id)
+      if (!deleted) {
+        setStatusMessage(t('referencesPage.couldNotDeleteWork'))
+        return
+      }
+
+      setIsDeleteWorkDialogOpen(false)
+      setStatusMessage(t('referencesPage.deletedWork', { title: selectedWork.title }))
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : t('referencesPage.couldNotDeleteWork'))
+    } finally {
+      setIsDeletingWork(false)
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('referencesPage.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t('referencesPage.subtitle')}
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Brackets className="h-6 w-6" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">{t('referencesPage.title')}</h1>
+            <p className="text-sm text-muted-foreground">
+              {t('referencesPage.subtitle')}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={selectedStyle} onValueChange={(value) => setSelectedStyle(value as CitationStyle)}>
@@ -507,9 +537,22 @@ export default function ReferencesPage() {
 
             {selectedWork ? (
               <div className="rounded-2xl bg-muted/60 p-4">
-                <div className="text-sm font-medium">{selectedWork.title}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {t('referencesPage.referencesCount', { count: workReferences.length, suffix: workReferences.length === 1 ? '' : 's' })}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{selectedWork.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {t('referencesPage.referencesCount', { count: workReferences.length, suffix: workReferences.length === 1 ? '' : 's' })}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsDeleteWorkDialogOpen(true)}
+                    aria-label={t('referencesPage.deleteWork')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -694,6 +737,28 @@ export default function ReferencesPage() {
             <Button type="button" onClick={() => void handleCreateWork()} disabled={isSavingWork}>
               {isSavingWork ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               {t('referencesPage.createWork')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteWorkDialogOpen} onOpenChange={setIsDeleteWorkDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('referencesPage.deleteWork')}</DialogTitle>
+            <DialogDescription>
+              {selectedWork
+                ? t('referencesPage.deleteWorkDescription', { title: selectedWork.title })
+                : t('referencesPage.deleteWorkDescriptionFallback')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDeleteWorkDialogOpen(false)}>
+              {t('referencesPage.cancel')}
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void handleDeleteSelectedWork()} disabled={isDeletingWork || !selectedWork}>
+              {isDeletingWork ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {t('referencesPage.deleteWork')}
             </Button>
           </DialogFooter>
         </DialogContent>

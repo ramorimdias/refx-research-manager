@@ -52,6 +52,7 @@ import {
   Trash2,
   WandSparkles,
   ChevronsUpDown,
+  Waypoints,
 } from 'lucide-react'
 import { DocumentGraphControls } from '@/components/refx/document-graph-controls'
 import { DocumentGraphPanel } from '@/components/refx/document-graph-panel'
@@ -2033,12 +2034,16 @@ function MapsPageContent() {
       <div className="shrink-0 border-b border-border/80 bg-background/92 px-6 py-3 backdrop-blur">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{t('mapsPage.title')}</h1>
-              <p className="text-sm text-muted-foreground">
-                {activeLibrary ? `${activeLibrary.name} - ` : ''}
-                {t('mapsPage.subtitle')}
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Waypoints className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h1 className="text-2xl font-semibold tracking-tight">{t('mapsPage.title')}</h1>
+                <p className="text-sm text-muted-foreground xl:whitespace-nowrap">
+                  {t('mapsPage.subtitle')}
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -2179,13 +2184,15 @@ function MapsPageContent() {
                         variant="outline"
                         role="combobox"
                         aria-expanded={isAddDocumentPopoverOpen}
-                        className="min-w-0 flex-1 justify-between bg-white/90"
+                        className="min-w-0 flex-1 justify-between bg-white/90 text-left whitespace-normal h-auto py-2"
                       >
-                        {pendingConnectionDirection
-                          ? pendingConnectionDirection === 'outbound'
-                            ? t('mapsPage.findReferencedDocument')
-                            : t('mapsPage.findCitingDocument')
-                          : t('mapsPage.addDocumentToMap')}
+                        <span className="min-w-0 flex-1 break-words pr-2">
+                          {pendingConnectionDirection
+                            ? pendingConnectionDirection === 'outbound'
+                              ? t('mapsPage.findReferencedDocument')
+                              : t('mapsPage.findCitingDocument')
+                            : t('mapsPage.addDocumentToMap')}
+                        </span>
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
@@ -2242,12 +2249,12 @@ function MapsPageContent() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <p className="shrink-0 text-xs text-muted-foreground">
-                      No works registered, go to{' '}
+                    <p className="min-w-0 flex-1 text-xs text-muted-foreground whitespace-normal break-words">
+                      {t('mapsPage.noWorksRegisteredPrefix')}{' '}
                       <Link href="/references" className="font-medium text-foreground underline underline-offset-4">
-                        My References
+                        {t('referencesPage.title')}
                       </Link>{' '}
-                      to create a new work
+                      {t('mapsPage.noWorksRegisteredSuffix')}
                     </p>
                   )}
                 </div>

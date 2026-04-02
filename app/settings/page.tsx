@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const { locale } = useLocale()
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { clearLocalData, refreshData, scanDocumentsOcr, documents, isDesktopApp } = useAppStore()
+  const { clearLocalData, refreshData, scanDocumentsOcr, classifyDocuments, documents, isDesktopApp } = useAppStore()
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const [isClearing, setIsClearing] = useState(false)
   const [isScanningOcr, setIsScanningOcr] = useState(false)
@@ -69,6 +69,9 @@ export default function SettingsPage() {
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
   const [ocrScanTargetIds, setOcrScanTargetIds] = useState<string[]>([])
   const [ocrScanStatus, setOcrScanStatus] = useState<string | null>(null)
+  const [classificationTargetIds, setClassificationTargetIds] = useState<string[]>([])
+  const [classificationRunStatus, setClassificationRunStatus] = useState<string | null>(null)
+  const [isClassifyingDocuments, setIsClassifyingDocuments] = useState(false)
   const [isRecheckingDoiReferences, setIsRecheckingDoiReferences] = useState(false)
   const [doiReferenceStatus, setDoiReferenceStatus] = useState<string | null>(null)
   const [restoreTargetPath, setRestoreTargetPath] = useState<string | null>(null)
@@ -77,6 +80,113 @@ export default function SettingsPage() {
   const [backupDeleteTargetPath, setBackupDeleteTargetPath] = useState<string | null>(null)
   const hasLoadedSettingsRef = useRef(false)
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false)
+
+  const processingCopy = useMemo(() => {
+    switch (locale) {
+      case 'pt-BR':
+        return {
+          advancedClassification: 'Classificacao semantica avancada',
+          advancedClassificationDescription: 'Classificacao opcional de topico apos a sugestao de tags.',
+          disabled: 'Desativado',
+          localHeuristic: 'Heuristica local',
+          ocrScan: 'Leitura OCR',
+          ocrScanDescription: 'Escaneie documentos armazenados e salve o estado de OCR e busca.',
+          ocrEligible: '{count} documento{suffix} elegivel para OCR disponivel.',
+          scanAllOcr: 'Escanear todo o OCR',
+          scanning: 'Escaneando...',
+          ocrProgress: 'Progresso do OCR',
+          completed: 'concluidos',
+          processing: 'processando',
+          failed: 'falharam',
+          noEligibleOcr: 'Nenhum documento elegivel precisa de OCR agora.',
+          preparingOcr: 'Preparando OCR para {count} documento{suffix}...',
+          ocrFinishedSomeFailed: 'Leitura OCR concluida. {complete} concluidos, {failed} falharam.',
+          ocrFinished: 'Leitura OCR concluida para {count} documento{suffix}.',
+          ocrRunningStatus: 'Escaneando OCR: {finished}/{total} concluidos, {processing} em andamento.',
+          semanticClassificationTitle: 'Classificacao semantica',
+          semanticClassificationDescription: 'Execute a classificacao de topicos em documentos que ja tenham texto extraido ou OCR.',
+          semanticClassificationDisabled: 'A classificacao semantica esta desativada no momento.',
+          classificationEligible: '{count} documento{suffix} elegivel para classificacao disponivel.',
+          classifyAll: 'Classificar tudo',
+          classifying: 'Classificando...',
+          classificationProgress: 'Progresso da classificacao',
+          enableClassificationFirst: 'Ative primeiro a classificacao semantica para executar esta acao.',
+          noEligibleClassification: 'Nenhum documento elegivel precisa de classificacao semantica agora.',
+          preparingClassification: 'Preparando a classificacao semantica para {count} documento{suffix}...',
+          classificationFinishedSomeFailed: 'Classificacao semantica concluida. {complete} concluidos, {failed} falharam.',
+          classificationFinished: 'Classificacao semantica concluida para {count} documento{suffix}.',
+          classificationRunningStatus: 'Classificando documentos: {finished}/{total} concluidos, {processing} em andamento.',
+        }
+      case 'fr':
+        return {
+          advancedClassification: 'Classification semantique avancee',
+          advancedClassificationDescription: 'Classification de sujet optionnelle apres la suggestion de tags.',
+          disabled: 'Desactive',
+          localHeuristic: 'Heuristique locale',
+          ocrScan: 'Analyse OCR',
+          ocrScanDescription: 'Analysez les documents stockes et conservez l etat OCR et recherche.',
+          ocrEligible: '{count} document{suffix} eligible a l OCR disponible.',
+          scanAllOcr: 'Lancer tout l OCR',
+          scanning: 'Analyse en cours...',
+          ocrProgress: 'Progression OCR',
+          completed: 'termines',
+          processing: 'en cours',
+          failed: 'echoues',
+          noEligibleOcr: 'Aucun document eligible n a besoin d OCR pour le moment.',
+          preparingOcr: 'Preparation de l OCR pour {count} document{suffix}...',
+          ocrFinishedSomeFailed: 'Analyse OCR terminee. {complete} termines, {failed} echoues.',
+          ocrFinished: 'Analyse OCR terminee pour {count} document{suffix}.',
+          ocrRunningStatus: 'Analyse OCR: {finished}/{total} termines, {processing} en cours.',
+          semanticClassificationTitle: 'Classification semantique',
+          semanticClassificationDescription: 'Lancez la classification thematique sur les documents qui ont deja du texte extrait ou OCR.',
+          semanticClassificationDisabled: 'La classification semantique est actuellement desactivee.',
+          classificationEligible: '{count} document{suffix} eligible a la classification disponible.',
+          classifyAll: 'Tout classifier',
+          classifying: 'Classification...',
+          classificationProgress: 'Progression de la classification',
+          enableClassificationFirst: 'Activez d abord la classification semantique pour lancer cette action.',
+          noEligibleClassification: 'Aucun document eligible n a besoin de classification semantique pour le moment.',
+          preparingClassification: 'Preparation de la classification semantique pour {count} document{suffix}...',
+          classificationFinishedSomeFailed: 'Classification semantique terminee. {complete} termines, {failed} echoues.',
+          classificationFinished: 'Classification semantique terminee pour {count} document{suffix}.',
+          classificationRunningStatus: 'Classification des documents: {finished}/{total} termines, {processing} en cours.',
+        }
+      default:
+        return {
+          advancedClassification: 'Advanced Semantic Classification',
+          advancedClassificationDescription: 'Optional topic classification after tag suggestion.',
+          disabled: 'Disabled',
+          localHeuristic: 'Local Heuristic',
+          ocrScan: 'OCR Scan',
+          ocrScanDescription: 'Scan stored documents and persist OCR/search state.',
+          ocrEligible: '{count} OCR-eligible document{suffix} available.',
+          scanAllOcr: 'Scan All OCR',
+          scanning: 'Scanning...',
+          ocrProgress: 'OCR progress',
+          completed: 'completed',
+          processing: 'processing',
+          failed: 'failed',
+          noEligibleOcr: 'No eligible documents need OCR right now.',
+          preparingOcr: 'Preparing OCR for {count} document{suffix}...',
+          ocrFinishedSomeFailed: 'OCR scan finished. {complete} completed, {failed} failed.',
+          ocrFinished: 'OCR scan finished for {count} document{suffix}.',
+          ocrRunningStatus: 'Scanning OCR: {finished}/{total} finished, {processing} in progress.',
+          semanticClassificationTitle: 'Semantic Classification',
+          semanticClassificationDescription: 'Run topic classification on documents that already have extracted or OCR text.',
+          semanticClassificationDisabled: 'Semantic classification is currently disabled.',
+          classificationEligible: '{count} classification-eligible document{suffix} available.',
+          classifyAll: 'Classify All',
+          classifying: 'Classifying...',
+          classificationProgress: 'Classification progress',
+          enableClassificationFirst: 'Enable semantic classification first to run this action.',
+          noEligibleClassification: 'No eligible documents need semantic classification right now.',
+          preparingClassification: 'Preparing semantic classification for {count} document{suffix}...',
+          classificationFinishedSomeFailed: 'Semantic classification finished. {complete} completed, {failed} failed.',
+          classificationFinished: 'Semantic classification finished for {count} document{suffix}.',
+          classificationRunningStatus: 'Classifying documents: {finished}/{total} finished, {processing} in progress.',
+        }
+    }
+  }, [locale])
 
   useEffect(() => {
     let cancelled = false
@@ -208,6 +318,38 @@ export default function SettingsPage() {
       percent: total > 0 ? Math.round((finished / total) * 100) : 0,
     }
   }, [ocrScanDocuments])
+  const eligibleClassificationDocuments = useMemo(
+    () => documents.filter((document) =>
+      settings.advancedClassificationMode !== 'off'
+      && document.documentType !== 'my_work'
+      && (document.hasExtractedText || document.hasOcrText)
+      && (
+        document.classificationStatus !== 'complete'
+        || !document.classificationTextHash
+        || document.classificationTextHash !== document.textHash
+      ),
+    ),
+    [documents, settings.advancedClassificationMode],
+  )
+  const classificationRunDocuments = useMemo(
+    () => documents.filter((document) => classificationTargetIds.includes(document.id)),
+    [classificationTargetIds, documents],
+  )
+  const classificationProgress = useMemo(() => {
+    const total = classificationRunDocuments.length
+    const processing = classificationRunDocuments.filter((document) => document.classificationStatus === 'processing').length
+    const complete = classificationRunDocuments.filter((document) => document.classificationStatus === 'complete').length
+    const failed = classificationRunDocuments.filter((document) => document.classificationStatus === 'failed').length
+    const finished = complete + failed
+    return {
+      total,
+      processing,
+      complete,
+      failed,
+      finished,
+      percent: total > 0 ? Math.round((finished / total) * 100) : 0,
+    }
+  }, [classificationRunDocuments])
 
   const handleClearLocalData = async () => {
     setIsClearing(true)
@@ -225,12 +367,16 @@ export default function SettingsPage() {
 
     if (candidates.length === 0) {
       setOcrScanTargetIds([])
-      setOcrScanStatus('No eligible documents need OCR right now.')
+      setOcrScanStatus(processingCopy.noEligibleOcr)
       return
     }
 
     setOcrScanTargetIds(candidates.map((document) => document.id))
-    setOcrScanStatus(`Preparing OCR for ${candidates.length} document${candidates.length === 1 ? '' : 's'}...`)
+    setOcrScanStatus(
+      processingCopy.preparingOcr
+        .replace('{count}', String(candidates.length))
+        .replace('{suffix}', candidates.length === 1 ? '' : 's'),
+    )
     setIsScanningOcr(true)
     try {
       await scanDocumentsOcr()
@@ -240,8 +386,12 @@ export default function SettingsPage() {
       const failed = scannedDocuments.filter((document) => document.ocrStatus === 'failed').length
       setOcrScanStatus(
         failed > 0
-          ? `OCR scan finished. ${complete} completed, ${failed} failed.`
-          : `OCR scan finished for ${complete} document${complete === 1 ? '' : 's'}.`,
+          ? processingCopy.ocrFinishedSomeFailed
+            .replace('{complete}', String(complete))
+            .replace('{failed}', String(failed))
+          : processingCopy.ocrFinished
+            .replace('{count}', String(complete))
+            .replace('{suffix}', complete === 1 ? '' : 's'),
       )
     } finally {
       setIsScanningOcr(false)
@@ -251,9 +401,64 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!isScanningOcr || ocrScanProgress.total === 0) return
     setOcrScanStatus(
-      `Scanning OCR: ${ocrScanProgress.finished}/${ocrScanProgress.total} finished, ${ocrScanProgress.processing} in progress.`,
+      processingCopy.ocrRunningStatus
+        .replace('{finished}', String(ocrScanProgress.finished))
+        .replace('{total}', String(ocrScanProgress.total))
+        .replace('{processing}', String(ocrScanProgress.processing)),
     )
-  }, [isScanningOcr, ocrScanProgress])
+  }, [isScanningOcr, ocrScanProgress, processingCopy])
+
+  const handleClassifyAllDocuments = async () => {
+    if (settings.advancedClassificationMode === 'off') {
+      setClassificationTargetIds([])
+      setClassificationRunStatus(processingCopy.enableClassificationFirst)
+      return
+    }
+
+    const candidates = eligibleClassificationDocuments
+
+    if (candidates.length === 0) {
+      setClassificationTargetIds([])
+      setClassificationRunStatus(processingCopy.noEligibleClassification)
+      return
+    }
+
+    setClassificationTargetIds(candidates.map((document) => document.id))
+    setClassificationRunStatus(
+      processingCopy.preparingClassification
+        .replace('{count}', String(candidates.length))
+        .replace('{suffix}', candidates.length === 1 ? '' : 's'),
+    )
+    setIsClassifyingDocuments(true)
+    try {
+      await classifyDocuments(candidates.map((document) => document.id), settings.advancedClassificationMode)
+      const latestDocuments = useAppStore.getState().documents
+      const classifiedDocuments = latestDocuments.filter((document) => candidates.some((candidate) => candidate.id === document.id))
+      const complete = classifiedDocuments.filter((document) => document.classificationStatus === 'complete').length
+      const failed = classifiedDocuments.filter((document) => document.classificationStatus === 'failed').length
+      setClassificationRunStatus(
+        failed > 0
+          ? processingCopy.classificationFinishedSomeFailed
+            .replace('{complete}', String(complete))
+            .replace('{failed}', String(failed))
+          : processingCopy.classificationFinished
+            .replace('{count}', String(complete))
+            .replace('{suffix}', complete === 1 ? '' : 's'),
+      )
+    } finally {
+      setIsClassifyingDocuments(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isClassifyingDocuments || classificationProgress.total === 0) return
+    setClassificationRunStatus(
+      processingCopy.classificationRunningStatus
+        .replace('{finished}', String(classificationProgress.finished))
+        .replace('{total}', String(classificationProgress.total))
+        .replace('{processing}', String(classificationProgress.processing)),
+    )
+  }, [classificationProgress, isClassifyingDocuments, processingCopy])
 
   const handleRecheckDoiReferences = async () => {
     if (!isDesktopApp) return
@@ -364,8 +569,8 @@ export default function SettingsPage() {
     setIsInstallingUpdate(true)
     setUpdateStatus(t('settings.preparingUpdate'))
     try {
-      await downloadAndInstallAppUpdate((message) => {
-        setUpdateStatus(message)
+      await downloadAndInstallAppUpdate((messageKey, params) => {
+        setUpdateStatus(t(messageKey, params))
       })
     } catch (error) {
       setUpdateStatus(error instanceof Error ? error.message : t('settings.updateInstallFailed'))
@@ -569,8 +774,8 @@ export default function SettingsPage() {
                     <Separator />
 
                     <div>
-                      <Label className="text-sm font-medium">Advanced Semantic Classification</Label>
-                        <p className="mt-1 text-xs text-muted-foreground">Optional topic classification after tag suggestion.</p>
+                      <Label className="text-sm font-medium">{processingCopy.advancedClassification}</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">{processingCopy.advancedClassificationDescription}</p>
                       <Select
                         value={settings.advancedClassificationMode}
                         onValueChange={(value) => updateSettings('advancedClassificationMode', value as StoredAppSettings['advancedClassificationMode'])}
@@ -579,8 +784,8 @@ export default function SettingsPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="off">Disabled</SelectItem>
-                          <SelectItem value="local_heuristic">Local Heuristic</SelectItem>
+                          <SelectItem value="off">{processingCopy.disabled}</SelectItem>
+                          <SelectItem value="local_heuristic">{processingCopy.localHeuristic}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -731,18 +936,22 @@ export default function SettingsPage() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">OCR Scan</CardTitle>
-                  <CardDescription>Scan stored documents and persist OCR/search state.</CardDescription>
+                    <CardTitle className="text-base">{processingCopy.ocrScan}</CardTitle>
+                  <CardDescription>{processingCopy.ocrScanDescription}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-muted-foreground">{eligibleOcrDocuments.length} OCR-eligible document{eligibleOcrDocuments.length === 1 ? '' : 's'} available.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {processingCopy.ocrEligible
+                        .replace('{count}', String(eligibleOcrDocuments.length))
+                        .replace('{suffix}', eligibleOcrDocuments.length === 1 ? '' : 's')}
+                    </p>
                     <Button variant="outline" onClick={() => void handleScanAllOcr()} disabled={isScanningOcr || eligibleOcrDocuments.length === 0}>
-                      {isScanningOcr ? 'Scanning...' : 'Scan All OCR'}
+                      {isScanningOcr ? processingCopy.scanning : processingCopy.scanAllOcr}
                     </Button>
                     {ocrScanProgress.total > 0 ? (
                       <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium">OCR progress</span>
+                          <span className="font-medium">{processingCopy.ocrProgress}</span>
                           <span className="text-muted-foreground">{ocrScanProgress.finished}/{ocrScanProgress.total}</span>
                         </div>
                         <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -752,15 +961,62 @@ export default function SettingsPage() {
                           />
                         </div>
                         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          <span>{ocrScanProgress.complete} completed</span>
-                          <span>{ocrScanProgress.processing} processing</span>
-                          <span>{ocrScanProgress.failed} failed</span>
+                          <span>{ocrScanProgress.complete} {processingCopy.completed}</span>
+                          <span>{ocrScanProgress.processing} {processingCopy.processing}</span>
+                          <span>{ocrScanProgress.failed} {processingCopy.failed}</span>
                         </div>
                       </div>
                     ) : null}
                     {ocrScanStatus ? (
                       <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                         {ocrScanStatus}
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{processingCopy.semanticClassificationTitle}</CardTitle>
+                    <CardDescription>{processingCopy.semanticClassificationDescription}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      {settings.advancedClassificationMode === 'off'
+                        ? processingCopy.semanticClassificationDisabled
+                        : processingCopy.classificationEligible
+                          .replace('{count}', String(eligibleClassificationDocuments.length))
+                          .replace('{suffix}', eligibleClassificationDocuments.length === 1 ? '' : 's')}
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleClassifyAllDocuments()}
+                      disabled={isClassifyingDocuments || settings.advancedClassificationMode === 'off' || eligibleClassificationDocuments.length === 0}
+                    >
+                      {isClassifyingDocuments ? processingCopy.classifying : processingCopy.classifyAll}
+                    </Button>
+                    {classificationProgress.total > 0 ? (
+                      <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{processingCopy.classificationProgress}</span>
+                          <span className="text-muted-foreground">{classificationProgress.finished}/{classificationProgress.total}</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${Math.max(classificationProgress.percent, classificationProgress.finished > 0 ? 8 : 0)}%` }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <span>{classificationProgress.complete} {processingCopy.completed}</span>
+                          <span>{classificationProgress.processing} {processingCopy.processing}</span>
+                          <span>{classificationProgress.failed} {processingCopy.failed}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                    {classificationRunStatus ? (
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                        {classificationRunStatus}
                       </div>
                     ) : null}
                   </CardContent>

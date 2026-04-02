@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   ChevronsUpDown,
+  FileText,
   Globe,
   Link2,
   Loader2,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react'
 import * as QRCode from 'qrcode'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -50,7 +52,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { EmptyState, MetadataStatusBadge, StarRating, TagChip } from '@/components/refx/common'
+import { EmptyState, MetadataStatusBadge, NewBadge, StarRating, TagChip } from '@/components/refx/common'
 import {
   buildDocumentMetadataSeed,
   createMetadataCandidateFromBibtex,
@@ -70,6 +72,7 @@ import { cn } from '@/lib/utils'
 import * as repo from '@/lib/repositories/local-db'
 import { normalizeErrorMessage } from '@/lib/utils/error'
 import { useT } from '@/lib/localization'
+import { DEFAULT_APP_SETTINGS, loadAppSettings, type StoredAppSettings } from '@/lib/app-settings'
 
 const readingStages: Array<{ value: ReadingStage; label: string }> = [
   { value: 'unread', label: 'Unread' },
@@ -366,6 +369,7 @@ export default function DocumentDetailPage() {
     rejectSuggestedTag,
     updateDocument,
     applyFetchedMetadataCandidate,
+    classifyDocuments,
     createRelation,
     deleteRelation,
     setActiveDocument,
@@ -424,6 +428,11 @@ export default function DocumentDetailPage() {
   const [aiTagStatus, setAiTagStatus] = useState('')
   const [editingTagName, setEditingTagName] = useState('')
   const [editingTagValue, setEditingTagValue] = useState('')
+  const [newSuggestedTagNames, setNewSuggestedTagNames] = useState<string[]>([])
+  const [classificationMode, setClassificationMode] = useState<StoredAppSettings['advancedClassificationMode']>(DEFAULT_APP_SETTINGS.advancedClassificationMode)
+  const [isClassifyingDocument, setIsClassifyingDocument] = useState(false)
+  const [isClassifyingDocumentWithAi, setIsClassifyingDocumentWithAi] = useState(false)
+  const [classificationStatusMessage, setClassificationStatusMessage] = useState('')
 
   const [detailsExpanded, setDetailsExpanded] = useState(true)
   const [tagsExpanded, setTagsExpanded] = useState(false)
@@ -434,9 +443,11 @@ export default function DocumentDetailPage() {
   const [bibtexExpanded, setBibtexExpanded] = useState(false)
   const metadataAutoOpenHandledRef = useRef<string | null>(null)
   const metadataAutoSearchPendingRef = useRef<string | null>(null)
+  const previousSuggestedTagNamesRef = useRef<string[]>([])
 
   useEffect(() => {
     if (!document) return
+
     setActiveDocument(document.id)
     setTitle(document.title)
     setAuthors(document.authors.join(', '))
@@ -468,11 +479,61 @@ export default function DocumentDetailPage() {
     metadataAutoSearchPendingRef.current = null
     setEditingTagName('')
     setEditingTagValue('')
-  }, [document, setActiveDocument])
+    setNewSuggestedTagNames([])
+    previousSuggestedTagNamesRef.current = (document.suggestedTags ?? []).map((tag) => tag.name)
+  }, [
+    document?.id,
+    document?.title,
+    document?.authors?.join('|'),
+    document?.year,
+    document?.doi,
+    document?.isbn,
+    document?.publisher,
+    document?.citationKey,
+    document?.abstract,
+    document?.coverImagePath,
+    document?.readingStage,
+    document?.rating,
+    document?.favorite,
+    setActiveDocument,
+  ])
 
   useEffect(() => {
     setAiTagStatus('')
   }, [document?.id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadSettings = async () => {
+      const loaded = await loadAppSettings(isDesktopApp)
+      if (!cancelled) {
+        setClassificationMode(loaded.advancedClassificationMode)
+      }
+    }
+
+    void loadSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isDesktopApp])
+
+  useEffect(() => {
+    setClassificationStatusMessage('')
+  }, [document?.id])
+
+  useEffect(() => {
+    if (!document) {
+      previousSuggestedTagNamesRef.current = []
+      setNewSuggestedTagNames([])
+      return
+    }
+
+    const nextSuggestedTagNames = (document.suggestedTags ?? []).map((tag) => tag.name)
+    setNewSuggestedTagNames((current) => current.filter((tagName) => nextSuggestedTagNames.includes(tagName)))
+    previousSuggestedTagNamesRef.current = nextSuggestedTagNames
+  }, [document])
 
   useEffect(() => {
     if (!document) return
@@ -684,6 +745,32 @@ export default function DocumentDetailPage() {
     return 'missing'
   }, [savePayload])
 
+  const documentCanBeClassified = useMemo(() => {
+    if (!document) return false
+    if (document.documentType === 'my_work') return false
+    return document.hasExtractedText || document.hasOcrText
+  }, [document])
+
+  const classificationNeedsRefresh = useMemo(() => {
+    if (!document || !documentCanBeClassified) return false
+    if (document.classificationStatus !== 'complete') return true
+    return !document.classificationTextHash || document.classificationTextHash !== document.textHash
+  }, [document, documentCanBeClassified])
+
+  const classificationStatusTone = useMemo(() => {
+    if (!document) return 'secondary'
+    switch (document.classificationStatus) {
+      case 'complete':
+        return 'secondary'
+      case 'processing':
+        return 'default'
+      case 'failed':
+        return 'destructive'
+      default:
+        return 'outline'
+    }
+  }, [document]) as ComponentProps<typeof Badge>['variant']
+
   if (!id) {
     return <div className="p-6">Missing document id.</div>
   }
@@ -845,12 +932,17 @@ export default function DocumentDetailPage() {
     setTagsExpanded(true)
     setIsFetchingAiTags(true)
     setAiTagStatus('')
+    const previousNames = new Set((document.suggestedTags ?? []).map((tag) => tag.name))
     try {
       const result = await detectAndStoreDocumentKeywords(document.id, { forceAi: true })
       await refreshData()
+      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const nextSuggestedTagNames = (refreshedDocument?.suggestedTags ?? []).map((tag) => tag.name)
+      setNewSuggestedTagNames(nextSuggestedTagNames.filter((tagName) => !previousNames.has(tagName)))
+      previousSuggestedTagNamesRef.current = nextSuggestedTagNames
       setAiTagStatus(
         result.keywords.length > 0
-          ? `Stored ${result.keywords.length} AI tag suggestion${result.keywords.length === 1 ? '' : 's'}.`
+          ? `Stored ${result.keywords.length} AI tag suggestion${result.keywords.length === 1 ? '' : 's'}${result.classificationStored ? ' and updated semantic classification.' : '.'}`
           : 'No AI keywords were returned for this document.',
       )
     } catch (error) {
@@ -866,9 +958,14 @@ export default function DocumentDetailPage() {
     setTagsExpanded(true)
     setIsFetchingAiTags(true)
     setAiTagStatus('')
+    const previousNames = new Set((document.suggestedTags ?? []).map((tag) => tag.name))
     try {
       const result = await detectAndStoreDocumentKeywords(document.id, { forceLocal: true })
       await refreshData()
+      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const nextSuggestedTagNames = (refreshedDocument?.suggestedTags ?? []).map((tag) => tag.name)
+      setNewSuggestedTagNames(nextSuggestedTagNames.filter((tagName) => !previousNames.has(tagName)))
+      previousSuggestedTagNamesRef.current = nextSuggestedTagNames
       setAiTagStatus(
         result.keywords.length > 0
           ? `Stored ${result.keywords.length} local keyword suggestion${result.keywords.length === 1 ? '' : 's'}.`
@@ -878,6 +975,68 @@ export default function DocumentDetailPage() {
       setAiTagStatus(normalizeErrorMessage(error, 'Could not refresh local tags.'))
     } finally {
       setIsFetchingAiTags(false)
+    }
+  }
+
+  const handleClassifyDocument = async () => {
+    if (!document || classificationMode === 'off') return
+
+    setIsClassifyingDocument(true)
+    setClassificationStatusMessage('')
+    try {
+      await classifyDocuments([document.id], classificationMode)
+      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      if (!refreshedDocument) {
+        setClassificationStatusMessage('Document classification finished.')
+        return
+      }
+
+      if (refreshedDocument.classificationStatus === 'complete' && refreshedDocument.classification) {
+        setClassificationStatusMessage(
+          `${refreshedDocument.classification.category}: ${refreshedDocument.classification.topic} (${Math.round(refreshedDocument.classification.confidence * 100)}% confidence).`,
+        )
+      } else if (refreshedDocument.classificationStatus === 'failed') {
+        setClassificationStatusMessage(refreshedDocument.processingError ?? 'Semantic classification failed.')
+      } else if (refreshedDocument.classificationStatus === 'skipped') {
+        setClassificationStatusMessage('Semantic classification was skipped for this document.')
+      } else {
+        setClassificationStatusMessage('Document classification finished.')
+      }
+    } finally {
+      setIsClassifyingDocument(false)
+    }
+  }
+
+  const handleClassifyDocumentWithAi = async () => {
+    if (!document || !documentCanBeClassified) return
+
+    setTagsExpanded(true)
+    setIsClassifyingDocumentWithAi(true)
+    setClassificationStatusMessage('')
+    try {
+      const result = await detectAndStoreDocumentKeywords(document.id, { forceAi: true })
+      await refreshData()
+      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      if (!refreshedDocument) {
+        setClassificationStatusMessage(t('documentDetailPage.aiClassificationFinished'))
+        return
+      }
+
+      if (refreshedDocument.classificationStatus === 'complete' && refreshedDocument.classification) {
+        setClassificationStatusMessage(
+          `${refreshedDocument.classification.category}: ${refreshedDocument.classification.topic} (${Math.round(refreshedDocument.classification.confidence * 100)}% confidence).`,
+        )
+      } else if (refreshedDocument.classificationStatus === 'failed') {
+        setClassificationStatusMessage(refreshedDocument.processingError ?? t('documentDetailPage.aiClassificationFailed'))
+      } else if (result.classificationStored) {
+        setClassificationStatusMessage(t('documentDetailPage.aiClassificationFinished'))
+      } else {
+        setClassificationStatusMessage(t('documentDetailPage.aiClassificationNotSaved'))
+      }
+    } catch (error) {
+      setClassificationStatusMessage(normalizeErrorMessage(error, 'Could not classify this document with AI.'))
+    } finally {
+      setIsClassifyingDocumentWithAi(false)
     }
   }
 
@@ -1043,7 +1202,6 @@ export default function DocumentDetailPage() {
   const renderRelationList = (
     titleText: string,
     items: RelationListItem[],
-    emptyText: string,
     direction: 'outbound' | 'inbound',
   ) => {
     const isExpanded = direction === 'outbound' ? outgoingLinksExpanded : incomingLinksExpanded
@@ -1202,8 +1360,6 @@ export default function DocumentDetailPage() {
             )
           })}
         </div>
-      ) : totalItemsCount === 0 ? (
-        <p className="text-sm text-muted-foreground">{emptyText}</p>
       ) : null}
       {direction === 'outbound' && matchedDoiItems.length > 0 ? (
         <div className="mt-3 space-y-2">
@@ -1361,7 +1517,8 @@ export default function DocumentDetailPage() {
             <CardHeader>
               <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
                 <div className="flex items-center gap-3">
-                  <CardTitle>Edit Details</CardTitle>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>{t('documentDetailPage.information')}</CardTitle>
                   <MetadataStatusBadge status={libraryMetadataState} />
                 </div>
                 <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${detailsExpanded ? 'rotate-180' : ''}`} />
@@ -1591,55 +1748,50 @@ export default function DocumentDetailPage() {
         <Card>
           <Collapsible open={tagsExpanded} onOpenChange={setTagsExpanded}>
             <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <CollapsibleTrigger className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
-                  <div className="flex items-center gap-2">
-                    <Tag className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle>Tags</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{document.tags.length} tag{document.tags.length === 1 ? '' : 's'}</span>
-                    <ChevronDown className={`h-4 w-4 transition-transform ${tagsExpanded ? 'rotate-180' : ''}`} />
-                  </div>
-                </CollapsibleTrigger>
-                <div className="flex items-center gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleRefreshLocalTags()}
-                        disabled={isFetchingAiTags || !isDesktopApp}
-                      >
-                        {isFetchingAiTags ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Search className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>Refresh local tags</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleFetchTagsWithAi()}
-                        disabled={isFetchingAiTags || !isDesktopApp}
-                      >
-                        {isFetchingAiTags ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>Fetch tags with AI</TooltipContent>
-                  </Tooltip>
+              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>{t('documentDetailPage.tagsAndClassification', { count: document.tags.length })}</CardTitle>
                 </div>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${tagsExpanded ? 'rotate-180' : ''}`} />
+              </CollapsibleTrigger>
+              <div className="flex items-center justify-end gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleRefreshLocalTags()}
+                      disabled={isFetchingAiTags || !isDesktopApp}
+                    >
+                      {isFetchingAiTags ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8}>Refresh local tags</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleFetchTagsWithAi()}
+                      disabled={isFetchingAiTags || !isDesktopApp}
+                    >
+                      {isFetchingAiTags ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8}>Fetch tags with AI</TooltipContent>
+                </Tooltip>
               </div>
             </CardHeader>
             <CollapsibleContent>
@@ -1651,7 +1803,7 @@ export default function DocumentDetailPage() {
                 ) : null}
                 <section className="rounded-lg border border-border p-4">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Manual Tags</Label>
+                    <Label className="text-sm font-medium">Tags</Label>
                     <div className="flex flex-wrap gap-2">
                       {document.tags.length > 0 ? (
                         document.tags.map((tag) => (
@@ -1716,15 +1868,24 @@ export default function DocumentDetailPage() {
 
                 <section className="rounded-lg border border-border p-4">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Suggested Tags</Label>
+                    <Label className="text-sm font-medium">
+                      {t('documentDetailPage.suggestedTags', { count: document.suggestedTags?.length ?? 0 })}
+                    </Label>
                     {document.suggestedTags && document.suggestedTags.length > 0 ? (
                       <div className="space-y-2">
                         {document.suggestedTags.map((tag) => (
-                          <div key={tag.name} className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2">
+                          <div
+                            key={tag.name}
+                            className={cn(
+                              'flex flex-wrap items-center gap-2 rounded-md border border-border p-2 transition-colors',
+                              newSuggestedTagNames.includes(tag.name) && 'border-emerald-300/70 bg-emerald-500/[0.06] dark:border-emerald-500/40 dark:bg-emerald-500/[0.10]',
+                            )}
+                          >
                             <Button size="sm" variant="outline" onClick={() => void acceptSuggestedTag(document.id, tag.name)}>
                               Accept
                             </Button>
                             <TagChip name={tag.name} className="max-w-[260px]" />
+                            {newSuggestedTagNames.includes(tag.name) ? <NewBadge /> : null}
                             {typeof tag.confidence === 'number' && (
                               <span className="text-xs text-muted-foreground">
                                 {Math.round(tag.confidence * 100)}%
@@ -1744,7 +1905,81 @@ export default function DocumentDetailPage() {
 
                 <section className="rounded-lg border border-border p-4">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Semantic Classification</Label>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">{t('documentDetailPage.semanticClassification')}</Label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={classificationStatusTone}>
+                            {document.classificationStatus.replaceAll('_', ' ')}
+                          </Badge>
+                          {document.classification?.model ? (
+                            <span className="text-xs text-muted-foreground">{document.classification.model}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleClassifyDocument()}
+                              disabled={
+                                isClassifyingDocument
+                                || classificationMode === 'off'
+                                || !documentCanBeClassified
+                                || document.classificationStatus === 'processing'
+                              }
+                            >
+                              {isClassifyingDocument || document.classificationStatus === 'processing' ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Search className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={8}>
+                            {classificationNeedsRefresh
+                              ? t('documentDetailPage.classifyLocal')
+                              : t('documentDetailPage.reclassifyLocal')}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void handleClassifyDocumentWithAi()}
+                              disabled={
+                                isClassifyingDocumentWithAi
+                                || !documentCanBeClassified
+                                || document.classificationStatus === 'processing'
+                              }
+                            >
+                              {isClassifyingDocumentWithAi ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={8}>{t('documentDetailPage.classifyAi')}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    {classificationMode === 'off' ? (
+                      <p className="text-sm text-muted-foreground">{t('documentDetailPage.classificationDisabled')}</p>
+                    ) : null}
+                    {!documentCanBeClassified ? (
+                      <p className="text-sm text-muted-foreground">{t('documentDetailPage.classificationNeedsText')}</p>
+                    ) : null}
+                    {classificationStatusMessage ? (
+                      <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                        {classificationStatusMessage}
+                      </div>
+                    ) : null}
                     {document.classification ? (
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1755,6 +1990,13 @@ export default function DocumentDetailPage() {
                             {Math.round(document.classification.confidence * 100)}% confidence
                           </span>
                         </div>
+                        {document.classification.matchedKeywords && document.classification.matchedKeywords.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {document.classification.matchedKeywords.map((keyword) => (
+                              <TagChip key={keyword} name={keyword} className="max-w-[260px]" />
+                            ))}
+                          </div>
+                        ) : null}
                         {document.classification.suggestedTags && document.classification.suggestedTags.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {document.classification.suggestedTags.map((tag) => (
@@ -1764,7 +2006,7 @@ export default function DocumentDetailPage() {
                         ) : null}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No semantic classification saved for this document.</p>
+                      <p className="text-sm text-muted-foreground">{t('documentDetailPage.noClassificationSaved')}</p>
                     )}
                   </div>
                 </section>
@@ -1776,16 +2018,21 @@ export default function DocumentDetailPage() {
         <Card>
           <Collapsible open={linksExpanded} onOpenChange={setLinksExpanded}>
             <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <CollapsibleTrigger className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
-                  <div className="flex items-center gap-2">
-                    <Link2 className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <CardTitle>References &amp; Citations</CardTitle>
-                    </div>
+              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Link2 className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CardTitle>
+                      {t('documentDetailPage.referencesAndCitations', {
+                        outgoing: relationItems.outgoing.length + doiReferenceBuckets.matched.length + doiReferenceBuckets.unmatched.length,
+                        incoming: relationItems.incoming.length + incomingDoiMatches.length,
+                      })}
+                    </CardTitle>
                   </div>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${linksExpanded ? 'rotate-180' : ''}`} />
-                </CollapsibleTrigger>
+                </div>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${linksExpanded ? 'rotate-180' : ''}`} />
+              </CollapsibleTrigger>
+              <div className="flex justify-end">
                 <Button type="button" variant="outline" size="sm" onClick={() => void handleFindReferences()} disabled={isFindingReferences}>
                   {isFindingReferences ? (
                     <>
@@ -1793,7 +2040,7 @@ export default function DocumentDetailPage() {
                       Finding...
                     </>
                   ) : (
-                    'Find references'
+                    t('documentDetailPage.findReferences')
                   )}
                 </Button>
               </div>
@@ -1808,13 +2055,11 @@ export default function DocumentDetailPage() {
                 {renderRelationList(
                   'Makes reference to',
                   relationItems.outgoing,
-                  'none',
                   'outbound',
                 )}
                 {renderRelationList(
                   'Is referenced by',
                   relationItems.incoming,
-                  'none',
                   'inbound',
                 )}
               </CardContent>

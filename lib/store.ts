@@ -42,6 +42,7 @@ import type {
   LibraryMetadataState,
   PersistentSearchState,
   ReadingStage,
+  SemanticClassificationMode,
   ViewMode,
 } from './types'
 
@@ -221,6 +222,7 @@ interface AppState {
     mode?: 'fill_missing' | 'replace_unlocked',
   ) => Promise<void>
   scanDocumentsOcr: (documentIds?: string[]) => Promise<void>
+  classifyDocuments: (documentIds: string[], mode: SemanticClassificationMode) => Promise<void>
   refreshTagSuggestionsForDocuments: (documentIds: string[]) => Promise<void>
   clearLocalData: () => Promise<void>
 }
@@ -1459,6 +1461,53 @@ export const useAppStore = create<AppState>((set, get) => ({
           hasOcr: false,
           hasOcrText: false,
           ocrStatus: 'failed',
+        })
+        if (failed) {
+          set((state) => ({
+            documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(failed, document)),
+          }))
+        }
+      }
+    }
+  },
+
+  classifyDocuments: async (documentIds, mode) => {
+    if (mode === 'off') return
+
+    const candidates = get().documents.filter((document) =>
+      documentIds.includes(document.id)
+      && document.documentType !== 'my_work'
+      && (document.hasExtractedText || document.hasOcrText)
+    )
+
+    for (const document of candidates) {
+      set((state) => ({
+        documents: updateLocalDocument(state.documents, document.id, {
+          classificationStatus: 'processing',
+          processingUpdatedAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      }))
+
+      try {
+        await resumeDocumentIngestion(document.id, {
+          enableSemanticClassification: true,
+          semanticClassificationMode: mode,
+          forceStages: ['semantic_classification'],
+        })
+        const refreshed = await repo.getDocumentById(document.id)
+        if (refreshed) {
+          set((state) => ({
+            documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(refreshed, document)),
+          }))
+        }
+      } catch (error) {
+        console.error('Semantic classification failed:', error)
+        const failed = await repo.updateDocumentMetadata(document.id, {
+          classificationStatus: 'failed',
+          processingError: error instanceof Error ? error.message : 'Semantic classification failed.',
+          processingUpdatedAt: new Date().toISOString(),
+          lastProcessedAt: new Date().toISOString(),
         })
         if (failed) {
           set((state) => ({

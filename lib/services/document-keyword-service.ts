@@ -2,6 +2,7 @@
 
 import { GEMINI_MODEL_OPTIONS, getResolvedGeminiApiKey, loadAppSettings } from '@/lib/app-settings'
 import * as repo from '@/lib/repositories/local-db'
+import { classifyDocumentSemantics, coerceIncomingDocumentClassification, serializeDocumentClassification, type IncomingDocumentClassification } from '@/lib/services/document-classification-service'
 import { serializeSuggestedTags } from '@/lib/services/document-tag-suggestion-service'
 import { getDocumentPlainText, readPersistedDocumentText } from '@/lib/services/document-text-service'
 
@@ -30,6 +31,7 @@ export type DetectedDocumentKeywordsResult = {
   keywords: string[]
   summary?: string
   source: 'author_list' | 'keybert_local' | 'gemini_page1' | 'gemini_full'
+  classificationStored?: boolean
 }
 
 type DetectKeywordOptions = {
@@ -207,7 +209,8 @@ async function extractKeywordsWithGemini(args: {
                   'If author-provided keywords appear, return them exactly.',
                   'Otherwise infer 5 to 12 concise research keywords.',
                   'Include one short summary sentence.',
-                  'Return JSON only with: {"keywords": string[], "summary": string}.',
+                  'Also infer a semantic topic classification for the document.',
+                  'Return JSON only with: {"keywords": string[], "summary": string, "classification": {"category": string, "topic": string, "confidence": number, "matchedKeywords": string[], "suggestedTags": string[]}}.',
                   '',
                   args.text,
                 ].join('\n'),
@@ -274,6 +277,22 @@ async function extractKeywordsWithGemini(args: {
   const summary = typeof (parsed as { summary?: unknown }).summary === 'string'
     ? normalizeWhitespace((parsed as { summary: string }).summary)
     : undefined
+  const classification = (() => {
+    const raw = (parsed as { classification?: unknown }).classification
+    if (!raw || typeof raw !== 'object') return undefined
+    const candidate = raw as Partial<IncomingDocumentClassification>
+    return {
+      category: typeof candidate.category === 'string' ? candidate.category : '',
+      topic: typeof candidate.topic === 'string' ? candidate.topic : '',
+      confidence: typeof candidate.confidence === 'number' ? candidate.confidence : undefined,
+      matchedKeywords: Array.isArray(candidate.matchedKeywords)
+        ? candidate.matchedKeywords.filter((entry): entry is string => typeof entry === 'string')
+        : undefined,
+      suggestedTags: Array.isArray(candidate.suggestedTags)
+        ? candidate.suggestedTags.filter((entry): entry is string => typeof entry === 'string')
+        : undefined,
+    } satisfies IncomingDocumentClassification
+  })()
 
   if (keywords.length === 0) {
     throw new Error('Gemini did not return any valid keywords.')
@@ -282,6 +301,7 @@ async function extractKeywordsWithGemini(args: {
   return {
     keywords,
     summary,
+    classification,
   }
 }
 
@@ -316,6 +336,33 @@ async function updateDocumentKeywordSuggestions(
   })
 }
 
+async function persistAiClassification(
+  document: repo.DbDocument,
+  classification: IncomingDocumentClassification | undefined,
+  source: 'gemini_page1' | 'gemini_full',
+  model: string,
+) {
+  const normalizedClassification = coerceIncomingDocumentClassification(classification, {
+    provider: source,
+    model,
+  })
+
+  if (normalizedClassification) {
+    const processedAt = new Date().toISOString()
+    await repo.updateDocumentMetadata(document.id, {
+      classificationResult: serializeDocumentClassification(normalizedClassification),
+      classificationStatus: 'complete',
+      classificationTextHash: document.textHash,
+      processingUpdatedAt: processedAt,
+      lastProcessedAt: processedAt,
+    })
+    return true
+  }
+
+  await classifyDocumentSemantics(document.id, { mode: 'local_heuristic' })
+  return true
+}
+
 function getDailyAiCounterKey() {
   return `gemini_auto_${new Date().toISOString().slice(0, 10)}`
 }
@@ -341,6 +388,10 @@ async function storeKeywords(
   source: DetectedDocumentKeywordsResult['source'],
   summary?: string,
   apiMode: string = 'local',
+  options?: {
+    classification?: IncomingDocumentClassification
+    model?: string
+  },
 ) {
   const normalizedKeywords = dedupeKeywords(keywords.map((entry) => entry.keyword))
   const normalizedRows = normalizedKeywords.map((keyword) => ({
@@ -353,12 +404,17 @@ async function storeKeywords(
 
   await repo.replaceDocumentKeywords(document.id, normalizedRows)
   await updateDocumentKeywordSuggestions(document, normalizedRows, source)
+  const classificationStored =
+    (source === 'gemini_page1' || source === 'gemini_full')
+      ? await persistAiClassification(document, options?.classification, source, options?.model ?? 'gemini')
+      : false
 
   return {
     documentId: document.id,
     keywords: normalizedRows.map((entry) => entry.keyword),
     summary,
     source,
+    classificationStored,
   } satisfies DetectedDocumentKeywordsResult
 }
 
@@ -449,5 +505,9 @@ export async function detectAndStoreDocumentKeywords(
     source,
     extracted.summary,
     options?.autoMode ? 'auto_ai' : 'manual_ai',
+    {
+      classification: extracted.classification,
+      model: selectedModel,
+    },
   )
 }

@@ -59,8 +59,15 @@ export default function ReaderIndexPage() {
   return (
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold">{t('readerIndex.title')}</h1>
-        <p className="text-muted-foreground">{t('readerIndex.subtitle')}</p>
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <BookOpen className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold">{t('readerIndex.title')}</h1>
+            <p className="text-muted-foreground">{t('readerIndex.subtitle')}</p>
+          </div>
+        </div>
       </div>
 
       {continueReading.length > 0 && (

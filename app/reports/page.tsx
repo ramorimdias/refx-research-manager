@@ -1,13 +1,34 @@
 'use client'
 
 import { useMemo } from 'react'
-import { BookOpen, Clock, FileText, Star } from 'lucide-react'
+import { BarChart3, BookOpen, Clock, FileText, Star } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState, StatsCard } from '@/components/refx/common'
+import { useLocale } from '@/lib/localization'
 import { useAppStore } from '@/lib/store'
 
 export default function ReportsPage() {
   const { documents, notes } = useAppStore()
+  const { locale } = useLocale()
+  const copy = useMemo(() => {
+    switch (locale) {
+      case 'pt-BR':
+        return {
+          title: 'Relatorios',
+          subtitle: 'Analises simples com base no seu espaco de trabalho local.',
+        }
+      case 'fr':
+        return {
+          title: 'Rapports',
+          subtitle: 'Analyses simples basees sur votre espace de travail local.',
+        }
+      default:
+        return {
+          title: 'Reports',
+          subtitle: 'Simple analytics based on your local workspace.',
+        }
+    }
+  }, [locale])
 
   const stats = useMemo(() => {
     const totalDocuments = documents.length
@@ -39,8 +60,15 @@ export default function ReportsPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border p-6">
-        <h1 className="text-2xl font-semibold">Reports</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Simple analytics based on your local workspace.</p>
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <BarChart3 className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold">{copy.title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-6 p-6">

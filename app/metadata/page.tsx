@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  CloudDownload,
   Database,
   Globe,
   Loader2,
@@ -250,13 +251,14 @@ export default function MetadataWorkspacePage() {
     <div className="p-6">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Database className="h-4 w-4" />
-              {t('metadataPage.workspace')}
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <CloudDownload className="h-6 w-6" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">{t('metadataPage.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('metadataPage.subtitle')}</p>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight">{t('metadataPage.title')}</h1>
+              <p className="text-sm text-muted-foreground">{t('metadataPage.subtitle')}</p>
+            </div>
           </div>
           <Button asChild variant="outline" size="sm">
             <Link href="/maps">
