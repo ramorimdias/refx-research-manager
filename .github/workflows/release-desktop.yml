@@ -177,6 +177,9 @@ jobs:
           name: macos-artifacts
           path: release-assets/macos
 
+      - name: Generate combined updater manifest
+        run: node scripts/generate-release-manifest.mjs
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -188,7 +191,7 @@ jobs:
             release-assets/windows/**/*.msi
             release-assets/windows/**/*.exe
             release-assets/windows/**/*.sig
-            release-assets/windows/**/latest.json
+            release-assets/latest.json
             release-assets/macos/**/*.app
             release-assets/macos/**/*.dmg
             release-assets/macos/**/*.tar.gz
