@@ -9,12 +9,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-muted text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:bg-card dark:bg-secondary dark:hover:bg-secondary/90',
+        default:
+          'bg-primary text-primary-foreground shadow-[0_10px_24px_color-mix(in_oklab,var(--primary)_28%,transparent)] hover:bg-primary/92 dark:hover:bg-primary/88',
         destructive:
           'bg-destructive text-white shadow-[0_8px_24px_rgba(220,38,38,0.16)] hover:bg-destructive/92 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
-          'border-transparent bg-card text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:bg-muted hover:text-foreground dark:bg-input/35 dark:hover:bg-input/55',
-        secondary: 'bg-card text-secondary-foreground shadow-[0_8px_18px_rgba(15,23,42,0.04)] hover:bg-muted/90',
+          'border border-border bg-card text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-primary/30 hover:bg-accent/10 hover:text-foreground dark:bg-input/35 dark:hover:bg-input/55',
+        secondary:
+          'bg-accent text-accent-foreground shadow-[0_10px_24px_color-mix(in_oklab,var(--accent)_24%,transparent)] hover:bg-accent/88',
         ghost:
           'text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-accent/50',
         link: 'text-primary underline-offset-4 hover:underline',

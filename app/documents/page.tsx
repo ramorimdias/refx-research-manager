@@ -24,6 +24,7 @@ import {
   Star,
   Tag,
   Trash2,
+  X,
   ImagePlus,
 } from 'lucide-react'
 import * as QRCode from 'qrcode'
@@ -52,7 +53,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { EmptyState, MetadataStatusBadge, NewBadge, StarRating, TagChip } from '@/components/refx/common'
+import { EmptyState, MetadataStatusBadge, StarRating, TagChip } from '@/components/refx/common'
 import {
   buildDocumentMetadataSeed,
   createMetadataCandidateFromBibtex,
@@ -1083,13 +1084,19 @@ export default function DocumentDetailPage() {
   const handleFetchOnlineMetadata = async () => {
     if (!document) return
     const hasDoi = doi.trim().length > 0
-    setMetadataSearchField(hasDoi ? 'doi' : 'title_author')
+    const nextMode = hasDoi ? 'doi' : 'title_author'
+    setMetadataSearchField(nextMode)
     setMetadataSearchValue(hasDoi ? doi.trim() : title.trim())
     setMetadataSearchAuthorValue(authors.split(',').map((entry) => entry.trim()).filter(Boolean)[0] ?? '')
     setMetadataDialogError('')
     setMetadataCandidates([])
     setSelectedMetadataCandidateId('')
     setIsMetadataDialogOpen(true)
+    metadataAutoOpenHandledRef.current = document.id
+    metadataAutoSearchPendingRef.current = document.id
+    window.setTimeout(() => {
+      void runMetadataCandidateSearch()
+    }, 0)
   }
 
   const selectedMetadataCandidate = metadataCandidates.find((candidate) => candidate.id === selectedMetadataCandidateId) ?? metadataCandidates[0] ?? null
@@ -1882,19 +1889,34 @@ export default function DocumentDetailPage() {
                               newSuggestedTagNames.includes(tag.name) && 'border-emerald-300/70 bg-emerald-500/[0.06] dark:border-emerald-500/40 dark:bg-emerald-500/[0.10]',
                             )}
                           >
-                            <Button size="sm" variant="outline" onClick={() => void acceptSuggestedTag(document.id, tag.name)}>
-                              Accept
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700"
+                                onClick={() => void acceptSuggestedTag(document.id, tag.name)}
+                                aria-label="Accept suggested tag"
+                                title="Accept suggested tag"
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0 text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                                onClick={() => void rejectSuggestedTag(document.id, tag.name)}
+                                aria-label="Discard suggested tag"
+                                title="Discard suggested tag"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
                             <TagChip name={tag.name} className="max-w-[260px]" />
-                            {newSuggestedTagNames.includes(tag.name) ? <NewBadge /> : null}
                             {typeof tag.confidence === 'number' && (
                               <span className="text-xs text-muted-foreground">
                                 {Math.round(tag.confidence * 100)}%
                               </span>
                             )}
-                            <Button size="sm" variant="ghost" onClick={() => void rejectSuggestedTag(document.id, tag.name)}>
-                              Discard
-                            </Button>
                           </div>
                         ))}
                       </div>
@@ -2137,10 +2159,16 @@ export default function DocumentDetailPage() {
                       <Button
                         key={provider}
                         type="button"
-                        variant={metadataProviders.includes(provider) ? 'default' : 'outline'}
+                        variant={metadataProviders.includes(provider) ? 'secondary' : 'outline'}
                         size="sm"
+                        aria-pressed={metadataProviders.includes(provider)}
+                        className={cn(
+                          'rounded-full',
+                          metadataProviders.includes(provider) && 'border border-primary/25 shadow-[0_8px_20px_color-mix(in_oklab,var(--accent)_24%,transparent)]',
+                        )}
                         onClick={() => toggleMetadataProvider(provider)}
                       >
+                        {metadataProviders.includes(provider) ? <Check className="h-3.5 w-3.5" /> : null}
                         {label}
                       </Button>
                     ))}

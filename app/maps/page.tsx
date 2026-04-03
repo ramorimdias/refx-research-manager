@@ -57,16 +57,9 @@ import {
 import { DocumentGraphControls } from '@/components/refx/document-graph-controls'
 import { DocumentGraphPanel } from '@/components/refx/document-graph-panel'
 import { EmptyState } from '@/components/refx/common'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
 import {
   Dialog,
   DialogContent,
@@ -103,6 +96,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  buildDocumentGraphMetrics,
   buildNodeAppearance,
   deriveGraphView,
   runReheatLayout,
@@ -179,7 +173,7 @@ const DEFAULT_GRAPH_PREFERENCES: GraphPreferences = {
   colorMode: 'density',
   confidenceThreshold: 0,
   focusMode: false,
-  hideOrphans: true,
+  hideOrphans: false,
   neighborhoodDepth: 'full',
   relationFilter: 'all',
   scopeMode: 'mapped',
@@ -658,6 +652,7 @@ function MapsPageContent() {
   const [pendingConnectionDirection, setPendingConnectionDirection] = useState<ConnectionDirection | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [isAddDocumentPopoverOpen, setIsAddDocumentPopoverOpen] = useState(false)
+  const [addDocumentQuery, setAddDocumentQuery] = useState('')
   const [pendingConnectionCursor, setPendingConnectionCursor] = useState<{ x: number; y: number } | null>(null)
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [isDeletingRelation, setIsDeletingRelation] = useState(false)
@@ -675,6 +670,7 @@ function MapsPageContent() {
   const [selectedMyWorkPickerValue, setSelectedMyWorkPickerValue] = useState('')
   const [workReferencesByDocumentId, setWorkReferencesByDocumentId] = useState<Record<string, repo.DbWorkReference[]>>({})
   const [workingLayoutPositions, setWorkingLayoutPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [pendingDocumentPlacements, setPendingDocumentPlacements] = useState<Record<string, { x: number; y: number }>>({})
   const stableNodeTypes = useMemo(() => nodeTypes, [])
   const stableEdgeTypes = useMemo(() => edgeTypes, [])
   const dragConnectionSourceIdRef = useRef<string | null>(null)
@@ -790,7 +786,7 @@ function MapsPageContent() {
       colorMode: activeGraphView.colorMode,
       confidenceThreshold: 0,
       focusMode: activeGraphView.neighborhoodDepth !== 'full',
-      hideOrphans: activeGraphView.hideOrphans,
+      hideOrphans: false,
       neighborhoodDepth: activeGraphView.neighborhoodDepth,
       relationFilter: 'all',
       scopeMode: 'mapped',
@@ -799,12 +795,17 @@ function MapsPageContent() {
       yearMax: activeGraphView.yearMax,
     })
     setManualVisibleDocumentIds(activeGraphView.documentIds)
+    setSelectedDocumentId(activeGraphView.selectedDocumentId ?? null)
+  }, [activeGraphView])
+
+  useEffect(() => {
+    if (!activeGraphView) return
+
     setHiddenDocumentIds(
       graphViewLayouts
         .filter((layout) => layout.graphViewId === activeGraphView.id && layout.hidden)
         .map((layout) => layout.documentId),
     )
-    setSelectedDocumentId(activeGraphView.selectedDocumentId ?? null)
   }, [activeGraphView, graphViewLayouts])
 
   const libraryDocuments = useMemo(() => {
@@ -847,24 +848,73 @@ function MapsPageContent() {
       }),
     [deferredSearchQuery, graphPreferences, hiddenDocumentIds, libraryDocuments, libraryRelations, manualVisibleDocumentIds, selectedDocumentId],
   )
+  const hiddenDocumentIdSet = useMemo(() => new Set(hiddenDocumentIds), [hiddenDocumentIds])
 
   const visibleDocuments = useMemo(() => {
     const scopedIds = new Set([
       ...manualVisibleDocumentIds,
       ...(selectedDocumentId ? [selectedDocumentId] : []),
     ])
+    const isWithinYearRange = (document: typeof libraryDocuments[number]) => {
+      if (graphPreferences.yearMin !== undefined && (document.year ?? Number.MIN_SAFE_INTEGER) < graphPreferences.yearMin) return false
+      if (graphPreferences.yearMax !== undefined && (document.year ?? Number.MAX_SAFE_INTEGER) > graphPreferences.yearMax) return false
+      return true
+    }
+    const manuallyVisibleDocuments = libraryDocuments.filter((document) => (
+      scopedIds.has(document.id)
+      && !hiddenDocumentIdSet.has(document.id)
+    ))
     const documentsWithBibliography = libraryDocuments.filter((document) =>
       document.documentType === 'my_work'
       && scopedIds.has(document.id)
       && (workReferencesByDocumentId[document.id]?.length ?? 0) > 0,
     )
 
-    return [...derivedGraphView.documents, ...documentsWithBibliography].filter((document, index, documents) => (
+    const matchedReferenceDocuments = documentsWithBibliography
+      .flatMap((document) => workReferencesByDocumentId[document.id] ?? [])
+      .map((reference) => (
+        reference.matchedDocumentId
+          ? libraryDocuments.find((document) => document.id === reference.matchedDocumentId) ?? null
+          : null
+      ))
+      .filter((document): document is NonNullable<typeof document> => Boolean(document))
+      .filter((document, index, documents) => (
+        !hiddenDocumentIdSet.has(document.id)
+        && isWithinYearRange(document)
+        && documents.findIndex((candidate) => candidate.id === document.id) === index
+      ))
+
+    return [...derivedGraphView.documents, ...manuallyVisibleDocuments, ...documentsWithBibliography, ...matchedReferenceDocuments].filter((document, index, documents) => (
       documents.findIndex((candidate) => candidate.id === document.id) === index
     ))
-  }, [derivedGraphView.documents, libraryDocuments, manualVisibleDocumentIds, selectedDocumentId, workReferencesByDocumentId])
-  const visibleRelations = derivedGraphView.relations
-  const visibleMetrics = derivedGraphView.metrics
+  }, [
+    derivedGraphView.documents,
+    graphPreferences.yearMax,
+    graphPreferences.yearMin,
+    hiddenDocumentIdSet,
+    libraryDocuments,
+    manualVisibleDocumentIds,
+    selectedDocumentId,
+    workReferencesByDocumentId,
+  ])
+  const visibleDocumentIdSet = useMemo(
+    () => new Set(visibleDocuments.map((document) => document.id)),
+    [visibleDocuments],
+  )
+  const visibleRelations = useMemo(() => {
+    const derivedRelationIds = new Set(derivedGraphView.relations.map((relation) => relation.id))
+    const supplementalRelations = libraryRelations.filter((relation) =>
+      visibleDocumentIdSet.has(relation.sourceDocumentId)
+      && visibleDocumentIdSet.has(relation.targetDocumentId)
+      && !derivedRelationIds.has(relation.id),
+    )
+
+    return [...derivedGraphView.relations, ...supplementalRelations]
+  }, [derivedGraphView.relations, libraryRelations, visibleDocumentIdSet])
+  const visibleMetrics = useMemo(
+    () => buildDocumentGraphMetrics(visibleDocuments, visibleRelations),
+    [visibleDocuments, visibleRelations],
+  )
   const searchMatches = derivedGraphView.searchMatches
   const visibleWorkReferences = useMemo(
     () =>
@@ -878,6 +928,19 @@ function MapsPageContent() {
     () => libraryDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
     [libraryDocuments, visibleDocuments],
   )
+  const filteredAddableDocuments = useMemo(() => {
+    const query = addDocumentQuery.trim().toLowerCase()
+    if (!query) return addableDocuments
+
+    return addableDocuments.filter((document) => {
+      const haystack = [
+        document.title,
+        document.authors.join(' '),
+        document.year ? String(document.year) : '',
+      ].join(' ').toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [addDocumentQuery, addableDocuments])
 
   const selectedDocument = useMemo(
     () => libraryDocuments.find((document) => document.id === selectedDocumentId) ?? null,
@@ -918,6 +981,15 @@ function MapsPageContent() {
     () => (selectedDocument?.documentType === 'my_work' ? workReferencesByDocumentId[selectedDocument.id] ?? [] : []),
     [selectedDocument, workReferencesByDocumentId],
   )
+  const allWorkReferencesById = useMemo(
+    () =>
+      new Map(
+        Object.values(workReferencesByDocumentId)
+          .flat()
+          .map((reference) => [reference.id, reference] as const),
+      ),
+    [workReferencesByDocumentId],
+  )
 
   const selectedRelation = useMemo(
     () => libraryRelations.find((relation) => relation.id === selectedRelationId) ?? null,
@@ -942,8 +1014,8 @@ function MapsPageContent() {
   )
 
   const selectedWorkReference = useMemo(
-    () => selectedWorkReferences.find((reference) => reference.id === selectedWorkReferenceId) ?? null,
-    [selectedWorkReferenceId, selectedWorkReferences],
+    () => (selectedWorkReferenceId ? allWorkReferencesById.get(selectedWorkReferenceId) ?? null : null),
+    [allWorkReferencesById, selectedWorkReferenceId],
   )
 
   const graphViewLayoutMap = useMemo(
@@ -971,14 +1043,29 @@ function MapsPageContent() {
         },
       ]),
     )
+    const pendingLayoutMap = new Map(
+      Object.entries(pendingDocumentPlacements).map(([nodeId, position]) => [
+        nodeId,
+        {
+          documentId: nodeId,
+          graphViewId: activeGraphViewId ?? '__working__',
+          hidden: false,
+          pinned: false,
+          updatedAt: new Date(),
+          x: position.x,
+          y: position.y,
+        },
+      ]),
+    )
 
-    if (!activeGraphViewId) return workingLayoutMap
+    if (!activeGraphViewId) return new Map([...workingLayoutMap.entries(), ...pendingLayoutMap.entries()])
 
     return new Map([
-      ...workingLayoutMap.entries(),
       ...graphViewLayoutMap.entries(),
+      ...workingLayoutMap.entries(),
+      ...pendingLayoutMap.entries(),
     ])
-  }, [activeGraphViewId, graphViewLayoutMap, workingLayoutPositions])
+  }, [activeGraphViewId, graphViewLayoutMap, pendingDocumentPlacements, workingLayoutPositions])
 
   const sourceDocument = useMemo(
     () =>
@@ -1007,11 +1094,11 @@ function MapsPageContent() {
 
   const searchResults = useMemo(
     () =>
-      libraryDocuments.filter((document) =>
+      visibleDocuments.filter((document) =>
         deferredSearchQuery.trim().length > 0
         && document.title.toLowerCase().includes(deferredSearchQuery.trim().toLowerCase()),
       ),
-    [deferredSearchQuery, libraryDocuments],
+    [deferredSearchQuery, visibleDocuments],
   )
 
   const selectedDocumentIncomingDocuments = useMemo(
@@ -1090,6 +1177,7 @@ function MapsPageContent() {
     setPendingConnectionDirection(null)
     setPendingConnectionCursor(null)
     setIsAddDocumentPopoverOpen(false)
+    setAddDocumentQuery('')
   }
 
   useEffect(() => {
@@ -1113,10 +1201,10 @@ function MapsPageContent() {
   }, [libraryRelations, selectedRelationId])
 
   useEffect(() => {
-    if (selectedWorkReferenceId && !selectedWorkReferences.some((reference) => reference.id === selectedWorkReferenceId)) {
+    if (selectedWorkReferenceId && !allWorkReferencesById.has(selectedWorkReferenceId)) {
       setSelectedWorkReferenceId(null)
     }
-  }, [selectedWorkReferenceId, selectedWorkReferences])
+  }, [allWorkReferencesById, selectedWorkReferenceId])
 
   useEffect(() => {
     if (visibleDocuments.length === 0) {
@@ -1177,26 +1265,8 @@ function MapsPageContent() {
       }))
       .filter((group) => group.references.length > 0)
 
-    const referenceMatchedDocuments = visibleWorkReferenceGroups
-      .flatMap((group) => group.references)
-      .map((reference) => (
-        reference.matchedDocumentId
-          ? libraryDocuments.find((document) => document.id === reference.matchedDocumentId) ?? null
-          : null
-      ))
-      .filter((document, index, documents): document is NonNullable<typeof document> => (
-        Boolean(document) && documents.findIndex((candidate) => candidate?.id === document?.id) === index
-      ))
-
-    const graphDocuments = [...visibleDocuments]
-    for (const referenceDocument of referenceMatchedDocuments) {
-      if (!graphDocuments.some((document) => document.id === referenceDocument.id)) {
-        graphDocuments.push(referenceDocument)
-      }
-    }
-
     const appearance = Object.fromEntries(
-      graphDocuments.map((document) => {
+      visibleDocuments.map((document) => {
         const metrics = visibleMetrics[document.id]
         const nodeAppearance = buildNodeAppearance({
           document,
@@ -1238,7 +1308,7 @@ function MapsPageContent() {
       }),
     ) as Record<string, Partial<DocumentGraphNodeData>>
 
-    const nextDocumentNodes = buildDocumentGraphNodes(graphDocuments, visibleRelations, appearance).map((node) => {
+    const nextDocumentNodes = buildDocumentGraphNodes(visibleDocuments, visibleRelations, appearance).map((node) => {
       const savedLayout = effectiveLayoutMap.get(node.id)
 
       return {
@@ -1375,6 +1445,62 @@ function MapsPageContent() {
     visibleMetrics,
     visibleRelations,
   ])
+
+  useEffect(() => {
+    const pendingIds = Object.keys(pendingDocumentPlacements)
+    if (pendingIds.length === 0) return
+
+    const readyNodes = pendingIds
+      .map((documentId) => nodes.find((node) => node.type === 'document' && node.id === documentId) ?? null)
+      .filter((node): node is Node<AnyGraphNodeData> => Boolean(node))
+
+    if (readyNodes.length === 0) return
+
+    const persistPendingLayouts = async () => {
+      await Promise.all(
+        readyNodes.map(async (node) => {
+          if (activeGraphViewId) {
+            await upsertGraphViewNodeLayout({
+              graphViewId: activeGraphViewId,
+              documentId: node.id,
+              x: node.position.x,
+              y: node.position.y,
+              hidden: false,
+            })
+            return
+          }
+
+          if (!activeLibraryId) return
+
+          setWorkingLayoutPositions((currentLayouts) => {
+            const nextLayouts = {
+              ...currentLayouts,
+              [node.id]: { x: node.position.x, y: node.position.y },
+            }
+            const storedLayouts = readWorkingMapLayouts()
+            writeWorkingMapLayouts({
+              ...storedLayouts,
+              [activeLibraryId]: {
+                ...(storedLayouts[activeLibraryId] ?? {}),
+                ...nextLayouts,
+              },
+            })
+            return nextLayouts
+          })
+        }),
+      )
+
+      setPendingDocumentPlacements((currentPlacements) => {
+        const nextPlacements = { ...currentPlacements }
+        readyNodes.forEach((node) => {
+          delete nextPlacements[node.id]
+        })
+        return nextPlacements
+      })
+    }
+
+    void persistPendingLayouts()
+  }, [activeGraphViewId, activeLibraryId, nodes, pendingDocumentPlacements, upsertGraphViewNodeLayout])
 
   const handleConnect: OnConnect = async (connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
@@ -1618,22 +1744,7 @@ function MapsPageContent() {
 
   const handleAddDocumentToMap = async (documentId: string) => {
     if (!documentId || documentId === '__none__') return
-    const nextDocumentIds = Array.from(new Set([...manualVisibleDocumentIds, documentId]))
-    setManualVisibleDocumentIds(nextDocumentIds)
-    setHiddenDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
-    setSelectedRelationId(null)
-    setSelectedDocumentId(documentId)
-    setActiveDocument(documentId)
-    if (activeGraphView) {
-      await updateGraphView(activeGraphView.id, { documentIds: nextDocumentIds })
-      await upsertGraphViewNodeLayout({
-        graphViewId: activeGraphView.id,
-        documentId,
-        x: reactFlow.getNode(documentId)?.position.x ?? 0,
-        y: reactFlow.getNode(documentId)?.position.y ?? 0,
-        hidden: false,
-      })
-    }
+    await revealDocumentOnMap(documentId, { select: true })
 
     if (pendingConnectionDocumentId && pendingConnectionDirection && pendingConnectionDocumentId !== documentId) {
       const sourceDocumentId =
@@ -1691,22 +1802,79 @@ function MapsPageContent() {
     [visibleDocuments],
   )
 
-  const handleAddLinkedDocumentToMap = async (documentId: string) => {
-    if (!documentId || documentId === '__none__') return
+  const getFallbackDocumentPosition = (documentId: string) => {
+    const anchorId =
+      selectedDocumentId
+      ?? pendingConnectionDocumentId
+      ?? currentViewDocumentIds.find((id) => id !== documentId)
+      ?? null
+    const anchorNode = anchorId ? reactFlow.getNode(anchorId) : null
+    const placementIndex = currentViewDocumentIds.length + Object.keys(pendingDocumentPlacements).length
+    const angle = (placementIndex % 8) * (Math.PI / 4)
+    const radius = 320 + Math.floor(placementIndex / 8) * 56
 
-    const nextDocumentIds = Array.from(new Set([...manualVisibleDocumentIds, documentId]))
+    return {
+      x: (anchorNode?.position.x ?? 720) + Math.cos(angle) * radius,
+      y: (anchorNode?.position.y ?? 420) + Math.sin(angle) * radius,
+    }
+  }
+
+  const revealDocumentOnMap = async (documentId: string, options?: { select?: boolean }) => {
+    const nextDocumentIds = Array.from(new Set([...(activeGraphView?.documentIds ?? manualVisibleDocumentIds), documentId]))
+    const nextSelectedDocumentId = options?.select
+      ? documentId
+      : activeGraphView?.selectedDocumentId
     setManualVisibleDocumentIds(nextDocumentIds)
     setHiddenDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
+
+    if (options?.select) {
+      setSelectedRelationId(null)
+      setSelectedDocumentId(documentId)
+      setActiveDocument(documentId)
+    }
+
     if (activeGraphView) {
-      await updateGraphView(activeGraphView.id, { documentIds: nextDocumentIds })
-      await upsertGraphViewNodeLayout({
-        graphViewId: activeGraphView.id,
-        documentId,
-        x: reactFlow.getNode(documentId)?.position.x ?? 0,
-        y: reactFlow.getNode(documentId)?.position.y ?? 0,
-        hidden: false,
+      useGraphStore.setState((state) => ({
+        graphViews: state.graphViews.map((view) => (
+          view.id === activeGraphView.id
+            ? { ...view, documentIds: nextDocumentIds, selectedDocumentId: nextSelectedDocumentId }
+            : view
+        )),
+        graphViewLayouts: state.graphViewLayouts.map((layout) => (
+          layout.graphViewId === activeGraphView.id && layout.documentId === documentId
+            ? { ...layout, hidden: false }
+            : layout
+        )),
+      }))
+      await updateGraphView(activeGraphView.id, {
+        documentIds: nextDocumentIds,
+        selectedDocumentId: nextSelectedDocumentId,
       })
     }
+
+    const existingNode = reactFlow.getNode(documentId)
+    if (existingNode) {
+      if (activeGraphView) {
+        await upsertGraphViewNodeLayout({
+          graphViewId: activeGraphView.id,
+          documentId,
+          x: existingNode.position.x,
+          y: existingNode.position.y,
+          hidden: false,
+        })
+      }
+      return
+    }
+
+    setPendingDocumentPlacements((currentPlacements) => ({
+      ...currentPlacements,
+      [documentId]: currentPlacements[documentId] ?? getFallbackDocumentPosition(documentId),
+    }))
+  }
+
+  const handleAddLinkedDocumentToMap = async (documentId: string) => {
+    if (!documentId || documentId === '__none__') return
+    await revealDocumentOnMap(documentId, { select: false })
   }
 
   const persistCurrentNodeLayoutsToGraphView = async (graphViewId: string) => {
@@ -1795,13 +1963,19 @@ function MapsPageContent() {
       confidenceThreshold: 0,
       yearMin: graphPreferences.yearMin,
       yearMax: graphPreferences.yearMax,
-      selectedDocumentId: selectedDocumentId ?? undefined,
-      documentIds: currentViewDocumentIds,
+      selectedDocumentId: undefined,
+      documentIds: [],
     })
 
     if (!created) return
 
-    await persistCurrentNodeLayoutsToGraphView(created.id)
+    setManualVisibleDocumentIds([])
+    setHiddenDocumentIds([])
+    setSelectedDocumentId(null)
+    setSelectedWorkReferenceId(null)
+    setSelectedRelationId(null)
+    setPendingDocumentPlacements({})
+    setWorkingLayoutPositions({})
     setActiveGraphViewId(created.id)
     setIsCreateMapDialogOpen(false)
     setGraphViewDraft(DEFAULT_GRAPH_VIEW_DRAFT)
@@ -1838,9 +2012,10 @@ function MapsPageContent() {
 
   const handleDeleteActiveGraphView = async () => {
     if (!activeGraphView) return
+    const fallbackGraphViewId = activeLibraryGraphViews.find((view) => view.id !== activeGraphView.id)?.id ?? null
     const deleted = await deleteGraphView(activeGraphView.id)
     if (!deleted) return
-    setActiveGraphViewId(null)
+    setActiveGraphViewId(fallbackGraphViewId)
     setIsDeleteWorkspaceDialogOpen(false)
   }
 
@@ -2164,21 +2339,25 @@ function MapsPageContent() {
             <Card className="border-border/70 bg-card/92 p-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    {t('mapsPage.workspace')}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      {t('mapsPage.workspace')}
+                    </p>
+                    <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px]">
+                      {visibleDocuments.length}
+                    </Badge>
+                  </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="min-w-[220px] flex-1">
                         <Select
-                          value={activeGraphViewId ?? '__working__'}
-                          onValueChange={(value) => setActiveGraphViewId(value === '__working__' ? null : value)}
+                          value={activeGraphViewId ?? undefined}
+                          onValueChange={(value) => setActiveGraphViewId(value)}
                         >
                           <SelectTrigger className="bg-background/90">
                             <SelectValue placeholder={t('mapsPage.workingMap')} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__working__">{t('mapsPage.workingMap')}</SelectItem>
                             {activeLibraryGraphViews.map((view) => (
                               <SelectItem key={view.id} value={view.id}>
                                 {view.name}
@@ -2234,35 +2413,46 @@ function MapsPageContent() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[320px] p-0" align="start">
-                      <Command>
-                        <CommandInput
+                      <div className="space-y-2 p-2">
+                        <Input
+                          value={addDocumentQuery}
+                          onChange={(event) => setAddDocumentQuery(event.target.value)}
                           placeholder={pendingConnectionDirection ? t('mapsPage.searchAndLinkPlaceholder') : t('mapsPage.searchDocumentsPlaceholder')}
+                          className="bg-background"
                         />
-                        <CommandList>
-                          <CommandEmpty>{t('mapsPage.noMatchingDocument')}</CommandEmpty>
-                          <CommandGroup>
-                            {addableDocuments.map((document) => (
-                              <CommandItem
-                                key={document.id}
-                                value={`${document.title} ${document.authors.join(' ')} ${document.year ?? ''}`}
-                                onSelect={() => {
-                                  void handleAddDocumentToMap(document.id)
-                                  setIsAddDocumentPopoverOpen(false)
-                                }}
-                              >
-                                <Check className="mr-2 h-4 w-4 opacity-0" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate">{document.title}</p>
-                                  <p className="truncate text-xs text-slate-500">
-                                    {document.authors.slice(0, 2).join(', ') || t('searchPage.unknownAuthor')}
-                                    {document.year ? ` - ${document.year}` : ''}
-                                  </p>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
+                        <div className="max-h-[300px] overflow-y-auto">
+                          {filteredAddableDocuments.length > 0 ? (
+                            <div className="space-y-1">
+                              {filteredAddableDocuments.map((document) => (
+                                <button
+                                  key={document.id}
+                                  type="button"
+                                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    void handleAddDocumentToMap(document.id)
+                                    setIsAddDocumentPopoverOpen(false)
+                                    setAddDocumentQuery('')
+                                  }}
+                                >
+                                  <Check className="mt-0.5 h-4 w-4 shrink-0 opacity-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm">{document.title}</p>
+                                    <p className="truncate text-xs text-slate-500">
+                                      {document.authors.slice(0, 2).join(', ') || t('searchPage.unknownAuthor')}
+                                      {document.year ? ` - ${document.year}` : ''}
+                                    </p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                              {t('mapsPage.noMatchingDocument')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </PopoverContent>
                   </Popover>
                   {myWorkDocuments.length > 0 ? (
@@ -2309,8 +2499,6 @@ function MapsPageContent() {
                 neighborhoodDepth: value,
                 focusMode: value !== 'full',
               }))}
-              hideOrphans={graphPreferences.hideOrphans}
-              onHideOrphansChange={(value) => setGraphPreferences((current) => ({ ...current, hideOrphans: value }))}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
               searchResults={searchResults}

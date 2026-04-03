@@ -390,8 +390,8 @@ export interface PersistentSearchState {
   keywordGroups: KeywordGroup[]
   groupJoinOperator: 'AND' | 'OR'
   selectedLibraryIds: string[]
-  readingStage: ReadingStage | 'all'
-  metadataStatus: MetadataStatus | 'all'
+  readingStage: ReadingStage[]
+  metadataStatus: MetadataStatus[]
   favoriteOnly: boolean
   flexibility: number
 }

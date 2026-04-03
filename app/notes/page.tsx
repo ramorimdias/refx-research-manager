@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Clock3, FileText, Search } from 'lucide-react'
+import { ChevronDown, Clock3, FileText, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -24,6 +25,20 @@ type SortMode = 'timestamp' | 'page'
 
 type AppNote = repo.DbNote
 
+function getNoteDocumentHref(note: AppNote, document?: { id: string; documentType: string } | null) {
+  if (!document) return null
+
+  if (document.documentType === 'my_work') {
+    return `/documents?id=${document.id}`
+  }
+
+  if (document.documentType === 'physical_book') {
+    return `/books/notes?id=${document.id}`
+  }
+
+  return `/reader/view?id=${document.id}${note.pageNumber ? `&page=${note.pageNumber}` : ''}`
+}
+
 export default function NotesPage() {
   const t = useT()
   const { notes, loadNotes, isDesktopApp } = useRuntimeState()
@@ -34,7 +49,7 @@ export default function NotesPage() {
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>('all')
   const [sortMode, setSortMode] = useState<SortMode>('timestamp')
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
-  const [draftTitle, setDraftTitle] = useState('')
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const [draftContent, setDraftContent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -144,13 +159,8 @@ export default function NotesPage() {
   )
 
   useEffect(() => {
-    setDraftTitle(selectedNote?.title ?? '')
     setDraftContent(selectedNote?.content ?? '')
-  }, [selectedNote?.id, selectedNote?.title, selectedNote?.content])
-
-  const hasPendingChanges =
-    selectedNote !== null &&
-    (draftTitle !== selectedNote.title || draftContent !== selectedNote.content)
+  }, [selectedNote?.id, selectedNote?.content])
 
   const handleSave = async () => {
     if (!selectedNote || !isDesktopApp) return
@@ -158,7 +168,7 @@ export default function NotesPage() {
     setIsSaving(true)
     try {
       await repo.updateNote(selectedNote.id, {
-      title: draftTitle.trim() || t('notesPage.untitledNote'),
+        title: selectedNote.title.trim() || t('notesPage.untitledNote'),
         content: draftContent,
         pageNumber: selectedNote.pageNumber,
       })
@@ -167,6 +177,17 @@ export default function NotesPage() {
       setIsSaving(false)
     }
   }
+
+  useEffect(() => {
+    if (!selectedNote || !isDesktopApp) return
+    if (draftContent === selectedNote.content) return
+
+    const timeoutId = window.setTimeout(() => {
+      void handleSave()
+    }, 500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [draftContent, isDesktopApp, selectedNote])
 
   return (
     <div className="flex h-full">
@@ -206,37 +227,68 @@ export default function NotesPage() {
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {groupedNotes.map((group) => (
-            <div key={group.key} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="truncate text-sm font-semibold">{group.label}</h3>
+            <Collapsible
+              key={group.key}
+              open={openGroups[group.key] ?? false}
+              onOpenChange={(open) => setOpenGroups((current) => ({ ...current, [group.key]: open }))}
+              className="space-y-2"
+            >
+              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1 text-left">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${(openGroups[group.key] ?? false) ? 'rotate-180' : ''}`} />
+                  <h3 className="truncate text-sm font-semibold">{group.label}</h3>
+                </div>
                 <Badge variant="secondary">{group.notes.length}</Badge>
-              </div>
-              <div className="space-y-2">
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2">
                 {group.notes.map((note) => (
-                  <button
-                    key={note.id}
-                    className={`w-full rounded-lg border p-3 text-left transition ${
-                      selectedNoteId === note.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
-                    }`}
-                    onClick={() => setSelectedNoteId(note.id)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{note.title || t('notesPage.untitledNote')}</div>
-                        <div className="line-clamp-2 text-xs text-muted-foreground">{note.content || t('notesPage.noContent')}</div>
+                  (() => {
+                    const document = note.documentId ? documentsById.get(note.documentId) : null
+                    const noteHref = getNoteDocumentHref(note, document)
+
+                    return (
+                      <div
+                        key={note.id}
+                        className={`rounded-lg border p-3 transition ${
+                          selectedNoteId === note.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className="w-full text-left"
+                          onClick={() => setSelectedNoteId(note.id)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{note.title || t('notesPage.untitledNote')}</div>
+                              <div className="line-clamp-2 text-xs text-muted-foreground">{note.content || t('notesPage.noContent')}</div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {noteHref ? (
+                                <Link
+                                  href={noteHref}
+                                  className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-primary/10"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {t('notesPage.seeInDocument')}
+                                  {note.pageNumber ? ` p.${note.pageNumber}` : ''}
+                                </Link>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Clock3 className="h-3.5 w-3.5" />
+                            {new Date(note.updatedAt).toLocaleString()}
+                          </div>
+                        </div>
                       </div>
-                      {note.pageNumber ? (
-                        <Badge variant="outline">p. {note.pageNumber}</Badge>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Clock3 className="h-3.5 w-3.5" />
-                      {new Date(note.updatedAt).toLocaleString()}
-                    </div>
-                  </button>
+                    )
+                  })()
                 ))}
-              </div>
-            </div>
+              </CollapsibleContent>
+            </Collapsible>
           ))}
 
           {groupedNotes.length === 0 && (
@@ -252,7 +304,9 @@ export default function NotesPage() {
           <div className="flex h-full flex-col space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <Input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
+                <div className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
+                  <span className="block truncate">{selectedNote.title || t('notesPage.untitledNote')}</span>
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   {selectedDocument ? (
                     <>
@@ -269,26 +323,6 @@ export default function NotesPage() {
                 </div>
               </div>
 
-              {selectedDocument && (selectedNote.pageNumber || selectedDocument.documentType === 'physical_book') ? (
-                <Button asChild variant="outline">
-                  <Link
-                    href={
-                      selectedDocument.documentType === 'my_work'
-                        ? `/documents?id=${selectedDocument.id}`
-                        : selectedDocument.documentType === 'physical_book'
-                        ? `/books/notes?id=${selectedDocument.id}`
-                        : `/reader/view?id=${selectedDocument.id}&page=${selectedNote.pageNumber}`
-                    }
-                  >
-                    {selectedDocument.documentType === 'physical_book'
-                      ? t('notesPage.openBookNotes')
-                      : selectedDocument.documentType === 'my_work'
-                        ? t('notesPage.openDetails')
-                        : t('notesPage.openReader')}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              ) : null}
             </div>
 
             <Textarea
@@ -296,18 +330,11 @@ export default function NotesPage() {
               value={draftContent}
               onChange={(event) => setDraftContent(event.target.value)}
             />
-
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => {
-                setDraftTitle(selectedNote.title)
-                setDraftContent(selectedNote.content)
-              }} disabled={!hasPendingChanges || isSaving}>
-                {t('notesPage.reset')}
-              </Button>
-              <Button onClick={() => void handleSave()} disabled={!hasPendingChanges || isSaving || !isDesktopApp}>
-                {isSaving ? t('notesPage.saving') : t('notesPage.save')}
-              </Button>
-            </div>
+            {isSaving ? (
+              <div className="flex items-center justify-end text-xs text-muted-foreground">
+                {t('notesPage.saving')}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">{t('notesPage.selectNote')}</div>

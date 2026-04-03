@@ -80,8 +80,8 @@ export function defaultPersistentSearch(): PersistentSearchState {
     keywordGroups: [],
     groupJoinOperator: 'AND',
     selectedLibraryIds: [],
-    readingStage: 'all',
-    metadataStatus: 'all',
+    readingStage: [],
+    metadataStatus: [],
     favoriteOnly: false,
     flexibility: 35,
   }

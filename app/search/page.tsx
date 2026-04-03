@@ -7,6 +7,7 @@ import { Filter, Loader2, Plus, Search as SearchIcon, X } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
@@ -47,6 +48,14 @@ function normalizeKeywords(keywords: string[]) {
 
 function normalizeSelectedIds(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+}
+
+function normalizeSelectedReadingStages(values: ReadingStage[]) {
+  return Array.from(new Set(values))
+}
+
+function normalizeSelectedMetadataStatuses(values: MetadataStatus[]) {
+  return Array.from(new Set(values))
 }
 
 function parseSimpleSearchTerms(query: string) {
@@ -178,6 +187,86 @@ function SearchHelpTooltip({
   )
 }
 
+type MultiSelectOption = {
+  value: string
+  label: string
+}
+
+function MultiSelectDropdown({
+  label,
+  options,
+  selectedValues,
+  onChange,
+  allLabel,
+  t,
+}: {
+  label: string
+  options: MultiSelectOption[]
+  selectedValues: string[]
+  onChange: (values: string[]) => void
+  allLabel: string
+  t: ReturnType<typeof useT>
+}) {
+  const selectedSet = new Set(selectedValues)
+  const selectedOptions = options.filter((option) => selectedSet.has(option.value))
+  const triggerLabel = selectedOptions.length === 0
+    ? allLabel
+    : selectedOptions.length === 1
+      ? selectedOptions[0]?.label ?? allLabel
+      : t('searchPage.selectedCount', { count: selectedOptions.length })
+
+  return (
+    <Popover modal={false}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" className="w-full justify-between font-normal">
+          <span className="truncate">{triggerLabel}</span>
+          <Badge variant="secondary" className="ml-2 shrink-0">
+            {selectedOptions.length === 0 ? t('searchPage.allShort') : selectedOptions.length}
+          </Badge>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-3" align="start">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">{label}</p>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => onChange(options.map((option) => option.value))}>
+                {t('searchPage.selectAll')}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => onChange([])}>
+                {t('searchPage.clearSelection')}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {options.map((option) => {
+              const checked = selectedSet.has(option.value)
+              return (
+                <label
+                  key={option.value}
+                  className="flex items-center gap-3 rounded-lg bg-muted/55 px-3 py-2 text-sm"
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(nextChecked) => {
+                      onChange(
+                        nextChecked
+                          ? [...selectedValues, option.value]
+                          : selectedValues.filter((value) => value !== option.value),
+                      )
+                    }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function highlightText(text: string, keywords: string[]) {
   const normalized = normalizeKeywords(keywords)
   if (normalized.length === 0) return text
@@ -230,8 +319,8 @@ export default function SearchPage() {
       ? initialSelectedLibraryIds
       : libraries.map((library) => library.id),
   )
-  const [draftReadingStage, setDraftReadingStage] = useState<'all' | ReadingStage>(persistentSearch.readingStage)
-  const [draftMetadataStatus, setDraftMetadataStatus] = useState<'all' | MetadataStatus>(persistentSearch.metadataStatus)
+  const [draftReadingStage, setDraftReadingStage] = useState<ReadingStage[]>(persistentSearch.readingStage)
+  const [draftMetadataStatus, setDraftMetadataStatus] = useState<MetadataStatus[]>(persistentSearch.metadataStatus)
   const [draftFavoriteOnly, setDraftFavoriteOnly] = useState(persistentSearch.favoriteOnly)
   const [draftFlexibility, setDraftFlexibility] = useState(persistentSearch.flexibility)
   const [groupInputs, setGroupInputs] = useState<Record<string, string>>({})
@@ -301,8 +390,8 @@ export default function SearchPage() {
   const filteredDocuments = useMemo(() => {
     return documents.filter((document) => {
       if (executedSelectedLibraryIds.length > 0 && !executedSelectedLibraryIds.includes(document.libraryId)) return false
-      if (readingStage !== 'all' && document.readingStage !== readingStage) return false
-      if (metadataStatus !== 'all' && document.metadataStatus !== metadataStatus) return false
+      if (readingStage.length > 0 && !readingStage.includes(document.readingStage)) return false
+      if (metadataStatus.length > 0 && !metadataStatus.includes(document.metadataStatus)) return false
       if (favoriteOnly && !document.favorite) return false
       return true
     })
@@ -370,8 +459,8 @@ export default function SearchPage() {
       keywordGroups: [],
       groupJoinOperator: 'AND',
       selectedLibraryIds: normalizeSelectedIds(draftSelectedLibraryIds),
-      readingStage: draftReadingStage,
-      metadataStatus: draftMetadataStatus,
+      readingStage: normalizeSelectedReadingStages(draftReadingStage),
+      metadataStatus: normalizeSelectedMetadataStatuses(draftMetadataStatus),
       favoriteOnly: draftFavoriteOnly,
       flexibility: draftFlexibility,
     })
@@ -533,8 +622,8 @@ export default function SearchPage() {
       keywordGroups: preparedGroups,
       groupJoinOperator: draftGroupJoinOperator,
       selectedLibraryIds: normalizeSelectedIds(draftSelectedLibraryIds),
-      readingStage: draftReadingStage,
-      metadataStatus: draftMetadataStatus,
+      readingStage: normalizeSelectedReadingStages(draftReadingStage),
+      metadataStatus: normalizeSelectedMetadataStatuses(draftMetadataStatus),
       favoriteOnly: draftFavoriteOnly,
       flexibility: draftFlexibility,
     })
@@ -556,6 +645,14 @@ export default function SearchPage() {
     setDraftSelectedLibraryIds(normalizeSelectedIds(nextLibraryIds))
   }
 
+  const updateSelectedReadingStages = (nextReadingStages: ReadingStage[]) => {
+    setDraftReadingStage(normalizeSelectedReadingStages(nextReadingStages))
+  }
+
+  const updateSelectedMetadataStatuses = (nextMetadataStatuses: MetadataStatus[]) => {
+    setDraftMetadataStatus(normalizeSelectedMetadataStatuses(nextMetadataStatuses))
+  }
+
   const switchMode = (nextMode: 'simple' | 'complex') => {
     setQueryMode(nextMode)
     setDraftGroupJoinOperator('AND')
@@ -571,6 +668,27 @@ export default function SearchPage() {
     }
     setGroupInputs({})
   }
+
+  const libraryFilterOptions = useMemo(
+    () => libraries.map((library) => ({ value: library.id, label: library.name })),
+    [libraries],
+  )
+  const readingStageOptions = useMemo<MultiSelectOption[]>(
+    () => [
+      { value: 'unread', label: t('common.unread') },
+      { value: 'reading', label: t('common.reading') },
+      { value: 'finished', label: t('common.finished') },
+    ],
+    [t],
+  )
+  const metadataStatusOptions = useMemo<MultiSelectOption[]>(
+    () => [
+      { value: 'missing', label: t('common.missing') },
+      { value: 'partial', label: t('common.partial') },
+      { value: 'complete', label: t('common.complete') },
+    ],
+    [t],
+  )
 
   return (
     <div className="p-6">
@@ -756,79 +874,38 @@ export default function SearchPage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('searchPage.library')}</label>
-                <div className="space-y-2 rounded-xl bg-muted/55 p-3">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => updateSelectedLibraries(libraries.map((library) => library.id))}
-                    >
-                      Select all
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => updateSelectedLibraries([])}
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {libraries.map((library) => {
-                      const checked = draftSelectedLibraryIds.includes(library.id)
-                      return (
-                        <label
-                          key={library.id}
-                          className="flex items-center gap-3 rounded-lg bg-background/70 px-3 py-2 text-sm"
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(nextChecked) => {
-                              updateSelectedLibraries(
-                                nextChecked
-                                  ? [...draftSelectedLibraryIds, library.id]
-                                  : draftSelectedLibraryIds.filter((value) => value !== library.id),
-                              )
-                            }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{library.name}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
+                <MultiSelectDropdown
+                  label={t('searchPage.library')}
+                  options={libraryFilterOptions}
+                  selectedValues={draftSelectedLibraryIds}
+                  onChange={updateSelectedLibraries}
+                  allLabel={t('libraries.allLibraries')}
+                  t={t}
+                />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('searchPage.readingStage')}</label>
-                <Select value={draftReadingStage} onValueChange={(value) => setDraftReadingStage(value as 'all' | ReadingStage)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('searchPage.anyStage')}</SelectItem>
-                    <SelectItem value="unread">{t('common.unread')}</SelectItem>
-                    <SelectItem value="reading">{t('common.reading')}</SelectItem>
-                    <SelectItem value="finished">{t('common.finished')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <MultiSelectDropdown
+                  label={t('searchPage.readingStage')}
+                  options={readingStageOptions}
+                  selectedValues={draftReadingStage}
+                  onChange={(values) => updateSelectedReadingStages(values as ReadingStage[])}
+                  allLabel={t('searchPage.anyStage')}
+                  t={t}
+                />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t('searchPage.metadataQuality')}</label>
-                <Select value={draftMetadataStatus} onValueChange={(value) => setDraftMetadataStatus(value as 'all' | MetadataStatus)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('searchPage.anyStatus')}</SelectItem>
-                    <SelectItem value="missing">{t('common.missing')}</SelectItem>
-                    <SelectItem value="partial">{t('common.partial')}</SelectItem>
-                    <SelectItem value="complete">{t('common.complete')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <MultiSelectDropdown
+                  label={t('searchPage.metadataQuality')}
+                  options={metadataStatusOptions}
+                  selectedValues={draftMetadataStatus}
+                  onChange={(values) => updateSelectedMetadataStatuses(values as MetadataStatus[])}
+                  allLabel={t('searchPage.anyStatus')}
+                  t={t}
+                />
               </div>
 
               <Button

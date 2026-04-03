@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -13,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useT } from '@/lib/localization'
 import type {
@@ -30,8 +30,6 @@ type DocumentGraphControlsProps = {
   onSizeModeChange: (value: GraphSizeMode) => void
   neighborhoodDepth: GraphNeighborhoodDepth
   onNeighborhoodDepthChange: (value: GraphNeighborhoodDepth) => void
-  hideOrphans: boolean
-  onHideOrphansChange: (value: boolean) => void
   searchQuery: string
   onSearchQueryChange: (value: string) => void
   searchResults: Document[]
@@ -45,8 +43,6 @@ export function DocumentGraphControls({
   onSizeModeChange,
   neighborhoodDepth,
   onNeighborhoodDepthChange,
-  hideOrphans,
-  onHideOrphansChange,
   searchQuery,
   onSearchQueryChange,
   searchResults,
@@ -62,30 +58,47 @@ export function DocumentGraphControls({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             {t('mapsPage.filterLayout')}
           </p>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              id="graph-search"
-              value={searchQuery}
-              onChange={(event) => onSearchQueryChange(event.target.value)}
-              placeholder={t('mapsPage.searchTitlesInMap')}
-              className="bg-background/90 pl-9"
-            />
-          </div>
-          {searchResults.length > 0 ? (
-            <Select onValueChange={onJumpToDocument}>
-              <SelectTrigger className="h-9 bg-background/90">
-                <SelectValue placeholder={t('mapsPage.jumpToMatchingDocument')} />
-              </SelectTrigger>
-              <SelectContent>
-                {searchResults.slice(0, 12).map((document) => (
-                  <SelectItem key={document.id} value={document.id}>
-                    {document.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
+          <Popover open={searchQuery.trim().length > 0} modal={false}>
+            <PopoverTrigger asChild>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  id="graph-search"
+                  value={searchQuery}
+                  onChange={(event) => onSearchQueryChange(event.target.value)}
+                  placeholder={t('mapsPage.searchTitlesInMap')}
+                  className="bg-background/90 pl-9"
+                />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-[380px] p-0" align="start">
+              {searchResults.length > 0 ? (
+                <div className="max-h-56 overflow-y-auto">
+                  {searchResults.slice(0, 12).map((document) => (
+                    <button
+                      key={document.id}
+                      type="button"
+                      className="flex w-full items-start justify-between gap-3 border-b border-border/60 px-3 py-2 text-left transition last:border-b-0 hover:bg-accent hover:text-accent-foreground"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => onJumpToDocument(document.id)}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{document.title}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {document.authors.slice(0, 2).join(', ') || t('searchPage.unknownAuthor')}
+                          {document.year ? ` - ${document.year}` : ''}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-3 py-2 text-sm text-muted-foreground">
+                  {t('mapsPage.noMatchingDocument')}
+                </p>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="flex items-end justify-end lg:self-end">
           <Tooltip>
@@ -180,19 +193,6 @@ export function DocumentGraphControls({
                   </Select>
                 </div>
 
-                <div className="rounded-xl border border-border/70 bg-background/80 px-3 py-3">
-                  <Label className="flex items-center justify-between gap-3">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex cursor-help">{t('mapsPage.hideIsolated')}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" sideOffset={8}>
-                        {t('mapsPage.hideIsolatedDescription')}
-                      </TooltipContent>
-                    </Tooltip>
-                    <Switch checked={hideOrphans} onCheckedChange={onHideOrphansChange} />
-                  </Label>
-                </div>
               </div>
             </div>
           </div>

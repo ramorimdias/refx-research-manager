@@ -281,12 +281,12 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle>{t('home.quickActions')}</CardTitle>
           </CardHeader>
-          <CardContent className="grid max-w-2xl gap-3 sm:grid-cols-2">
+          <CardContent className="flex flex-wrap gap-3">
             {libraries.map((library) => (
               <button
                 key={library.id}
                 type="button"
-                className="flex min-h-[5.5rem] items-center justify-between rounded-2xl border border-transparent px-4 py-4 text-left text-white shadow-sm transition hover:opacity-95"
+                className="flex min-h-[5.5rem] w-full max-w-[18rem] items-center justify-between rounded-2xl border border-transparent px-4 py-4 text-left text-white shadow-sm transition hover:opacity-95"
                 style={{ backgroundColor: library.color }}
                 onClick={() => {
                   setActiveLibrary(library.id)
