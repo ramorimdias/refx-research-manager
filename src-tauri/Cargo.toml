@@ -1,6 +1,6 @@
 [package]
 name = "refx"
-version = "0.3.5"
+version = "0.3.6"
 description = "A research management desktop application"
 authors = ["Refx Team"]
 license = "MIT"
