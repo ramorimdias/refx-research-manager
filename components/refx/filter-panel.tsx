@@ -12,7 +12,9 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Separator } from '@/components/ui/separator'
-import { useAppStore } from '@/lib/store'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useUiStore } from '@/lib/stores/ui-store'
 import type { LibraryMetadataState, ReadingStage } from '@/lib/types'
 import { useT } from '@/lib/localization'
 
@@ -31,7 +33,10 @@ const metadataStatuses: { value: LibraryMetadataState; label: string }[] = [
 
 export function FilterPanel() {
   const t = useT()
-  const { documents, activeLibraryId, filters, setFilters } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const filters = useUiStore((state) => state.filters)
+  const setFilters = useUiStore((state) => state.setFilters)
   const [isOpen] = useState(true)
 
   const availableTags = useMemo(() => {

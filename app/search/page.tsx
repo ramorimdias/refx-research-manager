@@ -13,13 +13,16 @@ import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EmptyState, MetadataStatusBadge, ReadingStageBadge } from '@/components/refx/common'
-import { useAppStore } from '@/lib/store'
 import type { KeywordGroup, MetadataStatus, ReadingStage } from '@/lib/types'
 import { searchDocuments, type DocumentSearchPageHit, type DocumentSearchQuery, type SearchProgressUpdate } from '@/lib/services/document-search-service'
 import { useT } from '@/lib/localization'
+import type { Document } from '@/lib/types'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useUiStore } from '@/lib/stores/ui-store'
 
 type SearchResult = {
-  document: ReturnType<typeof useAppStore.getState>['documents'][number]
+  document: Document
   matchedQueryTerms: string[] 
   matchedTerms: string[]
   occurrenceCounts: Record<string, number>
@@ -204,7 +207,11 @@ export default function SearchPage() {
   const router = useRouter()
   const params = useSearchParams()
   const paramString = params.toString()
-  const { documents, libraries, setGlobalSearchQuery, persistentSearch, setPersistentSearch } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const setGlobalSearchQuery = useUiStore((state) => state.setGlobalSearchQuery)
+  const persistentSearch = useUiStore((state) => state.persistentSearch)
+  const setPersistentSearch = useUiStore((state) => state.setPersistentSearch)
   const initialGroups = useMemo(
     () => parseInitialGroups(new URLSearchParams(paramString)),
     [paramString],

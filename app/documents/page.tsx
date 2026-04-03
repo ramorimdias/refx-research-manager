@@ -65,7 +65,6 @@ import { detectAndStoreDocumentKeywords } from '@/lib/services/document-keyword-
 import { scanDocumentForDoiReferences } from '@/lib/services/document-doi-reference-service'
 import { hasUsableMetadataTitle } from '@/lib/services/document-metadata-service'
 import { loadPdfJsModule } from '@/lib/services/document-processing'
-import { useAppStore } from '@/lib/store'
 import { convertFileSrc, isTauri, open as openFileDialog, readFile } from '@/lib/tauri/client'
 import type { Document as RefxDocument, ReadingStage } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -73,6 +72,10 @@ import * as repo from '@/lib/repositories/local-db'
 import { normalizeErrorMessage } from '@/lib/utils/error'
 import { useT } from '@/lib/localization'
 import { DEFAULT_APP_SETTINGS, loadAppSettings, type StoredAppSettings } from '@/lib/app-settings'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useRelationActions, useRelationStore } from '@/lib/stores/relation-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 const readingStages: Array<{ value: ReadingStage; label: string }> = [
   { value: 'unread', label: 'Unread' },
@@ -358,11 +361,12 @@ export default function DocumentDetailPage() {
   const metadataMode = params.get('metadata')
   const autoSearchMetadata = params.get('autoSearchMetadata') === '1'
   const router = useRouter()
+  const t = useT()
+  const documents = useDocumentStore((state) => state.documents)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const relations = useRelationStore((state) => state.relations)
+  const { initialized, isDesktopApp, refreshData } = useRuntimeState()
   const {
-    documents,
-    libraries,
-    relations,
-    initialized,
     addDocumentTag,
     removeDocumentTag,
     acceptSuggestedTag,
@@ -370,12 +374,9 @@ export default function DocumentDetailPage() {
     updateDocument,
     applyFetchedMetadataCandidate,
     classifyDocuments,
-    createRelation,
-    deleteRelation,
     setActiveDocument,
-    isDesktopApp,
-    refreshData,
-  } = useAppStore()
+  } = useDocumentActions()
+  const { createRelation, deleteRelation } = useRelationActions()
 
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
   const documentById = useMemo(() => new Map(documents.map((entry) => [entry.id, entry])), [documents])
@@ -936,7 +937,7 @@ export default function DocumentDetailPage() {
     try {
       const result = await detectAndStoreDocumentKeywords(document.id, { forceAi: true })
       await refreshData()
-      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const refreshedDocument = useDocumentStore.getState().documents.find((entry) => entry.id === document.id)
       const nextSuggestedTagNames = (refreshedDocument?.suggestedTags ?? []).map((tag) => tag.name)
       setNewSuggestedTagNames(nextSuggestedTagNames.filter((tagName) => !previousNames.has(tagName)))
       previousSuggestedTagNamesRef.current = nextSuggestedTagNames
@@ -962,7 +963,7 @@ export default function DocumentDetailPage() {
     try {
       const result = await detectAndStoreDocumentKeywords(document.id, { forceLocal: true })
       await refreshData()
-      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const refreshedDocument = useDocumentStore.getState().documents.find((entry) => entry.id === document.id)
       const nextSuggestedTagNames = (refreshedDocument?.suggestedTags ?? []).map((tag) => tag.name)
       setNewSuggestedTagNames(nextSuggestedTagNames.filter((tagName) => !previousNames.has(tagName)))
       previousSuggestedTagNamesRef.current = nextSuggestedTagNames
@@ -985,7 +986,7 @@ export default function DocumentDetailPage() {
     setClassificationStatusMessage('')
     try {
       await classifyDocuments([document.id], classificationMode)
-      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const refreshedDocument = useDocumentStore.getState().documents.find((entry) => entry.id === document.id)
       if (!refreshedDocument) {
         setClassificationStatusMessage('Document classification finished.')
         return
@@ -1016,7 +1017,7 @@ export default function DocumentDetailPage() {
     try {
       const result = await detectAndStoreDocumentKeywords(document.id, { forceAi: true })
       await refreshData()
-      const refreshedDocument = useAppStore.getState().documents.find((entry) => entry.id === document.id)
+      const refreshedDocument = useDocumentStore.getState().documents.find((entry) => entry.id === document.id)
       if (!refreshedDocument) {
         setClassificationStatusMessage(t('documentDetailPage.aiClassificationFinished'))
         return

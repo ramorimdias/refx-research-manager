@@ -14,17 +14,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { useAppStore } from '@/lib/store'
 import * as repo from '@/lib/repositories/local-db'
 import { useT } from '@/lib/localization'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 type SortMode = 'timestamp' | 'page'
 
-type AppNote = ReturnType<typeof useAppStore.getState>['notes'][number]
+type AppNote = repo.DbNote
 
 export default function NotesPage() {
   const t = useT()
-  const { notes, documents, libraries, loadNotes, isDesktopApp, activeLibraryId } = useAppStore()
+  const { notes, loadNotes, isDesktopApp } = useRuntimeState()
+  const documents = useDocumentStore((state) => state.documents)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
   const [query, setQuery] = useState('')
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>('all')
   const [sortMode, setSortMode] = useState<SortMode>('timestamp')

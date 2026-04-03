@@ -24,7 +24,7 @@ import { convertFileSrc, isTauri } from '@/lib/tauri/client'
 import { cn } from '@/lib/utils'
 import type { Document, DocumentEphemeralUiFlags, ReadingStage } from '@/lib/types'
 import { NewBadge, ReadingStageBadge, StarRating } from './common'
-import { useAppStore } from '@/lib/store'
+import { useDocumentActions } from '@/lib/stores/document-store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
 
 interface DocumentCardProps {
@@ -73,7 +73,7 @@ function ReadingStageMenu({
 }
 
 export function DocumentCard({ document: doc, ephemeralFlags, variant = 'grid' }: DocumentCardProps) {
-  const { toggleFavorite, updateDocument } = useAppStore()
+  const { toggleFavorite, updateDocument } = useDocumentActions()
   const openHref = doc.documentType === 'my_work'
     ? `/documents?id=${doc.id}`
     : doc.documentType === 'physical_book'

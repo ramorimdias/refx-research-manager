@@ -467,7 +467,7 @@ export function coerceIncomingDocumentClassification(
           }
           return null
         })
-        .filter((entry): entry is SuggestedTag => !!entry?.name)
+        .filter((entry): entry is NonNullable<typeof entry> => !!entry?.name)
         .slice(0, 5)
     : []
 

@@ -3,16 +3,19 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, ChevronDown, Clock, FilePlus2, FolderPlus, Highlighter, Home, type LucideIcon, StickyNote } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ChevronDown, Clock, FilePlus2, FolderPlus, Highlighter, Home, LibraryBig, type LucideIcon, StickyNote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyState } from '@/components/refx/common'
-import { useAppStore } from '@/lib/store'
 import { loadAppSettings } from '@/lib/app-settings'
 import { useT } from '@/lib/localization'
+import type { Document } from '@/lib/types'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryActions, useLibraryStore } from '@/lib/stores/library-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
-function getDocumentHref(document: ReturnType<typeof useAppStore.getState>['documents'][number]) {
+function getDocumentHref(document: Document) {
   if (document.documentType === 'pdf') {
     const params = new URLSearchParams({ id: document.id })
     if (document.lastReadPage && document.lastReadPage > 0) {
@@ -98,7 +101,10 @@ function formatRelativeTime(date: Date, t: ReturnType<typeof useT>) {
 export default function HomePage() {
   const t = useT()
   const router = useRouter()
-  const { libraries, documents, notes, annotations, isDesktopApp, setActiveLibrary } = useAppStore()
+  const libraries = useLibraryStore((state) => state.libraries)
+  const documents = useDocumentStore((state) => state.documents)
+  const { notes, annotations, isDesktopApp } = useRuntimeState()
+  const { setActiveLibrary } = useLibraryActions()
   const [userName, setUserName] = useState('')
   const [greetingIndex, setGreetingIndex] = useState(0)
   const [expandedActivityIds, setExpandedActivityIds] = useState<string[]>([])
@@ -185,7 +191,7 @@ export default function HomePage() {
           category: 'annotation' as const,
         }
       })
-      .filter((activity): activity is DashboardActivity => Boolean(activity))
+      .filter((activity): activity is NonNullable<typeof activity> => Boolean(activity))
 
     const finishedActivities = documents
       .filter((document) => document.readingStage === 'finished')
@@ -270,33 +276,34 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('home.totalDocuments')}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-bold">{documents.length}</CardContent>
-        </Card>
+      <div>
         <Card>
           <CardHeader>
             <CardTitle>{t('home.quickActions')}</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
+          <CardContent className="grid max-w-2xl gap-3 sm:grid-cols-2">
             {libraries.map((library) => (
-              <Button
+              <button
                 key={library.id}
-                size="sm"
-                variant="outline"
-                className="border-transparent text-white shadow-none hover:opacity-90 hover:text-white"
+                type="button"
+                className="flex min-h-[5.5rem] items-center justify-between rounded-2xl border border-transparent px-4 py-4 text-left text-white shadow-sm transition hover:opacity-95"
                 style={{ backgroundColor: library.color }}
                 onClick={() => {
                   setActiveLibrary(library.id)
                   router.push('/libraries')
                 }}
               >
-                {library.name}
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/18 text-white">
+                    <LibraryBig className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{library.name}</p>
+                    <p className="text-xs text-white/80">{library.documentCount} {t('home.totalDocuments').toLowerCase()}</p>
+                  </div>
+                </div>
+                <ArrowRight className="ml-3 h-4 w-4 shrink-0" />
+              </button>
             ))}
           </CardContent>
         </Card>

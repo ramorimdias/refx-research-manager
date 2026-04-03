@@ -11,6 +11,7 @@ import { extractLocalPdfMetadata, mergeExtractedMetadataIntoDocument, type Local
 import { runDocumentOcr } from '@/lib/services/document-ocr-service'
 import { generateDocumentTagSuggestions } from '@/lib/services/document-tag-suggestion-service'
 import { extractDocumentText, indexDocument } from '@/lib/services/document-search-service'
+import { dbDocumentToUi } from '@/lib/utils/document-mapper'
 import type { Document, DocumentProcessingStage, DocumentProcessingStageState, SemanticClassificationMode } from '@/lib/types'
 import { normalizeErrorMessage } from '@/lib/utils/error'
 
@@ -78,68 +79,6 @@ export const DOCUMENT_INGESTION_STAGE_ORDER: DocumentProcessingStage[] = [
 function titleFromPath(filePath: string) {
   const name = filePath.split(/[\\/]/).pop() ?? 'Untitled'
   return name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim()
-}
-
-function toAppDocument(document: repo.DbDocument): Document {
-  const authors = (() => {
-    if (Array.isArray(document.authors)) return document.authors
-    if (typeof document.authors !== 'string') return []
-    try {
-      const parsed = JSON.parse(document.authors)
-      return Array.isArray(parsed) ? parsed : [document.authors]
-    } catch {
-      return document.authors ? [document.authors] : []
-    }
-  })()
-
-  return {
-    id: document.id,
-    libraryId: document.libraryId,
-    documentType: document.documentType === 'physical_book' ? 'physical_book' : 'pdf',
-    title: document.title,
-    authors,
-    year: document.year,
-    abstract: document.abstractText,
-    doi: document.doi,
-    isbn: document.isbn,
-    publisher: document.publisher,
-    citationKey: document.citationKey ?? '',
-    sourcePath: document.sourcePath,
-    importedFilePath: document.importedFilePath,
-    extractedTextPath: document.extractedTextPath,
-    filePath: document.importedFilePath ?? document.sourcePath,
-    searchText: document.searchText,
-    textHash: document.textHash,
-    textExtractedAt: document.textExtractedAt ? new Date(document.textExtractedAt) : undefined,
-    textExtractionStatus: document.textExtractionStatus ?? 'pending',
-    pageCount: document.pageCount,
-    hasExtractedText: document.hasExtractedText ?? Boolean(document.searchText || document.extractedTextPath),
-    hasOcrText: document.hasOcrText ?? false,
-    hasOcr: document.hasOcr ?? false,
-    ocrStatus: (document.ocrStatus ?? 'pending') as Document['ocrStatus'],
-    metadataStatus: (document.metadataStatus ?? 'missing') as Document['metadataStatus'],
-    indexingStatus: document.indexingStatus ?? 'pending',
-    tagSuggestionTextHash: document.tagSuggestionTextHash,
-    tagSuggestionStatus: document.tagSuggestionStatus ?? 'pending',
-    classificationTextHash: document.classificationTextHash,
-    classificationStatus: document.classificationStatus ?? 'pending',
-    processingError: document.processingError ?? undefined,
-    processingUpdatedAt: document.processingUpdatedAt ? new Date(document.processingUpdatedAt) : undefined,
-    lastProcessedAt: document.lastProcessedAt ? new Date(document.lastProcessedAt) : undefined,
-    readingStage: (document.readingStage ?? 'unread') as Document['readingStage'],
-    rating: document.rating ?? 0,
-    favorite: document.favorite ?? false,
-    tags: document.tags ?? [],
-    commentCount: 0,
-    notesCount: 0,
-    commentaryText: document.commentaryText,
-    commentaryUpdatedAt: document.commentaryUpdatedAt ? new Date(document.commentaryUpdatedAt) : undefined,
-    addedAt: document.createdAt ? new Date(document.createdAt) : new Date(),
-    lastOpenedAt: document.lastOpenedAt ? new Date(document.lastOpenedAt) : undefined,
-    lastReadPage: document.lastReadPage,
-    createdAt: document.createdAt ? new Date(document.createdAt) : new Date(),
-    updatedAt: document.updatedAt ? new Date(document.updatedAt) : new Date(),
-  }
 }
 
 function mergePipelineOptions(options?: DocumentIngestionOptions) {
@@ -531,7 +470,7 @@ async function runKeywordExtractionStage(
       return stageCompleted(stage, startedAt, 'Stored author-provided keywords from the first page.')
     }
 
-    if (result.source === 'keybert_local') {
+    if (result.source === 'local_heuristic') {
       return stageCompleted(stage, startedAt, 'Generated local keywords with the built-in extractor.')
     }
 
@@ -615,7 +554,7 @@ async function runCitationLinkingStage(
 
   try {
     await updateStageStart(context.documentId, stage)
-    const libraryDocuments = (await repo.listDocumentsByLibrary(document.libraryId)).map(toAppDocument)
+    const libraryDocuments = (await repo.listDocumentsByLibrary(document.libraryId)).map((entry) => dbDocumentToUi(entry))
     const sourceDocument = libraryDocuments.find((entry) => entry.id === context.documentId)
     if (!sourceDocument) {
       return stageSkipped(stage, 'Document is no longer available in the active library.')

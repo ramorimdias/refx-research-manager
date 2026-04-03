@@ -24,23 +24,24 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
-import { useAppStore } from '@/lib/store'
 import { useTheme } from 'next-themes'
 import { getBaseThemeMode, loadAppSettings, saveAppSettings, toggleStoredThemeVariant } from '@/lib/app-settings'
 import { useT } from '@/lib/localization'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryActions, useLibraryStore } from '@/lib/stores/library-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
+import { useUiStore } from '@/lib/stores/ui-store'
 
 export function CommandBar() {
   const t = useT()
   const router = useRouter()
-  const {
-    commandPaletteOpen,
-    toggleCommandPalette,
-    setActiveLibrary,
-    setActiveDocument,
-    libraries,
-    documents,
-    isDesktopApp,
-  } = useAppStore()
+  const commandPaletteOpen = useUiStore((state) => state.commandPaletteOpen)
+  const toggleCommandPalette = useUiStore((state) => state.toggleCommandPalette)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const documents = useDocumentStore((state) => state.documents)
+  const { setActiveLibrary } = useLibraryActions()
+  const { setActiveDocument } = useDocumentActions()
+  const { isDesktopApp } = useRuntimeState()
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 

@@ -450,10 +450,6 @@ export type DbUpsertGraphViewNodeLayoutInput = {
   hidden?: boolean
 }
 
-export async function initializeDatabase() {
-  return invoke<void>('initialize_database')
-}
-
 export async function listLibraries() {
   return invoke<DbLibrary[]>('list_libraries')
 }
@@ -615,10 +611,6 @@ export async function getUsageCounter(key: string) {
 
 export async function setUsageCounter(key: string, value: string) {
   return invoke<void>('set_usage_counter', { key, value })
-}
-
-export async function ensureKeybertServiceRunning() {
-  return invoke<void>('ensure_keybert_service_running')
 }
 
 export async function replaceDocumentDoiReferences(input: DbReplaceDocumentDoiReferencesInput) {

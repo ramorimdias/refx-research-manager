@@ -132,7 +132,6 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::get_default_gemini_api_key,
-            commands::ensure_keybert_service_running,
             commands::clear_local_data,
             backup::create_backup,
             backup::list_backups,

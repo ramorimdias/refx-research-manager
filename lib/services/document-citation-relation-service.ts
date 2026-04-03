@@ -2,7 +2,11 @@
 
 import * as repo from '@/lib/repositories/local-db'
 import type { Document, DocumentRelation, DocumentRelationStatus } from '@/lib/types'
-import { matchParsedReferenceToDocument, dedupeCitationMatches } from '@/lib/services/document-citation-matching-service'
+import {
+  buildLibraryIndex,
+  dedupeCitationMatches,
+  matchParsedReferenceToDocument,
+} from '@/lib/services/document-citation-matching-service'
 import { extractDocumentReferenceSection } from '@/lib/services/document-reference-extraction-service'
 import { parseDocumentReferences } from '@/lib/services/document-reference-parser-service'
 
@@ -74,8 +78,9 @@ async function createCitationRelationsForDocument(
   }
 
   const parsedReferences = parseDocumentReferences(referenceSection.entries, sourceDocument.id)
+  const libraryIndex = buildLibraryIndex(libraryDocuments)
   const rawMatches = parsedReferences
-    .map((reference) => matchParsedReferenceToDocument(sourceDocument, reference, libraryDocuments))
+    .map((reference) => matchParsedReferenceToDocument(sourceDocument, reference, libraryDocuments, libraryIndex))
     .filter((match): match is NonNullable<typeof match> => Boolean(match))
 
   const matches = dedupeCitationMatches(rawMatches)

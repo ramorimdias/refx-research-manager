@@ -26,10 +26,12 @@ import {
   loadOnlineMetadataEnrichmentSettings,
   type DocumentMetadataCandidate,
 } from '@/lib/services/document-enrichment-service'
-import { useAppStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/lib/types'
 import { useT } from '@/lib/localization'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 type MetadataQueueMode = 'fetch_possible' | 'missing'
 
@@ -72,14 +74,11 @@ function buildSavePayload(input: {
 
 export default function MetadataWorkspacePage() {
   const t = useT()
-  const {
-    libraries,
-    documents,
-    activeLibraryId,
-    updateDocument,
-    applyFetchedMetadataCandidate,
-    isDesktopApp,
-  } = useAppStore()
+  const libraries = useLibraryStore((state) => state.libraries)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const documents = useDocumentStore((state) => state.documents)
+  const { updateDocument, applyFetchedMetadataCandidate } = useDocumentActions()
+  const { isDesktopApp } = useRuntimeState()
 
   const [selectedLibraryId, setSelectedLibraryId] = useState('')
   const [mode, setMode] = useState<MetadataQueueMode>('fetch_possible')

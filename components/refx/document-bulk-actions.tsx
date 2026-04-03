@@ -29,7 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAppStore } from '@/lib/store'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
 
 interface DocumentBulkActionsProps {
   selectedDocumentIds: string[]
@@ -42,12 +43,9 @@ export function DocumentBulkActions({
   onClearSelection,
   children,
 }: DocumentBulkActionsProps) {
-  const {
-    documents,
-    libraries,
-    removeDocumentsFromLibrary,
-    moveDocumentsToLibrary,
-  } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const { removeDocumentsFromLibrary, moveDocumentsToLibrary } = useDocumentActions()
   const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false)
   const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false)
   const [moveTargetLibraryId, setMoveTargetLibraryId] = useState<string>('')

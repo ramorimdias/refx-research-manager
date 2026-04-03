@@ -18,7 +18,8 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/lib/store'
+import { useUiStore } from '@/lib/stores/ui-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -88,7 +89,11 @@ export function AppSidebar() {
   const t = useT()
   const pathname = usePathname()
   const router = useRouter()
-  const { sidebarCollapsed, toggleSidebar, activeLibraryId, setActiveLibrary, libraries } = useAppStore()
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const setActiveLibrary = useLibraryStore((state) => state.setActiveLibrary)
+  const libraries = useLibraryStore((state) => state.libraries)
 
   return (
     <TooltipProvider delayDuration={0}>

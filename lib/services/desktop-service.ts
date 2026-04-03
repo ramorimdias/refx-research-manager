@@ -18,7 +18,6 @@ export type ImportProgressUpdate = {
 }
 
 export async function bootstrapDesktop() {
-  await repo.initializeDatabase()
   const libraries = await repo.listLibraries()
   return libraries
 }

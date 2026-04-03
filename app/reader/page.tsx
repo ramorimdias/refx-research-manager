@@ -6,10 +6,11 @@ import { ArrowRight, BookOpen, Clock, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/refx/common'
-import { useAppStore } from '@/lib/store'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import type { Document } from '@/lib/types'
 import { useT } from '@/lib/localization'
 
-function buildReaderHref(document: ReturnType<typeof useAppStore.getState>['documents'][number]) {
+function buildReaderHref(document: Document) {
   const params = new URLSearchParams({ id: document.id })
   if (document.lastReadPage && document.lastReadPage > 0) {
     params.set('page', String(document.lastReadPage))
@@ -19,7 +20,7 @@ function buildReaderHref(document: ReturnType<typeof useAppStore.getState>['docu
 
 export default function ReaderIndexPage() {
   const t = useT()
-  const { documents } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
 
   const continueReading = useMemo(
     () =>

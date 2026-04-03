@@ -2,55 +2,72 @@
 
 import { create } from 'zustand'
 import { isTauri } from '@/lib/tauri/client'
-import { bootstrapDesktop, importPdfs, type ImportProgressUpdate } from '@/lib/services/desktop-service'
-import { deriveMetadataStatus, hasUsableMetadataTitle, markMetadataFieldProvenanceAsUser, markMetadataFieldsAsUserEdited, parseMetadataProvenance, parseMetadataUserEditedFields } from '@/lib/services/document-metadata-service'
-import { mergeExtractedMetadataIntoDocument, type LocalPdfMetadata } from '@/lib/services/document-metadata-service'
-import { normalizeReadingStage } from '@/lib/services/document-reading-stage'
-import { parseDocumentClassification } from '@/lib/services/document-classification-service'
+import { importPdfs, type ImportProgressUpdate } from '@/lib/services/desktop-service'
+import {
+  deriveMetadataStatus,
+  markMetadataFieldProvenanceAsUser,
+  markMetadataFieldsAsUserEdited,
+  mergeExtractedMetadataIntoDocument,
+  type LocalPdfMetadata,
+} from '@/lib/services/document-metadata-service'
 import { resumeDocumentIngestion } from '@/lib/services/document-ingestion-service'
 import {
   rebuildCitationRelationsForDocument,
   rebuildCitationRelationsForLibrary,
 } from '@/lib/services/document-citation-relation-service'
 import {
-  buildAcceptedSuggestionUpdates,
   buildManualTagUpdates,
   buildRejectedSuggestionUpdates,
-  getDocumentRejectedSuggestedTags,
-  getDocumentSuggestedTags,
   normalizeDocumentTagName,
   serializeRejectedSuggestedTags,
   serializeSuggestedTags,
 } from '@/lib/services/document-tag-suggestion-service'
-import { scoreDocumentMatch } from '@/lib/services/document-processing'
 import { clearDocumentSearchIndex, indexDocument, removeDocumentFromIndex } from '@/lib/services/document-search-service'
 import * as repo from '@/lib/repositories/local-db'
+import { useUiStore } from '@/lib/stores/ui-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useRelationStore } from '@/lib/stores/relation-store'
+import { useGraphStore } from '@/lib/stores/graph-store'
+import {
+  DEFAULT_LIBRARY_ID,
+  type AppAnnotation,
+  type AppNote,
+  fetchDesktopData,
+  getLibraryMetadataFilterState,
+  previewDocuments,
+  previewLibraries,
+  showStoreActionError,
+  toUiDocumentWithExistingCounts,
+  toUiRelation,
+  updateLocalDocument,
+} from '@/lib/stores/shared'
+import { dbDocumentToUi } from '@/lib/utils/document-mapper'
 import type {
   Document,
   DocumentRelation,
-  DocumentRelationStatus,
-  DocumentRelationLinkOrigin,
-  DocumentRelationLinkType,
-  CitationMatchMethod,
   GraphView,
   GraphViewNodeLayout,
   DocumentFilters,
   EditableMetadataField,
   DocumentSort,
   Library,
-  MetadataStatus,
-  LibraryMetadataState,
   PersistentSearchState,
-  ReadingStage,
   SemanticClassificationMode,
   ViewMode,
 } from './types'
 
-type AppNote = repo.DbNote
-type AppAnnotation = repo.DbAnnotation
-type AppRelation = DocumentRelation
-type AppGraphView = GraphView
-type AppGraphViewNodeLayout = GraphViewNodeLayout
+interface RuntimeStoreState {
+  initialized: boolean
+  isDesktopApp: boolean
+  annotations: AppAnnotation[]
+  notes: AppNote[]
+  setInitialized: (initialized: boolean) => void
+  setIsDesktopApp: (isDesktopApp: boolean) => void
+  setAnnotations: (annotations: AppAnnotation[]) => void
+  setNotes: (notes: AppNote[]) => void
+  resetRuntime: (isDesktopApp?: boolean) => void
+}
 
 interface AppState {
   initialized: boolean
@@ -59,9 +76,9 @@ interface AppState {
   documents: Document[]
   annotations: AppAnnotation[]
   notes: AppNote[]
-  relations: AppRelation[]
-  graphViews: AppGraphView[]
-  graphViewLayouts: AppGraphViewNodeLayout[]
+  relations: DocumentRelation[]
+  graphViews: GraphView[]
+  graphViewLayouts: GraphViewNodeLayout[]
   activeLibraryId: string | null
   activeDocumentId: string | null
   viewMode: ViewMode
@@ -91,9 +108,7 @@ interface AppState {
   toggleRightPanel: () => void
   toggleSidebar: () => void
   toggleCommandPalette: (force?: boolean) => void
-  loadLibraryDocuments: (_libraryId?: string | null) => Promise<void>
   importDocuments: (paths?: string[], onProgress?: (update: ImportProgressUpdate) => void) => Promise<number>
-  createLibrary: (input: { name: string; description?: string; color?: string }) => Promise<void>
   createDocumentRecord: (input: {
     libraryId: string
     title: string
@@ -104,86 +119,11 @@ interface AppState {
     doi?: string
     citationKey?: string
   }) => Promise<Document | null>
-  updateLibrary: (id: string, updates: { name?: string; description?: string; color?: string }) => Promise<void>
-  deleteLibrary: (id: string) => Promise<boolean>
   deleteDocument: (id: string) => Promise<boolean>
   removeDocumentsFromLibrary: (documentIds: string[]) => Promise<number>
   moveDocumentsToLibrary: (documentIds: string[], targetLibraryId: string) => Promise<number>
   loadNotes: () => Promise<void>
   loadRelations: (libraryId?: string | null) => Promise<void>
-  loadGraphViews: (libraryId?: string | null) => Promise<void>
-  loadGraphViewLayouts: (graphViewId: string | null) => Promise<void>
-  createGraphView: (input: {
-    libraryId: string
-    name: string
-    description?: string
-    relationFilter: GraphView['relationFilter']
-    colorMode: GraphView['colorMode']
-    sizeMode: GraphView['sizeMode']
-    scopeMode: GraphView['scopeMode']
-    neighborhoodDepth: GraphView['neighborhoodDepth']
-    focusMode: boolean
-    hideOrphans: boolean
-    confidenceThreshold: number
-    yearMin?: number
-    yearMax?: number
-    selectedDocumentId?: string
-    documentIds: string[]
-  }) => Promise<GraphView | null>
-  updateGraphView: (id: string, input: {
-    name?: string
-    description?: string
-    relationFilter?: GraphView['relationFilter']
-    colorMode?: GraphView['colorMode']
-    sizeMode?: GraphView['sizeMode']
-    scopeMode?: GraphView['scopeMode']
-    neighborhoodDepth?: GraphView['neighborhoodDepth']
-    focusMode?: boolean
-    hideOrphans?: boolean
-    confidenceThreshold?: number
-    yearMin?: number
-    yearMax?: number
-    selectedDocumentId?: string
-    documentIds?: string[]
-  }) => Promise<GraphView | null>
-  duplicateGraphView: (id: string) => Promise<GraphView | null>
-  deleteGraphView: (id: string) => Promise<boolean>
-  upsertGraphViewNodeLayout: (input: {
-    graphViewId: string
-    documentId: string
-    x: number
-    y: number
-    pinned?: boolean
-    hidden?: boolean
-  }) => Promise<GraphViewNodeLayout | null>
-  resetGraphViewNodeLayouts: (graphViewId: string, documentId?: string) => Promise<void>
-  createRelation: (input: {
-    sourceDocumentId: string
-    targetDocumentId: string
-    linkType?: DocumentRelationLinkType
-    linkOrigin?: DocumentRelationLinkOrigin
-    relationStatus?: DocumentRelationStatus
-    confidence?: number
-    label?: string
-    notes?: string
-    matchMethod?: CitationMatchMethod
-    rawReferenceText?: string
-    normalizedReferenceText?: string
-    normalizedTitle?: string
-    normalizedFirstAuthor?: string
-    referenceIndex?: number
-    parseConfidence?: number
-    parseWarnings?: string[]
-    matchDebugInfo?: string
-  }) => Promise<DocumentRelation | null>
-  updateRelation: (id: string, input: {
-    linkType?: DocumentRelationLinkType
-    relationStatus?: DocumentRelationStatus
-    confidence?: number
-    label?: string
-    notes?: string
-  }) => Promise<DocumentRelation | null>
-  deleteRelation: (id: string) => Promise<boolean>
   rebuildAutoCitationRelations: (libraryId?: string | null) => Promise<void>
   rebuildAutoCitationRelationsForDocument: (documentId: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
@@ -227,568 +167,213 @@ interface AppState {
   clearLocalData: () => Promise<void>
 }
 
-const DEFAULT_LIBRARY_ID = 'lib-default'
-
-function defaultLibrary(): Library {
-  const now = new Date()
-  return {
-    id: DEFAULT_LIBRARY_ID,
-    name: 'My Library',
-    description: 'Default local library',
-    color: '#3b82f6',
-    icon: 'folder',
-    type: 'local',
-    documentCount: 0,
-    createdAt: now,
-    updatedAt: now,
-  }
-}
-
-function toUiDocument(
-  d: repo.DbDocument,
-  counts?: {
-    commentCount?: number
-    notesCount?: number
-  },
-): Document {
-  const authorsParsed = (() => {
-    if (Array.isArray(d.authors)) return d.authors
-    if (typeof d.authors !== 'string') return []
-    try {
-      const parsed = JSON.parse(d.authors)
-      return Array.isArray(parsed) ? parsed : [d.authors]
-    } catch {
-      return d.authors ? [d.authors] : []
-    }
-  })()
-
-  return {
-    id: d.id,
-    libraryId: d.libraryId,
-    documentType: d.documentType === 'physical_book'
-      ? 'physical_book'
-      : d.documentType === 'my_work'
-        ? 'my_work'
-        : 'pdf',
-    title: d.title,
-    abstract: d.abstractText,
-    authors: authorsParsed,
-    year: d.year,
-    doi: d.doi,
-    isbn: d.isbn,
-    publisher: d.publisher,
-    citationKey: d.citationKey ?? '',
-    sourcePath: d.sourcePath,
-    importedFilePath: d.importedFilePath,
-    extractedTextPath: d.extractedTextPath,
-    filePath: d.importedFilePath ?? d.sourcePath,
-    searchText: d.searchText,
-    textHash: d.textHash,
-    textExtractedAt: d.textExtractedAt ? new Date(d.textExtractedAt) : undefined,
-    textExtractionStatus: d.textExtractionStatus ?? 'pending',
-    pageCount: d.pageCount,
-    hasExtractedText: d.hasExtractedText ?? Boolean(d.searchText || d.extractedTextPath),
-    hasOcrText: d.hasOcrText ?? false,
-    hasOcr: d.hasOcr ?? false,
-    ocrStatus: (d.ocrStatus ?? 'pending') as Document['ocrStatus'],
-    metadataStatus: (d.metadataStatus ?? 'missing') as MetadataStatus,
-    metadataProvenance: parseMetadataProvenance(d.metadataProvenance),
-    metadataUserEditedFields: parseMetadataUserEditedFields(d.metadataUserEditedFields),
-    indexingStatus: d.indexingStatus ?? 'pending',
-    suggestedTags: getDocumentSuggestedTags(d),
-    rejectedSuggestedTags: getDocumentRejectedSuggestedTags(d),
-    tagSuggestionTextHash: d.tagSuggestionTextHash,
-    tagSuggestionStatus: d.tagSuggestionStatus ?? 'pending',
-    classification: parseDocumentClassification(d),
-    classificationTextHash: d.classificationTextHash,
-    classificationStatus: d.classificationStatus ?? 'pending',
-    processingError: d.processingError ?? undefined,
-    processingUpdatedAt: d.processingUpdatedAt ? new Date(d.processingUpdatedAt) : undefined,
-    lastProcessedAt: d.lastProcessedAt ? new Date(d.lastProcessedAt) : undefined,
-    readingStage: normalizeReadingStage(d.readingStage),
-    rating: d.rating ?? 0,
-    favorite: d.favorite ?? false,
-    tags: d.tags ?? [],
-    commentCount: counts?.commentCount ?? 0,
-    notesCount: counts?.notesCount ?? 0,
-    commentaryText: d.commentaryText,
-    commentaryUpdatedAt: d.commentaryUpdatedAt ? new Date(d.commentaryUpdatedAt) : undefined,
-    coverImagePath: d.coverImagePath,
-    addedAt: d.createdAt ? new Date(d.createdAt) : new Date(),
-    createdAt: d.createdAt ? new Date(d.createdAt) : new Date(),
-    updatedAt: d.updatedAt ? new Date(d.updatedAt) : new Date(),
-    lastOpenedAt: d.lastOpenedAt ? new Date(d.lastOpenedAt) : undefined,
-    lastReadPage: d.lastReadPage,
-  }
-}
-
-function withDerivedCounts(documents: Document[], libraries: repo.DbLibrary[]): Library[] {
-  const counts = documents.reduce<Record<string, number>>((acc, document) => {
-    acc[document.libraryId] = (acc[document.libraryId] ?? 0) + 1
-    return acc
-  }, {})
-
-  const mapped = libraries.map((library) => ({
-    id: library.id,
-    name: library.name,
-    description: library.description,
-    color: library.color,
-    icon: 'folder',
-    type: 'local' as const,
-    documentCount: counts[library.id] ?? 0,
-    createdAt: new Date(library.createdAt),
-    updatedAt: new Date(library.updatedAt),
-  }))
-
-  return mapped.length > 0 ? mapped : [defaultLibrary()]
-}
-
-function previewState() {
-  return {
+const useRuntimeStore = create<RuntimeStoreState>((set) => ({
+  initialized: false,
+  isDesktopApp: false,
+  annotations: [],
+  notes: [],
+  setInitialized: (initialized) => set({ initialized }),
+  setIsDesktopApp: (isDesktopApp) => set({ isDesktopApp }),
+  setAnnotations: (annotations) => set({ annotations }),
+  setNotes: (notes) => set({ notes }),
+  resetRuntime: (isDesktopApp = false) => set({
     initialized: true,
-    isDesktopApp: false,
-    libraries: [defaultLibrary()],
-    documents: [] as Document[],
-    annotations: [] as AppAnnotation[],
-    notes: [] as AppNote[],
-    relations: [] as AppRelation[],
-    graphViews: [] as AppGraphView[],
-    graphViewLayouts: [] as AppGraphViewNodeLayout[],
+    isDesktopApp,
+    annotations: [],
+    notes: [],
+  }),
+}))
+
+function resetPreviewData(isDesktopApp = false) {
+  useLibraryStore.setState({
+    libraries: previewLibraries(),
     activeLibraryId: DEFAULT_LIBRARY_ID,
+  })
+  useDocumentStore.setState({
+    documents: previewDocuments(),
     activeDocumentId: null,
-  }
+  })
+  useRelationStore.setState({ relations: [] })
+  useGraphStore.setState({ graphViews: [], graphViewLayouts: [] })
+  useRuntimeStore.getState().resetRuntime(isDesktopApp)
 }
 
-function toUiRelation(relation: repo.DbDocumentRelation): DocumentRelation {
-  const parseWarnings = (() => {
-    if (!relation.parseWarnings) return undefined
-    try {
-      return JSON.parse(relation.parseWarnings) as string[]
-    } catch {
-      return undefined
-    }
-  })()
+function syncDesktopData(data: Awaited<ReturnType<typeof fetchDesktopData>>) {
+  const currentActiveLibraryId = useLibraryStore.getState().activeLibraryId
+  const nextActiveLibraryId = data.libraries.some((library) => library.id === currentActiveLibraryId)
+    ? currentActiveLibraryId
+    : data.libraries[0]?.id ?? null
+  const currentActiveDocumentId = useDocumentStore.getState().activeDocumentId
+  const nextActiveDocumentId = data.documents.some((document) => document.id === currentActiveDocumentId)
+    ? currentActiveDocumentId
+    : null
 
-  return {
-    id: relation.id,
-    sourceDocumentId: relation.sourceDocumentId,
-    targetDocumentId: relation.targetDocumentId,
-    linkType: relation.linkType as DocumentRelationLinkType,
-    linkOrigin: relation.linkOrigin as DocumentRelationLinkOrigin,
-    relationStatus: relation.relationStatus as DocumentRelationStatus | undefined,
-    confidence: relation.confidence,
-    label: relation.label,
-    notes: relation.notes,
-    matchMethod: relation.matchMethod as CitationMatchMethod | undefined,
-    rawReferenceText: relation.rawReferenceText,
-    normalizedReferenceText: relation.normalizedReferenceText,
-    normalizedTitle: relation.normalizedTitle,
-    normalizedFirstAuthor: relation.normalizedFirstAuthor,
-    referenceIndex: relation.referenceIndex,
-    parseConfidence: relation.parseConfidence,
-    parseWarnings,
-    matchDebugInfo: relation.matchDebugInfo,
-    createdAt: new Date(relation.createdAt),
-    updatedAt: new Date(relation.updatedAt),
-  }
-}
-
-function toUiGraphView(view: repo.DbGraphView): GraphView {
-  const documentIds = (() => {
-    if (!view.documentIdsJson) return []
-    try {
-      const parsed = JSON.parse(view.documentIdsJson)
-      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : []
-    } catch {
-      return []
-    }
-  })()
-
-  return {
-    id: view.id,
-    libraryId: view.libraryId,
-    name: view.name,
-    description: view.description,
-    relationFilter: view.relationFilter as GraphView['relationFilter'],
-    colorMode: view.colorMode as GraphView['colorMode'],
-    sizeMode: view.sizeMode as GraphView['sizeMode'],
-    scopeMode: view.scopeMode as GraphView['scopeMode'],
-    neighborhoodDepth: view.neighborhoodDepth as GraphView['neighborhoodDepth'],
-    focusMode: view.focusMode,
-    hideOrphans: view.hideOrphans,
-    confidenceThreshold: view.confidenceThreshold,
-    yearMin: view.yearMin,
-    yearMax: view.yearMax,
-    selectedDocumentId: view.selectedDocumentId,
-    documentIds,
-    createdAt: new Date(view.createdAt),
-    updatedAt: new Date(view.updatedAt),
-  }
-}
-
-function toUiGraphViewNodeLayout(layout: repo.DbGraphViewNodeLayout): GraphViewNodeLayout {
-  return {
-    graphViewId: layout.graphViewId,
-    documentId: layout.documentId,
-    x: layout.positionX,
-    y: layout.positionY,
-    pinned: layout.pinned,
-    hidden: layout.hidden,
-    updatedAt: new Date(layout.updatedAt),
-  }
-}
-
-async function fetchDesktopData() {
-  const libraries = await bootstrapDesktop()
-  const [documents, notes, annotations, relationGroups, graphViewGroups] = await Promise.all([
-    repo.listAllDocuments(),
-    repo.listNotes(),
-    repo.listAllAnnotations(),
-    Promise.all(
-      libraries.map((library) => repo.listRelationsForLibrary(library.id)),
-    ),
-    Promise.all(
-      libraries.map((library) => repo.listGraphViews(library.id)),
-    ),
-  ])
-  const noteCounts = notes.reduce<Record<string, number>>((acc, note) => {
-    if (note.documentId) {
-      acc[note.documentId] = (acc[note.documentId] ?? 0) + 1
-    }
-    return acc
-  }, {})
-  const commentCounts = annotations.reduce<Record<string, number>>((acc, annotation) => {
-    acc[annotation.documentId] = (acc[annotation.documentId] ?? 0) + 1
-    return acc
-  }, {})
-  const uiDocuments = documents.map((document) =>
-    toUiDocument(document, {
-      commentCount: commentCounts[document.id] ?? 0,
-      notesCount: noteCounts[document.id] ?? 0,
-    }),
-  )
-  return {
-    libraries: withDerivedCounts(uiDocuments, libraries),
-    documents: uiDocuments,
-    notes,
-    annotations,
-    relations: relationGroups.flat().map(toUiRelation),
-    graphViews: graphViewGroups.flat().map(toUiGraphView),
-  }
-}
-
-function toUiDocumentWithExistingCounts(d: repo.DbDocument, existing?: Document): Document {
-  return toUiDocument(d, {
-    commentCount: existing?.commentCount,
-    notesCount: existing?.notesCount,
+  useRuntimeStore.setState({
+    initialized: true,
+    isDesktopApp: true,
+    notes: data.notes,
+    annotations: data.annotations,
+  })
+  useLibraryStore.setState({
+    libraries: data.libraries,
+    activeLibraryId: nextActiveLibraryId,
+  })
+  useDocumentStore.setState({
+    documents: data.documents,
+    activeDocumentId: nextActiveDocumentId,
+  })
+  useRelationStore.setState({ relations: data.relations })
+  useGraphStore.setState({
+    graphViews: data.graphViews,
+    graphViewLayouts: [],
   })
 }
 
-function updateLocalDocument(documents: Document[], id: string, updates: Partial<Document>) {
-  return documents.map((document) =>
-    document.id === id
-      ? {
-          ...document,
-          ...updates,
-          updatedAt: updates.updatedAt ?? new Date(),
-        }
-      : document,
-  )
-}
+const appActions = {} as Pick<AppState,
+  | 'initialize'
+  | 'refreshData'
+  | 'setSidebarCollapsed'
+  | 'setActiveLibrary'
+  | 'setActiveDocument'
+  | 'setViewMode'
+  | 'setSort'
+  | 'setFilters'
+  | 'setGlobalSearchQuery'
+  | 'setPersistentSearch'
+  | 'setCurrentPage'
+  | 'setZoom'
+  | 'setAnnotationMode'
+  | 'toggleRightPanel'
+  | 'toggleSidebar'
+  | 'toggleCommandPalette'
+  | 'importDocuments'
+  | 'createDocumentRecord'
+  | 'deleteDocument'
+  | 'removeDocumentsFromLibrary'
+  | 'moveDocumentsToLibrary'
+  | 'loadNotes'
+  | 'loadRelations'
+  | 'rebuildAutoCitationRelations'
+  | 'rebuildAutoCitationRelationsForDocument'
+  | 'toggleFavorite'
+  | 'addDocumentTag'
+  | 'removeDocumentTag'
+  | 'acceptSuggestedTag'
+  | 'rejectSuggestedTag'
+  | 'updateDocument'
+  | 'fetchOnlineMetadataForDocument'
+  | 'applyFetchedMetadataCandidate'
+  | 'scanDocumentsOcr'
+  | 'classifyDocuments'
+  | 'refreshTagSuggestionsForDocuments'
+  | 'clearLocalData'
+>
 
-function compareValues(a: Document, b: Document, field: DocumentSort['field']) {
-  switch (field) {
-    case 'addedAt':
-      return a.addedAt.getTime() - b.addedAt.getTime()
-    case 'lastOpenedAt':
-      return (a.lastOpenedAt?.getTime() ?? 0) - (b.lastOpenedAt?.getTime() ?? 0)
-    case 'year':
-      return (a.year ?? 0) - (b.year ?? 0)
-    case 'rating':
-      return a.rating - b.rating
-    case 'authors':
-      return a.authors.join(', ').localeCompare(b.authors.join(', '))
-    case 'title':
-    default:
-      return a.title.localeCompare(b.title)
+appActions.initialize = async () => {
+  if (!isTauri()) {
+    resetPreviewData(false)
+    return
+  }
+
+  try {
+    syncDesktopData(await fetchDesktopData())
+  } catch (error) {
+    console.error('Desktop bootstrap failed; starting with a safe empty workspace.', error)
+    resetPreviewData(true)
   }
 }
 
-function getLibraryMetadataFilterState(document: Document): LibraryMetadataState {
-  const hasTitle = hasUsableMetadataTitle(document.title)
-  const hasAuthors = document.authors.length > 0
-  const hasYear = typeof document.year === 'number'
-  const hasDoi = (document.doi ?? '').trim().length > 0
-
-  if (hasTitle && hasAuthors && hasYear && hasDoi) return 'complete'
-  if (hasTitle && hasAuthors && hasYear && !hasDoi) return 'missing_doi'
-  if (hasDoi) return 'fetch_possible'
-  return 'missing'
-}
-
-function defaultPersistentSearch(): PersistentSearchState {
-  return {
-    query: '',
-    keywords: [],
-    keywordGroups: [],
-    groupJoinOperator: 'AND',
-    selectedLibraryIds: [],
-    readingStage: 'all',
-    metadataStatus: 'all',
-    favoriteOnly: false,
-    flexibility: 35,
+appActions.refreshData = async () => {
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    resetPreviewData(false)
+    return
   }
+
+  syncDesktopData(await fetchDesktopData())
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  initialized: false,
-  isDesktopApp: false,
-  libraries: [],
-  documents: [],
-  annotations: [],
-  notes: [],
-  relations: [],
-  graphViews: [],
-  graphViewLayouts: [],
-  activeLibraryId: null,
-  activeDocumentId: null,
-  viewMode: 'table',
-  sort: { field: 'addedAt', direction: 'desc' },
-  filters: {},
-  globalSearchQuery: '',
-  persistentSearch: defaultPersistentSearch(),
-  commandPaletteOpen: false,
-  sidebarCollapsed: true,
-  currentPage: 1,
-  zoom: 100,
-  annotationMode: null,
-  rightPanelOpen: true,
+appActions.setSidebarCollapsed = (collapsed) => useUiStore.getState().setSidebarCollapsed(collapsed)
+appActions.setActiveDocument = (id) => useDocumentStore.getState().setActiveDocument(id)
+appActions.setViewMode = (mode) => useUiStore.getState().setViewMode(mode)
+appActions.setSort = (sort) => useUiStore.getState().setSort(sort)
+appActions.setFilters = (filters) => useUiStore.getState().setFilters(filters)
+appActions.setGlobalSearchQuery = (query) => useUiStore.getState().setGlobalSearchQuery(query)
+appActions.setPersistentSearch = (search) => useUiStore.getState().setPersistentSearch(search)
+appActions.setCurrentPage = (page) => useUiStore.getState().setCurrentPage(page)
+appActions.setZoom = (zoom) => useUiStore.getState().setZoom(zoom)
+appActions.setAnnotationMode = (mode) => useUiStore.getState().setAnnotationMode(mode)
+appActions.toggleRightPanel = () => useUiStore.getState().toggleRightPanel()
+appActions.toggleSidebar = () => useUiStore.getState().toggleSidebar()
+appActions.toggleCommandPalette = (force) => useUiStore.getState().toggleCommandPalette(force)
 
-  initialize: async () => {
-    if (!isTauri()) {
-      set(previewState())
-      return
-    }
-
-    try {
-      const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
-      const currentActiveLibraryId = get().activeLibraryId
-      const activeLibraryId = libraries.some((library) => library.id === currentActiveLibraryId)
-        ? currentActiveLibraryId
-        : libraries[0]?.id ?? null
-
-      set({
-        initialized: true,
-        isDesktopApp: true,
-        libraries,
-        documents,
-        annotations,
-        notes,
-        relations,
-        graphViews,
-        graphViewLayouts: [],
-        activeLibraryId,
-        activeDocumentId: get().activeDocumentId,
-      })
-    } catch (error) {
-      console.error('Desktop bootstrap failed; starting with a safe empty workspace.', error)
-      set({
-        ...previewState(),
-        initialized: true,
-        isDesktopApp: true,
-      })
-    }
-  },
-
-  refreshData: async () => {
-    if (!get().isDesktopApp) {
-      set(previewState())
-      return
-    }
-
-    const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
-    const activeLibraryId = libraries.some((library) => library.id === get().activeLibraryId)
-      ? get().activeLibraryId
-      : libraries[0]?.id ?? null
-    const activeDocumentId = documents.some((document) => document.id === get().activeDocumentId)
-      ? get().activeDocumentId
-      : null
-
-    set({
-      libraries,
-      documents,
-      annotations,
-      notes,
-      relations,
-      graphViews,
-      activeLibraryId,
-      activeDocumentId,
-    })
-  },
-
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  setActiveLibrary: (id) => set({ activeLibraryId: id }),
-  setActiveDocument: (id) => set({ activeDocumentId: id }),
-  setViewMode: (mode) => set({ viewMode: mode }),
-  setSort: (sort) => set({ sort }),
-  setFilters: (filters) => set({ filters }),
-  setGlobalSearchQuery: (query) => set({ globalSearchQuery: query }),
-  setPersistentSearch: (search) =>
-    set((state) => ({
-      persistentSearch: {
-        ...state.persistentSearch,
-        ...search,
-      },
-    })),
-  setCurrentPage: (page) => set({ currentPage: page }),
-  setZoom: (zoom) => set({ zoom }),
-  setAnnotationMode: (mode) => set({ annotationMode: mode }),
-  toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  toggleCommandPalette: (force) =>
-    set((state) => ({
-      commandPaletteOpen: typeof force === 'boolean' ? force : !state.commandPaletteOpen,
-    })),
-
-  loadLibraryDocuments: async () => {
-    await get().refreshData()
-  },
-
-  importDocuments: async (paths, onProgress) => {
-    const { isDesktopApp, activeLibraryId, libraries } = get()
-    const targetLibraryId = activeLibraryId ?? libraries[0]?.id ?? null
-    if (!isDesktopApp || !targetLibraryId) return 0
+appActions.importDocuments = async (paths, onProgress) => {
+  try {
+    const runtime = useRuntimeStore.getState()
+    const library = useLibraryStore.getState()
+    const targetLibraryId = library.activeLibraryId ?? library.libraries[0]?.id ?? null
+    if (!runtime.isDesktopApp || !targetLibraryId) return 0
 
     const imported = await importPdfs(targetLibraryId, paths, async (update) => {
       onProgress?.(update)
       if (update.status === 'completed') {
-        await get().refreshData()
+        await appActions.refreshData()
       }
     })
-    await get().refreshData()
+    await appActions.refreshData()
     return imported.length
-  },
+  } catch (error) {
+    showStoreActionError('Could not import documents', error)
+    return 0
+  }
+}
 
-  createLibrary: async (input) => {
-    if (!get().isDesktopApp) {
-      const now = new Date()
-      const library: Library = {
-        id: `lib-${crypto.randomUUID?.() ?? Date.now()}`,
-        name: input.name,
-        description: input.description ?? '',
-        color: input.color ?? '#3b82f6',
-        icon: 'folder',
-        type: 'local',
-        documentCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      }
+appActions.createDocumentRecord = async (input) => {
+  if (!useRuntimeStore.getState().isDesktopApp) return null
 
-      set((state) => ({
-        libraries: [...state.libraries, library],
-        activeLibraryId: library.id,
-      }))
-      return
-    }
-
-    const created = await repo.createLibrary(input)
-    const { libraries, documents, notes, relations, graphViews } = await fetchDesktopData()
-    set({
-      libraries,
-      documents,
-      notes,
-      relations,
-      graphViews,
-      activeLibraryId: created.id,
-    })
-  },
-
-  createDocumentRecord: async (input) => {
-    if (!get().isDesktopApp) return null
-
-    const created = await repo.createDocument({
-      libraryId: input.libraryId,
-      documentType: input.documentType,
+  const created = await repo.createDocument({
+    libraryId: input.libraryId,
+    documentType: input.documentType,
+    title: input.title,
+    authors: JSON.stringify(input.authors ?? []),
+    year: input.year,
+    abstractText: input.abstract,
+    doi: input.doi,
+    citationKey: input.citationKey,
+    searchText: input.title,
+    textExtractionStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
+    indexingStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
+    tagSuggestionStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
+    classificationStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
+    ocrStatus: input.documentType === 'my_work' ? 'not_needed' : 'pending',
+    hasExtractedText: false,
+    hasOcr: false,
+    hasOcrText: false,
+    metadataStatus: deriveMetadataStatus({
       title: input.title,
-      authors: JSON.stringify(input.authors ?? []),
+      authors: input.authors ?? [],
       year: input.year,
-      abstractText: input.abstract,
       doi: input.doi,
-      citationKey: input.citationKey,
-      searchText: input.title,
-      textExtractionStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
-      indexingStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
-      tagSuggestionStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
-      classificationStatus: input.documentType === 'my_work' ? 'skipped' : 'pending',
-      ocrStatus: input.documentType === 'my_work' ? 'not_needed' : 'pending',
-      hasExtractedText: false,
-      hasOcr: false,
-      hasOcrText: false,
-      metadataStatus: deriveMetadataStatus({
-        title: input.title,
-        authors: input.authors ?? [],
-        year: input.year,
-        doi: input.doi,
-      }),
-    })
+    }),
+  })
 
-    const nextDocument = toUiDocument(created, { commentCount: 0, notesCount: 0 })
-    set((state) => ({
-      documents: [nextDocument, ...state.documents],
-      libraries: state.libraries.map((library) =>
-        library.id === nextDocument.libraryId
-          ? { ...library, documentCount: library.documentCount + 1 }
-          : library),
-    }))
+  const nextDocument = dbDocumentToUi(created, { commentCount: 0, notesCount: 0 })
+  useDocumentStore.setState((state) => ({
+    documents: [nextDocument, ...state.documents],
+  }))
+  useLibraryStore.setState((state) => ({
+    libraries: state.libraries.map((library) =>
+      library.id === nextDocument.libraryId
+        ? { ...library, documentCount: library.documentCount + 1 }
+        : library),
+  }))
 
-    return nextDocument
-  },
+  return nextDocument
+}
 
-  updateLibrary: async (id, updates) => {
-    if (!get().isDesktopApp) {
-      set((state) => ({
-        libraries: state.libraries.map((library) =>
-          library.id === id
-            ? {
-                ...library,
-                ...updates,
-                updatedAt: new Date(),
-              }
-            : library,
-        ),
-      }))
-      return
-    }
-
-    await repo.updateLibrary(id, updates)
-    await get().refreshData()
-  },
-
-  deleteLibrary: async (id) => {
-    if (!get().isDesktopApp) {
-      const remainingLibraries = get().libraries.filter((library) => library.id !== id)
-      if (remainingLibraries.length === 0) return false
-
-      set((state) => ({
-        libraries: remainingLibraries,
-        documents: state.documents.filter((document) => document.libraryId !== id),
-        activeLibraryId:
-          state.activeLibraryId === id ? remainingLibraries[0]?.id ?? null : state.activeLibraryId,
-      }))
-      return true
-    }
-
-    const libraryDocumentIds = get().documents.filter((document) => document.libraryId === id).map((document) => document.id)
-    const deleted = await repo.deleteLibrary(id)
-    if (!deleted) return false
-    await Promise.all(libraryDocumentIds.map((documentId) => removeDocumentFromIndex(documentId)))
-    await get().refreshData()
-    return true
-  },
-
-  deleteDocument: async (id) => {
-    if (!get().isDesktopApp) {
-      set((state) => ({
+appActions.deleteDocument = async (id) => {
+  try {
+    if (!useRuntimeStore.getState().isDesktopApp) {
+      useDocumentStore.setState((state) => ({
         documents: state.documents.filter((document) => document.id !== id),
         activeDocumentId: state.activeDocumentId === id ? null : state.activeDocumentId,
       }))
@@ -796,416 +381,190 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const deleted = await repo.deleteDocument(id)
-    if (!deleted) return false
+    if (!deleted) throw new Error('Document not found')
     await removeDocumentFromIndex(id)
-    await get().refreshData()
+    await appActions.refreshData()
     return true
-  },
+  } catch (error) {
+    showStoreActionError('Could not delete document', error)
+    return false
+  }
+}
 
-  removeDocumentsFromLibrary: async (documentIds) => {
-    const uniqueDocumentIds = Array.from(new Set(documentIds))
-    if (uniqueDocumentIds.length === 0) return 0
+appActions.removeDocumentsFromLibrary = async (documentIds) => {
+  const uniqueDocumentIds = Array.from(new Set(documentIds))
+  if (uniqueDocumentIds.length === 0) return 0
 
-    if (!get().isDesktopApp) {
-      set((state) => ({
-        documents: state.documents.filter((document) => !uniqueDocumentIds.includes(document.id)),
-        activeDocumentId: state.activeDocumentId && uniqueDocumentIds.includes(state.activeDocumentId)
-          ? null
-          : state.activeDocumentId,
-      }))
-      return uniqueDocumentIds.length
-    }
-
-    const removalResults = await Promise.all(
-      uniqueDocumentIds.map(async (documentId) => ({
-        documentId,
-        removed: await repo.deleteDocument(documentId),
-      })),
-    )
-    const removedIds = removalResults
-      .filter((result) => result.removed)
-      .map((result) => result.documentId)
-
-    if (removedIds.length === 0) return 0
-
-    await Promise.all(removedIds.map((documentId) => removeDocumentFromIndex(documentId)))
-    await get().refreshData()
-    return removedIds.length
-  },
-
-  moveDocumentsToLibrary: async (documentIds, targetLibraryId) => {
-    const uniqueDocumentIds = Array.from(new Set(documentIds))
-    if (uniqueDocumentIds.length === 0 || !targetLibraryId) return 0
-
-    const existingDocuments = get().documents.filter((document) => uniqueDocumentIds.includes(document.id))
-    if (existingDocuments.length === 0) return 0
-
-    const movableDocumentIds = existingDocuments
-      .filter((document) => document.libraryId !== targetLibraryId)
-      .map((document) => document.id)
-
-    if (movableDocumentIds.length === 0) return 0
-
-    if (!get().isDesktopApp) {
-      set((state) => ({
-        documents: state.documents.map((document) =>
-          movableDocumentIds.includes(document.id)
-            ? { ...document, libraryId: targetLibraryId, updatedAt: new Date() }
-            : document,
-        ),
-      }))
-      return movableDocumentIds.length
-    }
-
-    const movedDocuments = await repo.moveDocumentsToLibrary(movableDocumentIds, targetLibraryId)
-    if (movedDocuments.length === 0) return 0
-
-    await get().refreshData()
-    return movedDocuments.length
-  },
-
-  loadNotes: async () => {
-    if (!get().isDesktopApp) {
-      set({ notes: [] })
-      return
-    }
-
-    const notes = await repo.listNotes()
-    const noteCounts = notes.reduce<Record<string, number>>((acc, note) => {
-      if (note.documentId) {
-        acc[note.documentId] = (acc[note.documentId] ?? 0) + 1
-      }
-      return acc
-    }, {})
-
-    set((state) => ({
-      notes,
-      documents: state.documents.map((document) => ({
-        ...document,
-        notesCount: noteCounts[document.id] ?? 0,
-      })),
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    useDocumentStore.setState((state) => ({
+      documents: state.documents.filter((document) => !uniqueDocumentIds.includes(document.id)),
+      activeDocumentId: state.activeDocumentId && uniqueDocumentIds.includes(state.activeDocumentId)
+        ? null
+        : state.activeDocumentId,
     }))
-  },
+    return uniqueDocumentIds.length
+  }
 
-  loadRelations: async (libraryId) => {
-    if (!get().isDesktopApp) {
-      set({ relations: [] })
-      return
+  const removalResults = await Promise.all(
+    uniqueDocumentIds.map(async (documentId) => ({
+      documentId,
+      removed: await repo.deleteDocument(documentId),
+    })),
+  )
+  const removedIds = removalResults.filter((result) => result.removed).map((result) => result.documentId)
+  if (removedIds.length === 0) return 0
+  await Promise.all(removedIds.map((documentId) => removeDocumentFromIndex(documentId)))
+  await appActions.refreshData()
+  return removedIds.length
+}
+
+appActions.moveDocumentsToLibrary = async (documentIds, targetLibraryId) => {
+  const uniqueDocumentIds = Array.from(new Set(documentIds))
+  if (uniqueDocumentIds.length === 0 || !targetLibraryId) return 0
+
+  const existingDocuments = useDocumentStore.getState().documents.filter((document) => uniqueDocumentIds.includes(document.id))
+  if (existingDocuments.length === 0) return 0
+
+  const movableDocumentIds = existingDocuments
+    .filter((document) => document.libraryId !== targetLibraryId)
+    .map((document) => document.id)
+  if (movableDocumentIds.length === 0) return 0
+
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    useDocumentStore.setState((state) => ({
+      documents: state.documents.map((document) =>
+        movableDocumentIds.includes(document.id)
+          ? { ...document, libraryId: targetLibraryId, updatedAt: new Date() }
+          : document),
+    }))
+    return movableDocumentIds.length
+  }
+
+  const movedDocuments = await repo.moveDocumentsToLibrary(movableDocumentIds, targetLibraryId)
+  if (movedDocuments.length === 0) return 0
+  await appActions.refreshData()
+  return movedDocuments.length
+}
+
+appActions.loadNotes = async () => {
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    useRuntimeStore.setState({ notes: [] })
+    return
+  }
+
+  const notes = await repo.listNotes()
+  const noteCounts = notes.reduce<Record<string, number>>((acc, note) => {
+    if (note.documentId) {
+      acc[note.documentId] = (acc[note.documentId] ?? 0) + 1
     }
+    return acc
+  }, {})
 
-    const targetLibraryId = libraryId ?? get().activeLibraryId
-    if (!targetLibraryId) {
-      set({ relations: [] })
-      return
-    }
+  useRuntimeStore.setState({ notes })
+  useDocumentStore.setState((state) => ({
+    documents: state.documents.map((document) => ({
+      ...document,
+      notesCount: noteCounts[document.id] ?? 0,
+    })),
+  }))
+}
 
-    const relationRows = await repo.listRelationsForLibrary(targetLibraryId)
-    const targetDocumentIds = new Set(
-      get().documents
-        .filter((document) => document.libraryId === targetLibraryId)
-        .map((document) => document.id),
-    )
+appActions.loadRelations = async (libraryId) => {
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    useRelationStore.setState({ relations: [] })
+    return
+  }
 
-    set((state) => ({
-      relations: [
-        ...state.relations.filter(
-          (relation) =>
-            !targetDocumentIds.has(relation.sourceDocumentId)
-            && !targetDocumentIds.has(relation.targetDocumentId),
-        ),
-        ...relationRows.map(toUiRelation),
-      ],
-    }))
-  },
+  const targetLibraryId = libraryId ?? useLibraryStore.getState().activeLibraryId
+  if (!targetLibraryId) {
+    useRelationStore.setState({ relations: [] })
+    return
+  }
 
-  loadGraphViews: async (libraryId) => {
-    if (!get().isDesktopApp) {
-      set({ graphViews: [] })
-      return
-    }
+  const relationRows = await repo.listRelationsForLibrary(targetLibraryId)
+  const targetDocumentIds = new Set(
+    useDocumentStore.getState().documents
+      .filter((document) => document.libraryId === targetLibraryId)
+      .map((document) => document.id),
+  )
 
-    const targetLibraryId = libraryId ?? get().activeLibraryId
-    if (!targetLibraryId) {
-      set({ graphViews: [] })
-      return
-    }
-
-    const viewRows = await repo.listGraphViews(targetLibraryId)
-    set((state) => ({
-      graphViews: [
-        ...state.graphViews.filter((view) => view.libraryId !== targetLibraryId),
-        ...viewRows.map(toUiGraphView),
-      ],
-    }))
-  },
-
-  loadGraphViewLayouts: async (graphViewId) => {
-    if (!get().isDesktopApp || !graphViewId) {
-      set({ graphViewLayouts: [] })
-      return
-    }
-
-    const layoutRows = await repo.listGraphViewNodeLayouts(graphViewId)
-    set({
-      graphViewLayouts: layoutRows.map(toUiGraphViewNodeLayout),
-    })
-  },
-
-  createGraphView: async (input) => {
-    if (!get().isDesktopApp) return null
-
-    const created = await repo.createGraphView({
-      libraryId: input.libraryId,
-      name: input.name,
-      description: input.description,
-      relationFilter: input.relationFilter,
-      colorMode: input.colorMode,
-      sizeMode: input.sizeMode,
-      scopeMode: input.scopeMode,
-      neighborhoodDepth: input.neighborhoodDepth,
-      focusMode: input.focusMode,
-      hideOrphans: input.hideOrphans,
-      confidenceThreshold: input.confidenceThreshold,
-      yearMin: input.yearMin,
-      yearMax: input.yearMax,
-      selectedDocumentId: input.selectedDocumentId,
-      documentIdsJson: JSON.stringify(input.documentIds),
-    })
-
-    const nextView = toUiGraphView(created)
-    set((state) => ({
-      graphViews: [...state.graphViews.filter((view) => view.id !== nextView.id), nextView],
-    }))
-    return nextView
-  },
-
-  updateGraphView: async (id, input) => {
-    if (!get().isDesktopApp) return null
-
-    const updated = await repo.updateGraphView(id, {
-      name: input.name,
-      description: input.description,
-      relationFilter: input.relationFilter,
-      colorMode: input.colorMode,
-      sizeMode: input.sizeMode,
-      scopeMode: input.scopeMode,
-      neighborhoodDepth: input.neighborhoodDepth,
-      focusMode: input.focusMode,
-      hideOrphans: input.hideOrphans,
-      confidenceThreshold: input.confidenceThreshold,
-      yearMin: input.yearMin,
-      yearMax: input.yearMax,
-      selectedDocumentId: input.selectedDocumentId,
-      documentIdsJson: input.documentIds ? JSON.stringify(input.documentIds) : undefined,
-    })
-
-    if (!updated) return null
-
-    const nextView = toUiGraphView(updated)
-    set((state) => ({
-      graphViews: state.graphViews.map((view) => (view.id === id ? nextView : view)),
-    }))
-    return nextView
-  },
-
-  duplicateGraphView: async (id) => {
-    if (!get().isDesktopApp) return null
-
-    const duplicated = await repo.duplicateGraphView(id)
-    const nextView = toUiGraphView(duplicated)
-    set((state) => ({
-      graphViews: [...state.graphViews, nextView],
-    }))
-    return nextView
-  },
-
-  deleteGraphView: async (id) => {
-    if (!get().isDesktopApp) return false
-
-    const deleted = await repo.deleteGraphView(id)
-    if (!deleted) return false
-
-    set((state) => ({
-      graphViews: state.graphViews.filter((view) => view.id !== id),
-      graphViewLayouts: state.graphViewLayouts.filter((layout) => layout.graphViewId !== id),
-    }))
-    return true
-  },
-
-  upsertGraphViewNodeLayout: async (input) => {
-    if (!get().isDesktopApp) return null
-
-    const updated = await repo.upsertGraphViewNodeLayout({
-      graphViewId: input.graphViewId,
-      documentId: input.documentId,
-      positionX: input.x,
-      positionY: input.y,
-      pinned: input.pinned,
-      hidden: input.hidden,
-    })
-
-    const nextLayout = toUiGraphViewNodeLayout(updated)
-    set((state) => ({
-      graphViewLayouts: [
-        ...state.graphViewLayouts.filter(
-          (layout) =>
-            !(layout.graphViewId === nextLayout.graphViewId && layout.documentId === nextLayout.documentId),
-        ),
-        nextLayout,
-      ],
-    }))
-    return nextLayout
-  },
-
-  resetGraphViewNodeLayouts: async (graphViewId, documentId) => {
-    if (!get().isDesktopApp) return
-
-    await repo.resetGraphViewNodeLayouts(graphViewId, documentId)
-    if (!documentId) {
-      set((state) => ({
-        graphViewLayouts: state.graphViewLayouts.filter((layout) => layout.graphViewId !== graphViewId),
-      }))
-      return
-    }
-
-    set((state) => ({
-      graphViewLayouts: state.graphViewLayouts.filter(
-        (layout) => !(layout.graphViewId === graphViewId && layout.documentId === documentId),
+  useRelationStore.setState((state) => ({
+    relations: [
+      ...state.relations.filter(
+        (relation) =>
+          !targetDocumentIds.has(relation.sourceDocumentId)
+          && !targetDocumentIds.has(relation.targetDocumentId),
       ),
-    }))
-  },
+      ...relationRows.map(toUiRelation),
+    ],
+  }))
+}
 
-  createRelation: async (input) => {
-    if (!get().isDesktopApp) return null
+appActions.rebuildAutoCitationRelations = async (libraryId) => {
+  try {
+    if (!useRuntimeStore.getState().isDesktopApp) return
 
-    const created = await repo.createRelation({
-      sourceDocumentId: input.sourceDocumentId,
-      targetDocumentId: input.targetDocumentId,
-      linkType: input.linkType ?? 'manual',
-      linkOrigin: input.linkOrigin ?? 'user',
-      relationStatus: input.relationStatus,
-      confidence: input.confidence,
-      label: input.label,
-      notes: input.notes,
-      matchMethod: input.matchMethod,
-      rawReferenceText: input.rawReferenceText,
-      normalizedReferenceText: input.normalizedReferenceText,
-      normalizedTitle: input.normalizedTitle,
-      normalizedFirstAuthor: input.normalizedFirstAuthor,
-      referenceIndex: input.referenceIndex,
-      parseConfidence: input.parseConfidence,
-      parseWarnings: input.parseWarnings ? JSON.stringify(input.parseWarnings) : undefined,
-      matchDebugInfo: input.matchDebugInfo,
-    })
-    const nextRelation = toUiRelation(created)
-
-    set((state) => ({
-      relations: [
-        ...state.relations.filter((relation) => relation.id !== nextRelation.id),
-        nextRelation,
-      ],
-    }))
-
-    return nextRelation
-  },
-
-  updateRelation: async (id, input) => {
-    if (!get().isDesktopApp) return null
-
-    const updated = await repo.updateRelation(id, {
-      linkType: input.linkType,
-      relationStatus: input.relationStatus,
-      confidence: input.confidence,
-      label: input.label,
-      notes: input.notes,
-    })
-
-    if (!updated) return null
-
-    const nextRelation = toUiRelation(updated)
-    set((state) => ({
-      relations: state.relations.map((relation) => (relation.id === id ? nextRelation : relation)),
-    }))
-
-    return nextRelation
-  },
-
-  deleteRelation: async (id) => {
-    if (!get().isDesktopApp) {
-      set((state) => ({
-        relations: state.relations.filter((relation) => relation.id !== id),
-      }))
-      return true
-    }
-
-    const deleted = await repo.deleteRelation(id)
-    if (!deleted) return false
-
-    set((state) => ({
-      relations: state.relations.filter((relation) => relation.id !== id),
-    }))
-    return true
-  },
-
-  rebuildAutoCitationRelations: async (libraryId) => {
-    if (!get().isDesktopApp) return
-
-    const targetLibraryId = libraryId ?? get().activeLibraryId
+    const targetLibraryId = libraryId ?? useLibraryStore.getState().activeLibraryId
     if (!targetLibraryId) return
 
-    const libraryDocuments = get().documents.filter((document) => document.libraryId === targetLibraryId)
+    const libraryDocuments = useDocumentStore.getState().documents.filter((document) => document.libraryId === targetLibraryId)
     await rebuildCitationRelationsForLibrary(targetLibraryId, libraryDocuments)
-    await get().loadRelations(targetLibraryId)
-  },
+    await appActions.loadRelations(targetLibraryId)
+  } catch (error) {
+    showStoreActionError('Could not rebuild citation links', error)
+  }
+}
 
-  rebuildAutoCitationRelationsForDocument: async (documentId) => {
-    if (!get().isDesktopApp) return
+appActions.rebuildAutoCitationRelationsForDocument = async (documentId) => {
+  if (!useRuntimeStore.getState().isDesktopApp) return
 
-    const sourceDocument = get().documents.find((document) => document.id === documentId)
-    if (!sourceDocument) return
+  const sourceDocument = useDocumentStore.getState().documents.find((document) => document.id === documentId)
+  if (!sourceDocument) return
 
-    const libraryDocuments = get().documents.filter(
-      (document) => document.libraryId === sourceDocument.libraryId,
-    )
+  const libraryDocuments = useDocumentStore.getState().documents.filter(
+    (document) => document.libraryId === sourceDocument.libraryId,
+  )
+  await rebuildCitationRelationsForDocument(sourceDocument, libraryDocuments)
+  await appActions.loadRelations(sourceDocument.libraryId)
+}
 
-    await rebuildCitationRelationsForDocument(sourceDocument, libraryDocuments)
-    await get().loadRelations(sourceDocument.libraryId)
-  },
-
-  toggleFavorite: async (id) => {
-    const current = get().documents.find((document) => document.id === id)
+appActions.toggleFavorite = async (id) => {
+  try {
+    const current = useDocumentStore.getState().documents.find((document) => document.id === id)
     if (!current) return
-    await get().updateDocument(id, { favorite: !current.favorite })
-  },
+    await appActions.updateDocument(id, { favorite: !current.favorite })
+  } catch (error) {
+    showStoreActionError('Could not update favorite', error)
+  }
+}
 
-  addDocumentTag: async (id, tagName) => {
-    const document = get().documents.find((entry) => entry.id === id)
-    if (!document) return
+appActions.addDocumentTag = async (id, tagName) => {
+  const document = useDocumentStore.getState().documents.find((entry) => entry.id === id)
+  if (!document) return
+  const normalizedTag = normalizeDocumentTagName(tagName)
+  if (!normalizedTag) return
 
-    const normalizedTag = normalizeDocumentTagName(tagName)
-    if (!normalizedTag) return
+  const nextTags = Array.from(new Set([...document.tags, normalizedTag])).sort((left, right) => left.localeCompare(right))
+  const nextSuggestionState = buildManualTagUpdates(document, normalizedTag)
 
-    const nextTags = Array.from(new Set([...document.tags, normalizedTag])).sort((left, right) => left.localeCompare(right))
-    const nextSuggestionState = buildManualTagUpdates(document, normalizedTag)
+  useDocumentStore.setState((state) => ({
+    documents: updateLocalDocument(state.documents, id, {
+      rejectedSuggestedTags: nextSuggestionState.rejectedSuggestedTags,
+      suggestedTags: nextSuggestionState.suggestedTags,
+      tags: nextTags,
+    }),
+  }))
 
-    set((state) => ({
-      documents: updateLocalDocument(state.documents, id, {
-        rejectedSuggestedTags: nextSuggestionState.rejectedSuggestedTags,
-        suggestedTags: nextSuggestionState.suggestedTags,
-        tags: nextTags,
-      }),
-    }))
-
-    if (!get().isDesktopApp) return
+  try {
+    if (!useRuntimeStore.getState().isDesktopApp) return
 
     await repo.addTagToDocument(id, normalizedTag)
     const saved = await repo.updateDocumentMetadata(id, {
       rejectedTagSuggestions: serializeRejectedSuggestedTags(nextSuggestionState.rejectedSuggestedTags),
       tagSuggestions: serializeSuggestedTags(nextSuggestionState.suggestedTags),
     })
-
     if (saved) {
-      set((state) => ({
+      useDocumentStore.setState((state) => ({
         documents: updateLocalDocument(
           state.documents,
           id,
@@ -1213,27 +572,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }))
     }
-  },
-
-  removeDocumentTag: async (id, tagName) => {
-    const document = get().documents.find((entry) => entry.id === id)
-    if (!document) return
-
-    const normalizedTag = normalizeDocumentTagName(tagName)
-    if (!normalizedTag) return
-
-    set((state) => ({
-      documents: updateLocalDocument(state.documents, id, {
-        tags: document.tags.filter((entry) => entry !== normalizedTag),
-      }),
+  } catch (error) {
+    useDocumentStore.setState((state) => ({
+      documents: updateLocalDocument(state.documents, id, document),
     }))
+    showStoreActionError('Could not add tag', error)
+  }
+}
 
-    if (!get().isDesktopApp) return
+appActions.removeDocumentTag = async (id, tagName) => {
+  const document = useDocumentStore.getState().documents.find((entry) => entry.id === id)
+  if (!document) return
+  const normalizedTag = normalizeDocumentTagName(tagName)
+  if (!normalizedTag) return
+
+  useDocumentStore.setState((state) => ({
+    documents: updateLocalDocument(state.documents, id, {
+      tags: document.tags.filter((entry) => entry !== normalizedTag),
+    }),
+  }))
+
+  try {
+    if (!useRuntimeStore.getState().isDesktopApp) return
 
     await repo.removeTagFromDocument(id, normalizedTag)
     const saved = await repo.getDocumentById(id)
     if (saved) {
-      set((state) => ({
+      useDocumentStore.setState((state) => ({
         documents: updateLocalDocument(
           state.documents,
           id,
@@ -1241,98 +606,104 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }))
     }
-  },
-
-  acceptSuggestedTag: async (id, tagName) => {
-    await get().addDocumentTag(id, tagName)
-  },
-
-  rejectSuggestedTag: async (id, tagName) => {
-    const document = get().documents.find((entry) => entry.id === id)
-    if (!document) return
-
-    const normalizedTag = normalizeDocumentTagName(tagName)
-    if (!normalizedTag) return
-
-    const nextSuggestionState = buildRejectedSuggestionUpdates(document, normalizedTag)
-
-    set((state) => ({
-      documents: updateLocalDocument(state.documents, id, {
-        rejectedSuggestedTags: nextSuggestionState.rejectedSuggestedTags,
-        suggestedTags: nextSuggestionState.suggestedTags,
-      }),
+  } catch (error) {
+    useDocumentStore.setState((state) => ({
+      documents: updateLocalDocument(state.documents, id, document),
     }))
+    showStoreActionError('Could not remove tag', error)
+  }
+}
 
-    if (!get().isDesktopApp) return
+appActions.acceptSuggestedTag = async (id, tagName) => {
+  await appActions.addDocumentTag(id, tagName)
+}
 
-    const saved = await repo.updateDocumentMetadata(id, {
-      rejectedTagSuggestions: serializeRejectedSuggestedTags(nextSuggestionState.rejectedSuggestedTags),
-      tagSuggestions: serializeSuggestedTags(nextSuggestionState.suggestedTags),
-    })
+appActions.rejectSuggestedTag = async (id, tagName) => {
+  const document = useDocumentStore.getState().documents.find((entry) => entry.id === id)
+  if (!document) return
+  const normalizedTag = normalizeDocumentTagName(tagName)
+  if (!normalizedTag) return
 
-    if (saved) {
-      set((state) => ({
-        documents: updateLocalDocument(
-          state.documents,
-          id,
-          toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === id)),
-        ),
-      }))
-    }
-  },
+  const nextSuggestionState = buildRejectedSuggestionUpdates(document, normalizedTag)
 
-  updateDocument: async (id, updates) => {
-    const existing = get().documents.find((document) => document.id === id)
-    if (!existing) return
+  useDocumentStore.setState((state) => ({
+    documents: updateLocalDocument(state.documents, id, {
+      rejectedSuggestedTags: nextSuggestionState.rejectedSuggestedTags,
+      suggestedTags: nextSuggestionState.suggestedTags,
+    }),
+  }))
 
-    const editedMetadataFields: EditableMetadataField[] = [
-      updates.title !== undefined ? 'title' : null,
-      updates.authors !== undefined ? 'authors' : null,
-      updates.year !== undefined ? 'year' : null,
-      updates.doi !== undefined ? 'doi' : null,
-      updates.abstract !== undefined ? 'abstract' : null,
-      updates.isbn !== undefined ? 'isbn' : null,
-      updates.publisher !== undefined ? 'publisher' : null,
-      updates.citationKey !== undefined ? 'citationKey' : null,
-    ].filter((field): field is EditableMetadataField => field !== null)
-    const nextTitle = updates.title ?? existing.title
-    const nextAuthors = updates.authors ?? existing.authors
-    const nextYear = updates.year ?? existing.year
-    const nextDoi = updates.doi ?? existing.doi
-    const nextMetadataStatus = deriveMetadataStatus({
-      title: nextTitle,
-      authors: nextAuthors,
-      year: nextYear,
-      doi: nextDoi,
-    })
+  if (!useRuntimeStore.getState().isDesktopApp) return
 
-    const optimistic: Partial<Document> = {
-      ...updates,
-      metadataStatus: nextMetadataStatus,
-      metadataUserEditedFields: editedMetadataFields.length > 0
-        ? {
-            ...(existing.metadataUserEditedFields ?? {}),
-            ...Object.fromEntries(editedMetadataFields.map((field) => [field, true])),
-          }
-        : existing.metadataUserEditedFields,
-      metadataProvenance: editedMetadataFields.length > 0
-        ? {
-            ...(existing.metadataProvenance ?? {}),
-            ...Object.fromEntries(
-              editedMetadataFields
-                .filter((field) => field === 'title' || field === 'authors' || field === 'year' || field === 'doi')
-                .map((field) => [field, { source: 'user', extractedAt: new Date(), confidence: 1, detail: 'Edited manually in the document details view.' }]),
-            ),
-          }
-        : existing.metadataProvenance,
-      updatedAt: new Date(),
-    }
+  const saved = await repo.updateDocumentMetadata(id, {
+    rejectedTagSuggestions: serializeRejectedSuggestedTags(nextSuggestionState.rejectedSuggestedTags),
+    tagSuggestions: serializeSuggestedTags(nextSuggestionState.suggestedTags),
+  })
 
-    set((state) => ({
-      documents: updateLocalDocument(state.documents, id, optimistic),
+  if (saved) {
+    useDocumentStore.setState((state) => ({
+      documents: updateLocalDocument(
+        state.documents,
+        id,
+        toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === id)),
+      ),
     }))
+  }
+}
 
-    if (!get().isDesktopApp) return
+appActions.updateDocument = async (id, updates) => {
+  const existing = useDocumentStore.getState().documents.find((document) => document.id === id)
+  if (!existing) return
+
+  const editedMetadataFields: EditableMetadataField[] = [
+    updates.title !== undefined ? 'title' : null,
+    updates.authors !== undefined ? 'authors' : null,
+    updates.year !== undefined ? 'year' : null,
+    updates.doi !== undefined ? 'doi' : null,
+    updates.abstract !== undefined ? 'abstract' : null,
+    updates.isbn !== undefined ? 'isbn' : null,
+    updates.publisher !== undefined ? 'publisher' : null,
+    updates.citationKey !== undefined ? 'citationKey' : null,
+  ].filter((field): field is EditableMetadataField => field !== null)
+  const nextTitle = updates.title ?? existing.title
+  const nextAuthors = updates.authors ?? existing.authors
+  const nextYear = updates.year ?? existing.year
+  const nextDoi = updates.doi ?? existing.doi
+  const nextMetadataStatus = deriveMetadataStatus({
+    title: nextTitle,
+    authors: nextAuthors,
+    year: nextYear,
+    doi: nextDoi,
+  })
+
+  const optimistic: Partial<Document> = {
+    ...updates,
+    metadataStatus: nextMetadataStatus,
+    metadataUserEditedFields: editedMetadataFields.length > 0
+      ? {
+          ...(existing.metadataUserEditedFields ?? {}),
+          ...Object.fromEntries(editedMetadataFields.map((field) => [field, true])),
+        }
+      : existing.metadataUserEditedFields,
+    metadataProvenance: editedMetadataFields.length > 0
+      ? {
+          ...(existing.metadataProvenance ?? {}),
+          ...Object.fromEntries(
+            editedMetadataFields
+              .filter((field) => field === 'title' || field === 'authors' || field === 'year' || field === 'doi')
+              .map((field) => [field, { source: 'user', extractedAt: new Date(), confidence: 1, detail: 'Edited manually in the document details view.' }]),
+          ),
+        }
+      : existing.metadataProvenance,
+    updatedAt: new Date(),
+  }
+
+  useDocumentStore.setState((state) => ({
+    documents: updateLocalDocument(state.documents, id, optimistic),
+  }))
+
+  try {
+    if (!useRuntimeStore.getState().isDesktopApp) return
 
     const saved = await repo.updateDocumentMetadata(id, {
       title: updates.title,
@@ -1362,26 +733,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           )
         : undefined,
     })
+    if (!saved) throw new Error('Document not found')
 
-    if (!saved) {
-      set((state) => ({
-        documents: updateLocalDocument(state.documents, id, existing),
-      }))
-      return
-    }
-
-    set((state) => ({
+    useDocumentStore.setState((state) => ({
       documents: updateLocalDocument(state.documents, id, toUiDocumentWithExistingCounts(saved, existing)),
     }))
-
     if ('searchText' in updates) {
       await indexDocument(id)
     }
-  },
+  } catch (error) {
+    useDocumentStore.setState((state) => ({
+      documents: updateLocalDocument(state.documents, id, existing),
+    }))
+    showStoreActionError('Could not update document', error)
+  }
+}
 
-  fetchOnlineMetadataForDocument: async (documentId) => {
-    const document = get().documents.find((entry) => entry.id === documentId)
-    if (!document || !get().isDesktopApp) return
+appActions.fetchOnlineMetadataForDocument = async (documentId) => {
+  try {
+    const document = useDocumentStore.getState().documents.find((entry) => entry.id === documentId)
+    if (!document || !useRuntimeStore.getState().isDesktopApp) return
 
     await resumeDocumentIngestion(documentId, {
       enableOnlineMetadataEnrichment: true,
@@ -1390,7 +761,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const refreshed = await repo.getDocumentById(documentId)
     if (refreshed) {
-      set((state) => ({
+      useDocumentStore.setState((state) => ({
         documents: updateLocalDocument(
           state.documents,
           documentId,
@@ -1398,30 +769,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }))
     }
-  },
+  } catch (error) {
+    showStoreActionError('Could not fetch online metadata', error)
+  }
+}
 
-  applyFetchedMetadataCandidate: async (documentId, metadata, mode = 'replace_unlocked') => {
-    const document = await repo.getDocumentById(documentId)
-    if (!document || !get().isDesktopApp) return
+appActions.applyFetchedMetadataCandidate = async (documentId, metadata, mode = 'replace_unlocked') => {
+  const document = await repo.getDocumentById(documentId)
+  if (!document || !useRuntimeStore.getState().isDesktopApp) return
 
-    const saved = await repo.updateDocumentMetadata(
-      documentId,
-      mergeExtractedMetadataIntoDocument(document, metadata, mode),
-    )
+  const saved = await repo.updateDocumentMetadata(
+    documentId,
+    mergeExtractedMetadataIntoDocument(document, metadata, mode),
+  )
 
-    if (saved) {
-      set((state) => ({
-        documents: updateLocalDocument(
-          state.documents,
-          documentId,
-          toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === documentId)),
-        ),
-      }))
-    }
-  },
+  if (saved) {
+    useDocumentStore.setState((state) => ({
+      documents: updateLocalDocument(
+        state.documents,
+        documentId,
+        toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === documentId)),
+      ),
+    }))
+  }
+}
 
-  scanDocumentsOcr: async (documentIds) => {
-    const candidates = get().documents.filter((document) =>
+appActions.scanDocumentsOcr = async (documentIds) => {
+  try {
+    const candidates = useDocumentStore.getState().documents.filter((document) =>
       document.filePath
       && (!documentIds || documentIds.includes(document.id))
       && (documentIds
@@ -1432,7 +807,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const document of candidates) {
       if (!document.filePath) continue
 
-      set((state) => ({
+      useDocumentStore.setState((state) => ({
         documents: updateLocalDocument(state.documents, document.id, {
           ocrStatus: 'processing',
           processingUpdatedAt: new Date(),
@@ -1447,7 +822,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
         const refreshed = await repo.getDocumentById(document.id)
         if (refreshed) {
-          set((state) => ({
+          useDocumentStore.setState((state) => ({
             documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(refreshed, document)),
           }))
         }
@@ -1463,25 +838,28 @@ export const useAppStore = create<AppState>((set, get) => ({
           ocrStatus: 'failed',
         })
         if (failed) {
-          set((state) => ({
+          useDocumentStore.setState((state) => ({
             documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(failed, document)),
           }))
         }
       }
     }
-  },
+  } catch (error) {
+    showStoreActionError('Could not scan documents with OCR', error)
+  }
+}
 
-  classifyDocuments: async (documentIds, mode) => {
+appActions.classifyDocuments = async (documentIds, mode) => {
+  try {
     if (mode === 'off') return
-
-    const candidates = get().documents.filter((document) =>
+    const candidates = useDocumentStore.getState().documents.filter((document) =>
       documentIds.includes(document.id)
       && document.documentType !== 'my_work'
-      && (document.hasExtractedText || document.hasOcrText)
+      && (document.hasExtractedText || document.hasOcrText),
     )
 
     for (const document of candidates) {
-      set((state) => ({
+      useDocumentStore.setState((state) => ({
         documents: updateLocalDocument(state.documents, document.id, {
           classificationStatus: 'processing',
           processingUpdatedAt: new Date(),
@@ -1497,7 +875,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
         const refreshed = await repo.getDocumentById(document.id)
         if (refreshed) {
-          set((state) => ({
+          useDocumentStore.setState((state) => ({
             documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(refreshed, document)),
           }))
         }
@@ -1510,108 +888,92 @@ export const useAppStore = create<AppState>((set, get) => ({
           lastProcessedAt: new Date().toISOString(),
         })
         if (failed) {
-          set((state) => ({
+          useDocumentStore.setState((state) => ({
             documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(failed, document)),
           }))
         }
       }
     }
-  },
-
-  refreshTagSuggestionsForDocuments: async (documentIds) => {
-    const documents = get().documents.filter((document) => documentIds.includes(document.id))
-    if (documents.length === 0) return
-
-    for (const document of documents) {
-      if (!get().isDesktopApp) continue
-      await resumeDocumentIngestion(document.id, {
-        enableTagSuggestion: true,
-        forceStages: ['tag_suggestion'],
-      })
-      const refreshed = await repo.getDocumentById(document.id)
-      if (refreshed) {
-        set((state) => ({
-          documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(refreshed, document)),
-        }))
-      }
-    }
-  },
-
-  clearLocalData: async () => {
-    if (!get().isDesktopApp) {
-      set({
-        ...previewState(),
-        filters: {},
-        globalSearchQuery: '',
-        commandPaletteOpen: false,
-      })
-      return
-    }
-
-    await repo.clearLocalData()
-    await clearDocumentSearchIndex()
-    const { libraries, documents, notes, annotations, relations, graphViews } = await fetchDesktopData()
-    set({
-      initialized: true,
-      isDesktopApp: true,
-      libraries,
-      documents,
-      notes,
-      annotations,
-      relations,
-      graphViews,
-      graphViewLayouts: [],
-      activeLibraryId: libraries[0]?.id ?? null,
-      activeDocumentId: null,
-      filters: {},
-      globalSearchQuery: '',
-      commandPaletteOpen: false,
-    })
-  },
-}))
-
-export const useFilteredDocuments = () => {
-  const { activeLibraryId, documents, filters, sort } = useAppStore()
-  const search = (filters.search ?? '').trim().toLowerCase()
-
-  const filtered = documents.filter((document) => {
-    if (activeLibraryId && document.libraryId !== activeLibraryId) return false
-
-    if (search) {
-      const haystack = [document.title, document.authors.join(' '), document.doi, document.citationKey, document.abstract, document.searchText]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      if (!haystack.includes(search)) return false
-    }
-
-    if (filters.favorite && !document.favorite) return false
-    if (filters.hasComments && document.commentCount <= 0) return false
-    if (filters.hasNotes && document.notesCount <= 0) return false
-    if (filters.readingStage?.length && !filters.readingStage.includes(document.readingStage)) return false
-    if (
-      filters.metadataStatus?.length
-      && !filters.metadataStatus.includes(getLibraryMetadataFilterState(document))
-    ) return false
-    if (filters.tags?.length && !filters.tags.some((tag) => document.tags.includes(tag))) return false
-
-    if (filters.year?.min && (document.year ?? 0) < filters.year.min) return false
-    if (filters.year?.max && (document.year ?? 0) > filters.year.max) return false
-
-    return true
-  })
-
-  return filtered.sort((left, right) => {
-    if (search) {
-      const relevance = scoreDocumentMatch(right, search).rawScore - scoreDocumentMatch(left, search).rawScore
-      if (relevance !== 0) return relevance
-    }
-    const comparison = compareValues(left, right, sort.field)
-    return sort.direction === 'asc' ? comparison : -comparison
-  })
+  } catch (error) {
+    showStoreActionError('Could not classify documents', error)
+  }
 }
 
+appActions.refreshTagSuggestionsForDocuments = async (documentIds) => {
+  const documents = useDocumentStore.getState().documents.filter((document) => documentIds.includes(document.id))
+  if (documents.length === 0) return
+
+  for (const document of documents) {
+    if (!useRuntimeStore.getState().isDesktopApp) continue
+    await resumeDocumentIngestion(document.id, {
+      enableTagSuggestion: true,
+      forceStages: ['tag_suggestion'],
+    })
+    const refreshed = await repo.getDocumentById(document.id)
+    if (refreshed) {
+      useDocumentStore.setState((state) => ({
+        documents: updateLocalDocument(state.documents, document.id, toUiDocumentWithExistingCounts(refreshed, document)),
+      }))
+    }
+  }
+}
+
+appActions.clearLocalData = async () => {
+  if (!useRuntimeStore.getState().isDesktopApp) {
+    resetPreviewData(false)
+    useUiStore.getState().resetUiState()
+    return
+  }
+
+  await repo.clearLocalData()
+  await clearDocumentSearchIndex()
+  syncDesktopData(await fetchDesktopData())
+  useDocumentStore.setState({ activeDocumentId: null })
+  useUiStore.getState().resetUiState()
+}
+
+function getAppState(): AppState {
+  return {
+    ...useRuntimeStore.getState(),
+    ...useLibraryStore.getState(),
+    ...useDocumentStore.getState(),
+    ...useRelationStore.getState(),
+    ...useGraphStore.getState(),
+    ...useUiStore.getState(),
+    ...appActions,
+  }
+}
+
+type UseAppStoreHook = {
+  (): AppState
+  <T>(selector: (state: AppState) => T): T
+  getState: () => AppState
+}
+
+export const useAppStore = ((selector?: (state: AppState) => unknown) => {
+  const runtime = useRuntimeStore()
+  const libraries = useLibraryStore()
+  const documents = useDocumentStore()
+  const relations = useRelationStore()
+  const graph = useGraphStore()
+  const ui = useUiStore()
+
+  const state: AppState = {
+    ...runtime,
+    ...libraries,
+    ...documents,
+    ...relations,
+    ...graph,
+    ...ui,
+    ...appActions,
+  }
+
+  return selector ? selector(state) : state
+}) as UseAppStoreHook
+
+useAppStore.getState = getAppState
+
 export const useDocumentAnnotations = (documentId: string) => {
-  const { annotations } = useAppStore()
-  return annotations.filter((annotation: any) => annotation.documentId === documentId)
+  const annotations = useRuntimeStore((state) => state.annotations)
+  return annotations.filter((annotation) => annotation.documentId === documentId)
 }

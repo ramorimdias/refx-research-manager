@@ -32,10 +32,7 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        "$APPDATA/**",
-        "$DOCUMENT/**",
-        "$DOWNLOAD/**",
-        "$HOME/**"
+        "$APPDATA/**"
       ]
     },
     "dialog:default",

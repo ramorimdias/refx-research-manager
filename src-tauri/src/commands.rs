@@ -4,9 +4,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use base64::Engine;
 
@@ -763,37 +762,6 @@ fn detect_local_ip_addresses() -> Vec<String> {
     candidates
 }
 
-fn keybert_service_dir_candidates(app: &AppHandle) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(current_dir) = std::env::current_dir() {
-        candidates.push(current_dir.join("tools").join("keybert_service"));
-        if let Some(parent) = current_dir.parent() {
-            candidates.push(parent.join("tools").join("keybert_service"));
-        }
-    }
-
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("tools").join("keybert_service"));
-    }
-
-    candidates
-}
-
-fn find_keybert_service_dir(app: &AppHandle) -> Option<PathBuf> {
-    keybert_service_dir_candidates(app)
-        .into_iter()
-        .find(|path| path.join("server.py").exists())
-}
-
-fn can_connect_to_keybert_service() -> bool {
-    TcpStream::connect_timeout(
-        &"127.0.0.1:8765".parse().expect("valid localhost socket"),
-        Duration::from_millis(350),
-    )
-    .is_ok()
-}
-
 fn write_http_response(
     stream: &mut TcpStream,
     status_line: &str,
@@ -1078,7 +1046,17 @@ fn open_db(app: &AppHandle) -> Result<Connection, AppError> {
     Ok(conn)
 }
 
+fn validate_sql_identifier(s: &str) -> Result<(), AppError> {
+    if s.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!("Invalid SQL identifier: '{s}'")))
+    }
+}
+
 fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<(), AppError> {
+    validate_sql_identifier(table)?;
+    validate_sql_identifier(column)?;
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     let columns: Vec<String> = rows.filter_map(Result::ok).collect();
@@ -1089,6 +1067,8 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
 }
 
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, AppError> {
+    validate_sql_identifier(table)?;
+    validate_sql_identifier(column)?;
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     let columns: Vec<String> = rows.filter_map(Result::ok).collect();
@@ -5519,57 +5499,6 @@ pub fn get_default_gemini_api_key(app: AppHandle) -> String {
         .or_else(|| read_env_value_from_local_files(&app, "GEMINI_API_KEY"))
         .or_else(|| read_env_value_from_local_files(&app, "NEXT_PUBLIC_GEMINI_API_KEY"))
         .unwrap_or_default()
-}
-
-#[tauri::command]
-pub fn ensure_keybert_service_running(app: AppHandle) -> Result<(), AppError> {
-    if can_connect_to_keybert_service() {
-        return Ok(());
-    }
-
-    let service_dir = find_keybert_service_dir(&app).ok_or_else(|| {
-        AppError::Validation(
-            "Could not find the local KeyBERT service files in tools/keybert_service.".to_string(),
-        )
-    })?;
-
-    let launch_attempts = [
-        ("python", vec!["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"]),
-        ("py", vec!["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"]),
-    ];
-
-    let mut launched = false;
-    for (program, args) in launch_attempts {
-        let result = Command::new(program)
-            .args(args)
-            .current_dir(&service_dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-
-        if result.is_ok() {
-            launched = true;
-            break;
-        }
-    }
-
-    if !launched {
-        return Err(AppError::Validation(
-            "Could not start the local KeyBERT service. Make sure Python and the KeyBERT dependencies are installed.".to_string(),
-        ));
-    }
-
-    for _ in 0..20 {
-        std::thread::sleep(Duration::from_millis(300));
-        if can_connect_to_keybert_service() {
-            return Ok(());
-        }
-    }
-
-    Err(AppError::Validation(
-        "The local KeyBERT service did not become ready. Make sure its Python dependencies are installed.".to_string(),
-    ))
 }
 
 #[tauri::command]

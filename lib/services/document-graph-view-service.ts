@@ -37,7 +37,34 @@ export type DerivedGraphView = {
   searchMatches: Set<string>
 }
 
+let metricsCache: {
+  documentsRef: Document[]
+  relationsRef: DocumentRelation[]
+  result: Record<string, DocumentGraphMetrics>
+} | null = null
+
 export function buildDocumentGraphMetrics(
+  documents: Document[],
+  relations: DocumentRelation[],
+): Record<string, DocumentGraphMetrics> {
+  if (
+    metricsCache
+    && metricsCache.documentsRef === documents
+    && metricsCache.relationsRef === relations
+  ) {
+    return metricsCache.result
+  }
+
+  const result = buildDocumentGraphMetricsInternal(documents, relations)
+  metricsCache = {
+    documentsRef: documents,
+    relationsRef: relations,
+    result,
+  }
+  return result
+}
+
+function buildDocumentGraphMetricsInternal(
   documents: Document[],
   relations: DocumentRelation[],
 ): Record<string, DocumentGraphMetrics> {
@@ -77,14 +104,8 @@ export function buildDocumentGraphMetrics(
       densityBucket: 'low',
       componentIndex: -1,
     }
-    adjacency.set(
-      relation.sourceDocumentId,
-      new Set([...(adjacency.get(relation.sourceDocumentId) ?? []), relation.targetDocumentId]),
-    )
-    adjacency.set(
-      relation.targetDocumentId,
-      new Set([...(adjacency.get(relation.targetDocumentId) ?? []), relation.sourceDocumentId]),
-    )
+    adjacency.get(relation.sourceDocumentId)?.add(relation.targetDocumentId)
+    adjacency.get(relation.targetDocumentId)?.add(relation.sourceDocumentId)
 
     metrics[relation.sourceDocumentId].outboundCount += 1
     metrics[relation.targetDocumentId].inboundCount += 1
@@ -156,8 +177,10 @@ function collectNeighborIds(
 ) {
   const adjacency = new Map<string, Set<string>>()
   for (const relation of relations) {
-    adjacency.set(relation.sourceDocumentId, new Set([...(adjacency.get(relation.sourceDocumentId) ?? []), relation.targetDocumentId]))
-    adjacency.set(relation.targetDocumentId, new Set([...(adjacency.get(relation.targetDocumentId) ?? []), relation.sourceDocumentId]))
+    if (!adjacency.has(relation.sourceDocumentId)) adjacency.set(relation.sourceDocumentId, new Set())
+    if (!adjacency.has(relation.targetDocumentId)) adjacency.set(relation.targetDocumentId, new Set())
+    adjacency.get(relation.sourceDocumentId)?.add(relation.targetDocumentId)
+    adjacency.get(relation.targetDocumentId)?.add(relation.sourceDocumentId)
   }
 
   const visited = new Set<string>([startId])

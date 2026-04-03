@@ -14,11 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAppStore } from '@/lib/store'
 import * as repo from '@/lib/repositories/local-db'
 import { getNoteLocationLabel } from '@/lib/services/document-note-anchor-service'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
-function formatNoteReference(note: ReturnType<typeof useAppStore.getState>['notes'][number]) {
+function formatNoteReference(note: repo.DbNote) {
   const noteLabel = note.commentNumber ? `Note ${note.commentNumber}` : note.title || 'Note'
   const pageLabel = note.pageNumber ? ` (p. ${note.pageNumber})` : ''
   const location = getNoteLocationLabel(note.locationHint)
@@ -47,7 +48,9 @@ function htmlToPlainText(value: string) {
 export default function CommentsPage() {
   const params = useSearchParams()
   const id = params.get('id') ?? ''
-  const { documents, notes, loadNotes, refreshData, isDesktopApp, setActiveDocument } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const { notes, loadNotes, refreshData, isDesktopApp } = useRuntimeState()
+  const { setActiveDocument } = useDocumentActions()
   const editorRef = useRef<HTMLDivElement | null>(null)
   const currentDocument = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
   const [draft, setDraft] = useState('')
@@ -160,7 +163,7 @@ export default function CommentsPage() {
     },
   }
 
-  const insertNoteIntoComment = (note: ReturnType<typeof useAppStore.getState>['notes'][number]) => {
+  const insertNoteIntoComment = (note: repo.DbNote) => {
     editorRef.current?.focus()
 
     const reference = escapeHtml(formatNoteReference(note))

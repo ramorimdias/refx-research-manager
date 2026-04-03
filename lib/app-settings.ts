@@ -46,7 +46,7 @@ export type StoredAppSettings = {
   advancedClassificationMode: 'off' | 'local_heuristic'
   crossrefContactEmail: string
   semanticScholarApiKey: string
-  keywordEngine: 'local_keybert' | 'gemini'
+  keywordEngine: 'local_heuristic' | 'gemini'
   autoKeywordExtractionOnImport: boolean
   autoGeminiOnImport: boolean
   geminiApiKey: string
@@ -72,13 +72,17 @@ export const DEFAULT_APP_SETTINGS: StoredAppSettings = {
   advancedClassificationMode: 'off',
   crossrefContactEmail: '',
   semanticScholarApiKey: ENV_SEMANTIC_SCHOLAR_API_KEY,
-  keywordEngine: 'local_keybert',
+  keywordEngine: 'local_heuristic',
   autoKeywordExtractionOnImport: true,
   autoGeminiOnImport: false,
   geminiApiKey: '',
   geminiModel: 'gemini-2.5-flash',
   keywordExtractionMode: 'page1',
   dailyAiAutoLimit: '3',
+}
+
+function normalizeKeywordEngine(value: StoredAppSettings['keywordEngine'] | 'local_keybert' | undefined) {
+  return value === 'local_keybert' ? 'local_heuristic' : (value ?? DEFAULT_APP_SETTINGS.keywordEngine)
 }
 
 export function getBaseThemeMode(theme: StoredAppSettings['theme']): 'light' | 'dark' | 'system' {
@@ -169,7 +173,7 @@ export async function loadAppSettings(isDesktopApp: boolean): Promise<StoredAppS
       ...parsed,
       locale: parsed.locale ?? DEFAULT_APP_SETTINGS.locale,
       semanticScholarApiKey: parsed.semanticScholarApiKey?.trim() || ENV_SEMANTIC_SCHOLAR_API_KEY,
-      keywordEngine: parsed.keywordEngine ?? DEFAULT_APP_SETTINGS.keywordEngine,
+      keywordEngine: normalizeKeywordEngine(parsed.keywordEngine as StoredAppSettings['keywordEngine'] | 'local_keybert' | undefined),
       autoKeywordExtractionOnImport:
         parsed.autoKeywordExtractionOnImport ?? DEFAULT_APP_SETTINGS.autoKeywordExtractionOnImport,
       autoGeminiOnImport: parsed.autoGeminiOnImport ?? parsed.autoFetchTagsWithAiOnImport ?? DEFAULT_APP_SETTINGS.autoGeminiOnImport,
@@ -205,7 +209,7 @@ export async function loadAppSettings(isDesktopApp: boolean): Promise<StoredAppS
     ),
     crossrefContactEmail: parseValue(stored.crossrefContactEmail, DEFAULT_APP_SETTINGS.crossrefContactEmail),
     semanticScholarApiKey: resolveSemanticScholarApiKey(stored.semanticScholarApiKey),
-    keywordEngine: parseValue(stored.keywordEngine, DEFAULT_APP_SETTINGS.keywordEngine),
+    keywordEngine: normalizeKeywordEngine(parseValue(stored.keywordEngine, DEFAULT_APP_SETTINGS.keywordEngine) as StoredAppSettings['keywordEngine'] | 'local_keybert'),
     autoKeywordExtractionOnImport: parseValue(
       stored.autoKeywordExtractionOnImport,
       DEFAULT_APP_SETTINGS.autoKeywordExtractionOnImport,

@@ -87,7 +87,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useAppStore } from '@/lib/store'
+import { useLibraryStore } from '@/lib/stores/library-store'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useGraphActions, useGraphStore } from '@/lib/stores/graph-store'
+import { useRelationActions, useRelationStore } from '@/lib/stores/relation-store'
 import * as repo from '@/lib/repositories/local-db'
 import {
   AlertDialog,
@@ -619,29 +622,25 @@ function MapsPageContent() {
   const params = useSearchParams()
   const focusDocumentId = params.get('focus')
   const reactFlow = useReactFlow<AnyGraphNodeData>()
+  const activeDocumentId = useDocumentStore((state) => state.activeDocumentId)
+  const documents = useDocumentStore((state) => state.documents)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const graphViewLayouts = useGraphStore((state) => state.graphViewLayouts)
+  const graphViews = useGraphStore((state) => state.graphViews)
+  const relations = useRelationStore((state) => state.relations)
+  const { createDocumentRecord, setActiveDocument } = useDocumentActions()
   const {
-    activeDocumentId,
-    activeLibraryId,
-    createDocumentRecord,
-    createGraphView,
-    createRelation,
-    deleteRelation,
-    deleteGraphView,
-    duplicateGraphView,
-    documents,
-    graphViewLayouts,
-    graphViews,
-    libraries,
     loadGraphViewLayouts,
     loadGraphViews,
-    notes,
-    relations,
-    resetGraphViewNodeLayouts,
-    setActiveDocument,
+    createGraphView,
     updateGraphView,
-    updateRelation,
+    duplicateGraphView,
+    deleteGraphView,
     upsertGraphViewNodeLayout,
-  } = useAppStore()
+    resetGraphViewNodeLayouts,
+  } = useGraphActions()
+  const { createRelation, updateRelation, deleteRelation } = useRelationActions()
 
   const [graphPreferences, setGraphPreferences] = useState<GraphPreferences>(DEFAULT_GRAPH_PREFERENCES)
   const [nodes, setNodes, onNodesChange] = useNodesState<AnyGraphNodeData>([])
@@ -1057,6 +1056,26 @@ function MapsPageContent() {
       ))
     },
     [libraryDocuments, libraryRelations, selectedDocument, selectedWorkReferences],
+  )
+  const currentViewDocumentIdSet = useMemo(
+    () => new Set(visibleDocuments.map((document) => document.id)),
+    [visibleDocuments],
+  )
+  const selectedDocumentVisibleIncomingDocuments = useMemo(
+    () => selectedDocumentIncomingDocuments.filter((document) => currentViewDocumentIdSet.has(document.id)),
+    [currentViewDocumentIdSet, selectedDocumentIncomingDocuments],
+  )
+  const selectedDocumentOtherIncomingDocuments = useMemo(
+    () => selectedDocumentIncomingDocuments.filter((document) => !currentViewDocumentIdSet.has(document.id)),
+    [currentViewDocumentIdSet, selectedDocumentIncomingDocuments],
+  )
+  const selectedDocumentVisibleOutgoingDocuments = useMemo(
+    () => selectedDocumentOutgoingDocuments.filter((document) => currentViewDocumentIdSet.has(document.id)),
+    [currentViewDocumentIdSet, selectedDocumentOutgoingDocuments],
+  )
+  const selectedDocumentOtherOutgoingDocuments = useMemo(
+    () => selectedDocumentOutgoingDocuments.filter((document) => !currentViewDocumentIdSet.has(document.id)),
+    [currentViewDocumentIdSet, selectedDocumentOutgoingDocuments],
   )
   const selectedDocumentIncomingIds = useMemo(
     () => new Set(selectedDocumentIncomingDocuments.map((document) => document.id)),
@@ -1671,6 +1690,24 @@ function MapsPageContent() {
     () => Array.from(new Set(visibleDocuments.map((document) => document.id))),
     [visibleDocuments],
   )
+
+  const handleAddLinkedDocumentToMap = async (documentId: string) => {
+    if (!documentId || documentId === '__none__') return
+
+    const nextDocumentIds = Array.from(new Set([...manualVisibleDocumentIds, documentId]))
+    setManualVisibleDocumentIds(nextDocumentIds)
+    setHiddenDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
+    if (activeGraphView) {
+      await updateGraphView(activeGraphView.id, { documentIds: nextDocumentIds })
+      await upsertGraphViewNodeLayout({
+        graphViewId: activeGraphView.id,
+        documentId,
+        x: reactFlow.getNode(documentId)?.position.x ?? 0,
+        y: reactFlow.getNode(documentId)?.position.y ?? 0,
+        hidden: false,
+      })
+    }
+  }
 
   const persistCurrentNodeLayoutsToGraphView = async (graphViewId: string) => {
     const documentNodes = nodes.filter((node) => node.type === 'document')
@@ -2528,7 +2565,7 @@ function MapsPageContent() {
         </div>
 
         {isSelectionPanelOpen ? (
-          <div className="pointer-events-none absolute inset-y-4 right-4 z-30 flex w-full max-w-[430px] justify-end">
+          <div className="pointer-events-none absolute inset-y-4 right-4 z-30 flex w-full max-w-[540px] justify-end">
             <aside className="pointer-events-auto h-full w-full overflow-hidden rounded-[28px] border border-border/80 bg-background/96 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur">
               <DocumentGraphPanel
                 selectedDocument={selectedDocument}
@@ -2536,10 +2573,14 @@ function MapsPageContent() {
                 selectedRelation={selectedRelation}
                 sourceDocument={sourceDocument}
                 targetDocument={targetDocument}
-                relatedIncomingDocuments={selectedDocumentIncomingDocuments}
-                relatedOutgoingDocuments={selectedDocumentOutgoingDocuments}
+                relatedIncomingDocuments={selectedDocumentVisibleIncomingDocuments}
+                relatedOutgoingDocuments={selectedDocumentVisibleOutgoingDocuments}
+                otherIncomingDocuments={selectedDocumentOtherIncomingDocuments}
+                otherOutgoingDocuments={selectedDocumentOtherOutgoingDocuments}
                 onDeleteRelation={handleDeleteRelation}
                 onInvertRelation={handleInvertRelation}
+                onAddLinkedDocumentToMap={handleAddLinkedDocumentToMap}
+                onHideLinkedDocumentFromMap={handleRemoveDocumentFromCurrentView}
                 isDeletingRelation={isDeletingRelation}
                 onCloseSelection={clearSelection}
               />
@@ -2684,9 +2725,9 @@ function MapsPageContent() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('mapsPage.removeLink')}</DialogTitle>
+            <DialogTitle>{t('mapsPage.breakLink')}</DialogTitle>
             <DialogDescription>
-              Delete this document relation?
+              This will remove permanently the relationship between those two documents.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -2703,7 +2744,7 @@ function MapsPageContent() {
               disabled={isDeletingRelation}
             >
               {isDeletingRelation ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              {t('mapsPage.removeLink')}
+              {t('mapsPage.breakLink')}
             </Button>
           </DialogFooter>
         </DialogContent>

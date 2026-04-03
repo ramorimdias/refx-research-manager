@@ -30,7 +30,7 @@ export type DetectedDocumentKeywordsResult = {
   documentId: string
   keywords: string[]
   summary?: string
-  source: 'author_list' | 'keybert_local' | 'gemini_page1' | 'gemini_full'
+  source: 'author_list' | 'local_heuristic' | 'gemini_page1' | 'gemini_full'
   classificationStored?: boolean
 }
 
@@ -315,7 +315,7 @@ function buildTagSuggestionsFromKeywords(
       ? 1
       : typeof score === 'number'
         ? Number(Math.max(0.5, Math.min(1, score)).toFixed(2))
-        : source === 'keybert_local'
+        : source === 'local_heuristic'
           ? 0.9
           : 0.8,
   }))
@@ -438,6 +438,7 @@ export async function detectAndStoreDocumentKeywords(
       documentId,
       keywords: [],
       source: 'author_list' as const,
+      classificationStored: false,
     }
   }
 
@@ -465,9 +466,9 @@ export async function detectAndStoreDocumentKeywords(
       && await isUnderDailyAiLimit(settings.dailyAiAutoLimit)
     )
 
-  if (!options?.forceAi && (options?.forceLocal || settings.keywordEngine === 'local_keybert' || !shouldUseGemini)) {
+  if (!options?.forceAi && (options?.forceLocal || settings.keywordEngine === 'local_heuristic' || !shouldUseGemini)) {
     const localKeywords = await extractKeywordsWithKeyBert(keywordInput)
-    return storeKeywords(document, localKeywords, 'keybert_local', undefined, 'local')
+    return storeKeywords(document, localKeywords, 'local_heuristic', undefined, 'local')
   }
 
   const apiKey = getResolvedGeminiApiKey(settings).trim()
@@ -476,7 +477,7 @@ export async function detectAndStoreDocumentKeywords(
       throw new Error('Gemini API key is not configured.')
     }
     const fallbackKeywords = await extractKeywordsWithKeyBert(keywordInput)
-    return storeKeywords(document, fallbackKeywords, 'keybert_local', undefined, 'local')
+    return storeKeywords(document, fallbackKeywords, 'local_heuristic', undefined, 'local')
   }
 
   const selectedModel = GEMINI_MODEL_OPTIONS.find((option) => option.value === settings.geminiModel)?.value

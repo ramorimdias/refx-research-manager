@@ -21,7 +21,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import * as repo from '@/lib/repositories/local-db'
 import { appDataDir, convertFileSrc, copyFile, getCurrentWindow, isTauri, join, mkdir, open, readFile } from '@/lib/tauri/client'
-import { useAppStore } from '@/lib/store'
 import { buildDocumentCommentTitle, getDocumentPageComments, getNextDocumentCommentNumber } from '@/lib/services/document-comment-service'
 import {
   extractPdfPageWords,
@@ -36,6 +35,8 @@ import { DETACHED_READER_QUERY_VALUE, openDetachedReaderWindow } from '@/lib/ser
 import { parseAreaNoteAnchor, parseNoteAnchorColor, serializeAreaNoteAnchor, serializePointNoteAnchor, type NoteAreaRect } from '@/lib/services/document-note-anchor-service'
 import { cn } from '@/lib/utils'
 import { useT } from '@/lib/localization'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 type ReaderAreaHighlight = {
   id: string
@@ -251,7 +252,9 @@ export default function ReaderViewPage() {
   const zoomFromRoute = Number(params.get('zoom') ?? '100')
   const returnTo = params.get('returnTo') ?? ''
   const isDetachedReaderWindow = params.get('detached') === DETACHED_READER_QUERY_VALUE
-  const { documents, notes, annotations, scanDocumentsOcr, setActiveDocument, updateDocument, loadNotes, refreshData, isDesktopApp } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const { notes, annotations, loadNotes, refreshData, isDesktopApp } = useRuntimeState()
+  const { scanDocumentsOcr, setActiveDocument, updateDocument } = useDocumentActions()
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
   const [page, setPage] = useState(Number.isFinite(pageFromRoute) && pageFromRoute > 0 ? pageFromRoute : 1)
   const [zoom, setZoom] = useState(normalizeZoomLevel(zoomFromRoute))

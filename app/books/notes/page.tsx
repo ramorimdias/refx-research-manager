@@ -20,8 +20,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { useAppStore } from '@/lib/store'
 import * as repo from '@/lib/repositories/local-db'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 type BookNoteDraft = {
   id?: string
@@ -41,7 +42,8 @@ const DEFAULT_DRAFT: BookNoteDraft = {
 export default function PhysicalBookNotesPage() {
   const params = useSearchParams()
   const id = params.get('id') ?? ''
-  const { documents, notes, loadNotes, isDesktopApp } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const { notes, loadNotes, isDesktopApp } = useRuntimeState()
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [draft, setDraft] = useState<BookNoteDraft>(DEFAULT_DRAFT)

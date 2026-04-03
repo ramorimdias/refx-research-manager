@@ -38,13 +38,14 @@ import {
   type StoredAppSettings,
 } from '@/lib/app-settings'
 import * as repo from '@/lib/repositories/local-db'
-import { useAppStore } from '@/lib/store'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { AppUpdateDialog } from '@/components/refx/app-update-dialog'
 import { checkForAppUpdate, downloadAndInstallAppUpdate, type AppUpdateSummary } from '@/lib/services/app-update-service'
 import { APP_LOCALES, useLocale, useT } from '@/lib/localization'
 import { APP_VERSION } from '@/lib/app-version'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useRuntimeActions, useRuntimeState } from '@/lib/stores/runtime-store'
 
 type SettingsSection = 'general' | 'display' | 'processing' | 'data' | 'about'
 
@@ -53,7 +54,10 @@ export default function SettingsPage() {
   const { locale } = useLocale()
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { clearLocalData, refreshData, scanDocumentsOcr, classifyDocuments, documents, isDesktopApp } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const { scanDocumentsOcr, classifyDocuments } = useDocumentActions()
+  const { clearLocalData, refreshData } = useRuntimeActions()
+  const { isDesktopApp } = useRuntimeState()
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const [isClearing, setIsClearing] = useState(false)
   const [isScanningOcr, setIsScanningOcr] = useState(false)
@@ -380,7 +384,7 @@ export default function SettingsPage() {
     setIsScanningOcr(true)
     try {
       await scanDocumentsOcr()
-      const latestDocuments = useAppStore.getState().documents
+      const latestDocuments = useDocumentStore.getState().documents
       const scannedDocuments = latestDocuments.filter((document) => candidates.some((candidate) => candidate.id === document.id))
       const complete = scannedDocuments.filter((document) => document.ocrStatus === 'complete').length
       const failed = scannedDocuments.filter((document) => document.ocrStatus === 'failed').length
@@ -432,7 +436,7 @@ export default function SettingsPage() {
     setIsClassifyingDocuments(true)
     try {
       await classifyDocuments(candidates.map((document) => document.id), settings.advancedClassificationMode)
-      const latestDocuments = useAppStore.getState().documents
+      const latestDocuments = useDocumentStore.getState().documents
       const classifiedDocuments = latestDocuments.filter((document) => candidates.some((candidate) => candidate.id === document.id))
       const complete = classifiedDocuments.filter((document) => document.classificationStatus === 'complete').length
       const failed = classifiedDocuments.filter((document) => document.classificationStatus === 'failed').length
@@ -827,7 +831,7 @@ export default function SettingsPage() {
                     <div>
                       <Label className="text-sm font-medium">Keyword Engine</Label>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Local extraction is the default unlimited extractor. Gemini is an optional enhancement. Manual AI fetch from the details page is still available.
+                        The local heuristic extractor is the default unlimited option. Gemini is an optional enhancement. Manual AI fetch from the details page is still available.
                       </p>
                       <Select
                         value={settings.keywordEngine}
@@ -837,7 +841,7 @@ export default function SettingsPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="local_keybert">Local AI</SelectItem>
+                          <SelectItem value="local_heuristic">Local heuristic</SelectItem>
                           <SelectItem value="gemini">Gemini</SelectItem>
                         </SelectContent>
                       </Select>
@@ -846,7 +850,7 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <Label className="text-sm font-medium">Auto extract keywords on import</Label>
-                        <p className="mt-1 text-xs text-muted-foreground">Use author keywords first, then local or Gemini extraction based on your settings.</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Use author keywords first, then local heuristic or Gemini extraction based on your settings.</p>
                       </div>
                       <Checkbox
                         checked={settings.autoKeywordExtractionOnImport}
@@ -865,7 +869,7 @@ export default function SettingsPage() {
                       />
                     </div>
 
-                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_keybert' ? 'bg-muted/20' : 'bg-background')}>
+                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_heuristic' ? 'bg-muted/20' : 'bg-background')}>
                       <Label className="text-sm font-medium">Gemini API Key</Label>
                       <p className="mt-1 text-xs text-muted-foreground">Optional. Add your own Gemini key for AI keyword extraction.</p>
                       <Input
@@ -877,7 +881,7 @@ export default function SettingsPage() {
                       />
                     </div>
 
-                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_keybert' ? 'bg-muted/20' : 'bg-background')}>
+                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_heuristic' ? 'bg-muted/20' : 'bg-background')}>
                       <Label className="text-sm font-medium">Gemini Model</Label>
                       <Select
                         value={settings.geminiModel}
@@ -899,7 +903,7 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_keybert' ? 'bg-muted/20' : 'bg-background')}>
+                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_heuristic' ? 'bg-muted/20' : 'bg-background')}>
                       <Label className="text-sm font-medium">Gemini Extraction Scope</Label>
                       <Select
                         value={settings.keywordExtractionMode}
@@ -915,7 +919,7 @@ export default function SettingsPage() {
                       </Select>
                     </div>
 
-                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_keybert' ? 'bg-muted/20' : 'bg-background')}>
+                    <div className={cn('space-y-2 rounded-lg border border-border/60 p-3', settings.keywordEngine === 'local_heuristic' ? 'bg-muted/20' : 'bg-background')}>
                       <Label className="text-sm font-medium">Daily AI auto limit</Label>
                       <Input
                         type="number"

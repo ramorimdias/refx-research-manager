@@ -36,7 +36,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useAppStore } from '@/lib/store'
 import type { CitationStyle, Document } from '@/lib/types'
 import * as repo from '@/lib/repositories/local-db'
 import {
@@ -50,6 +49,8 @@ import {
 } from '@/lib/services/work-reference-service'
 import { useT } from '@/lib/localization'
 import { cn } from '@/lib/utils'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useLibraryStore } from '@/lib/stores/library-store'
 
 type ReferenceFormState = {
   title: string
@@ -100,11 +101,10 @@ function buildDocumentResumeHref(document: Document) {
 export default function ReferencesPage() {
   const router = useRouter()
   const t = useT()
-  const libraries = useAppStore((state) => state.libraries)
-  const documents = useAppStore((state) => state.documents)
-  const activeLibraryId = useAppStore((state) => state.activeLibraryId)
-  const createDocumentRecord = useAppStore((state) => state.createDocumentRecord)
-  const deleteDocument = useAppStore((state) => state.deleteDocument)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const documents = useDocumentStore((state) => state.documents)
+  const { createDocumentRecord, deleteDocument } = useDocumentActions()
   const myWorks = useMemo(
     () =>
       documents

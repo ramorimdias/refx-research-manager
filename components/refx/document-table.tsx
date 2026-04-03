@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 import type { Document, DocumentEphemeralUiFlags, ReadingStage } from '@/lib/types'
 import { NewBadge, ReadingStageBadge, StarRating } from './common'
 import { DocumentBulkActions } from './document-bulk-actions'
-import { useAppStore } from '@/lib/store'
+import { useDocumentActions } from '@/lib/stores/document-store'
 import { DocumentActions, DocumentContextMenu } from './document-actions'
 import { translate, useLocale, useT } from '@/lib/localization'
 import { hasUsableMetadataTitle } from '@/lib/services/document-metadata-service'
@@ -316,7 +316,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
   const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() => loadStoredColumnVisibility())
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => loadStoredColumnOrder())
   const [resizingColumn, setResizingColumn] = useState<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
-  const { toggleFavorite, updateDocument, refreshTagSuggestionsForDocuments } = useAppStore()
+  const { toggleFavorite, updateDocument, refreshTagSuggestionsForDocuments } = useDocumentActions()
   const selection = useDocumentListSelection(documents.map((document) => document.id))
 
   useEffect(() => {

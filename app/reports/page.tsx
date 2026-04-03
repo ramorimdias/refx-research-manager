@@ -5,10 +5,12 @@ import { BarChart3, BookOpen, Clock, FileText, Star } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState, StatsCard } from '@/components/refx/common'
 import { useLocale } from '@/lib/localization'
-import { useAppStore } from '@/lib/store'
+import { useDocumentStore } from '@/lib/stores/document-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 
 export default function ReportsPage() {
-  const { documents, notes } = useAppStore()
+  const documents = useDocumentStore((state) => state.documents)
+  const { notes } = useRuntimeState()
   const { locale } = useLocale()
   const copy = useMemo(() => {
     switch (locale) {

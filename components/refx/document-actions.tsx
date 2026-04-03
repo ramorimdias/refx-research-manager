@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import * as repo from '@/lib/repositories/local-db'
 import type { Document } from '@/lib/types'
-import { useAppStore } from '@/lib/store'
+import { useDocumentActions } from '@/lib/stores/document-store'
 
 interface DocumentActionsProps {
   document: Document
@@ -50,7 +50,7 @@ function formatCitation(document: Document) {
 }
 
 function useDocumentActionState(document: Document) {
-  const { deleteDocument } = useAppStore()
+  const { deleteDocument } = useDocumentActions()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 

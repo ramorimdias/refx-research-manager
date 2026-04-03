@@ -5,19 +5,17 @@ import { useRouter } from 'next/navigation'
 import { Command, Search, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useAppStore } from '@/lib/store'
+import { useUiStore } from '@/lib/stores/ui-store'
 import { useT } from '@/lib/localization'
 
 export function TopBar() {
   const t = useT()
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
-  const {
-    globalSearchQuery,
-    setGlobalSearchQuery,
-    setPersistentSearch,
-    toggleCommandPalette,
-  } = useAppStore()
+  const globalSearchQuery = useUiStore((state) => state.globalSearchQuery)
+  const setGlobalSearchQuery = useUiStore((state) => state.setGlobalSearchQuery)
+  const setPersistentSearch = useUiStore((state) => state.setPersistentSearch)
+  const toggleCommandPalette = useUiStore((state) => state.toggleCommandPalette)
 
   const submitGlobalSearch = () => {
     setPersistentSearch({ query: globalSearchQuery.trim() })

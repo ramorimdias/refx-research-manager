@@ -8,7 +8,7 @@ import { TopBar } from './top-bar'
 import { CommandBar } from './command-bar'
 import { DETACHED_READER_QUERY_VALUE } from '@/lib/services/reader-window-service'
 import { getCurrentWindow, isTauri } from '@/lib/tauri/client'
-import { useAppStore } from '@/lib/store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
 import { cn } from '@/lib/utils'
 import { useT } from '@/lib/localization'
 
@@ -23,7 +23,7 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const isDesktopApp = useAppStore((state) => state.isDesktopApp)
+  const { isDesktopApp } = useRuntimeState()
   const isDetachedReaderWindow =
     pathname === '/reader/view' && searchParams.get('detached') === DETACHED_READER_QUERY_VALUE
   const [isDragActive, setIsDragActive] = useState(false)

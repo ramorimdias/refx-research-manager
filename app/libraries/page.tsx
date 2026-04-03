@@ -69,7 +69,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useAppStore, useFilteredDocuments } from '@/lib/store'
 import { DocumentTable, DocumentTableColumnControls } from '@/components/refx/document-table'
 import { FilterPanel } from '@/components/refx/filter-panel'
 import { DocumentCard } from '@/components/refx/document-card'
@@ -81,6 +80,11 @@ import * as repo from '@/lib/repositories/local-db'
 import type { ImportProgressUpdate } from '@/lib/services/desktop-service'
 import { convertFileSrc, open as openFileDialog, stat } from '@/lib/tauri/client'
 import { useT } from '@/lib/localization'
+import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
+import { useFilteredDocuments } from '@/lib/stores/document-selectors'
+import { useLibraryActions, useLibraryStore } from '@/lib/stores/library-store'
+import { useRuntimeState } from '@/lib/stores/runtime-store'
+import { useUiStore } from '@/lib/stores/ui-store'
 
 type LibraryFormState = {
   name: string
@@ -293,27 +297,20 @@ function choosePrimaryDuplicateDocument(documents: Document[]) {
 
 export default function LibrariesPage() {
   const t = useT()
-  const {
-    activeLibraryId,
-    currentPage,
-    setActiveLibrary,
-    setCurrentPage,
-    viewMode,
-    setViewMode,
-    sort,
-    setSort,
-    filters,
-    setFilters,
-    libraries,
-    documents: storedDocuments,
-    importDocuments,
-    isDesktopApp,
-    loadLibraryDocuments,
-    createLibrary,
-    updateLibrary,
-    deleteLibrary,
-    refreshData,
-  } = useAppStore()
+  const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
+  const libraries = useLibraryStore((state) => state.libraries)
+  const storedDocuments = useDocumentStore((state) => state.documents)
+  const currentPage = useUiStore((state) => state.currentPage)
+  const setCurrentPage = useUiStore((state) => state.setCurrentPage)
+  const viewMode = useUiStore((state) => state.viewMode)
+  const setViewMode = useUiStore((state) => state.setViewMode)
+  const sort = useUiStore((state) => state.sort)
+  const setSort = useUiStore((state) => state.setSort)
+  const filters = useUiStore((state) => state.filters)
+  const setFilters = useUiStore((state) => state.setFilters)
+  const { isDesktopApp, refreshData } = useRuntimeState()
+  const { setActiveLibrary, createLibrary, updateLibrary, deleteLibrary, loadLibraryDocuments } = useLibraryActions()
+  const { importDocuments } = useDocumentActions()
   const documents = useFilteredDocuments()
   const [isImporting, setIsImporting] = useState(false)
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
@@ -548,8 +545,7 @@ export default function LibrariesPage() {
         duplicateDocumentIds,
       })
       await refreshData()
-      const refreshedState = useAppStore.getState()
-      const refreshedLibraryDocuments = refreshedState.documents.filter(
+      const refreshedLibraryDocuments = useDocumentStore.getState().documents.filter(
         (document) => document.libraryId === activeLibraryIdForScan,
       )
       await openDuplicateDialog(refreshedLibraryDocuments)

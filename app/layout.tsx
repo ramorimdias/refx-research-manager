@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next'
-import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AppShell } from '@/components/refx/app-shell'
 import { AppProvider } from '@/components/refx/app-provider'
@@ -60,7 +59,6 @@ export default function RootLayout({
             </AppShell>
           </AppProvider>
         </ThemeProvider>
-        <Analytics />
       </body>
     </html>
   )

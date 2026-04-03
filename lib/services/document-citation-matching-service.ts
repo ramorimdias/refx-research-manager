@@ -51,18 +51,46 @@ function candidateDebugInfo(method: CitationMatchMethod, confidence: number, ext
   return `${method} @ ${Math.round(confidence * 100)}%${extra ? ` | ${extra}` : ''}`
 }
 
+export type DocumentLibraryIndex = {
+  byDoi: Map<string, Document>
+  byNormalizedTitle: Map<string, Document>
+  byFirstAuthorYear: Map<string, Document[]>
+}
+
+export function buildLibraryIndex(documents: Document[]): DocumentLibraryIndex {
+  const byDoi = new Map<string, Document>()
+  const byNormalizedTitle = new Map<string, Document>()
+  const byFirstAuthorYear = new Map<string, Document[]>()
+
+  for (const doc of documents) {
+    const normalizedDocumentDoi = normalizeDoi(doc.doi)
+    if (normalizedDocumentDoi) {
+      byDoi.set(normalizedDocumentDoi, doc)
+    }
+
+    const normalizedDocumentTitle = normalizeTitle(doc.title)
+    if (normalizedDocumentTitle) {
+      byNormalizedTitle.set(normalizedDocumentTitle, doc)
+    }
+
+    const key = `${firstAuthorKey(doc.authors)}::${doc.year ?? ''}`
+    byFirstAuthorYear.set(key, [...(byFirstAuthorYear.get(key) ?? []), doc])
+  }
+
+  return { byDoi, byNormalizedTitle, byFirstAuthorYear }
+}
+
 export function matchParsedReferenceToDocument(
   sourceDocument: Document,
   parsedReference: ParsedDocumentReference,
   libraryDocuments: Document[],
+  libraryIndex: DocumentLibraryIndex = buildLibraryIndex(libraryDocuments),
 ): CitationMatchResult | null {
   const normalizedReferenceDoi = normalizeDoi(parsedReference.doi)
   if (normalizedReferenceDoi) {
-    const doiMatch = libraryDocuments.find((document) =>
-      document.id !== sourceDocument.id && normalizeDoi(document.doi) === normalizedReferenceDoi,
-    )
+    const doiMatch = libraryIndex.byDoi.get(normalizedReferenceDoi)
 
-    if (doiMatch) {
+    if (doiMatch && doiMatch.id !== sourceDocument.id) {
       return {
         confidence: 0.99,
         matchMethod: 'doi_exact',
@@ -76,11 +104,9 @@ export function matchParsedReferenceToDocument(
 
   const normalizedReferenceTitle = parsedReference.normalizedTitle ?? normalizeTitle(parsedReference.title)
   if (normalizedReferenceTitle) {
-    const exactTitleMatch = libraryDocuments.find((document) =>
-      document.id !== sourceDocument.id && normalizeTitle(document.title) === normalizedReferenceTitle,
-    )
+    const exactTitleMatch = libraryIndex.byNormalizedTitle.get(normalizedReferenceTitle)
 
-    if (exactTitleMatch) {
+    if (exactTitleMatch && exactTitleMatch.id !== sourceDocument.id) {
       return {
         confidence: 0.94,
         matchMethod: 'title_exact',
@@ -94,9 +120,21 @@ export function matchParsedReferenceToDocument(
 
   const referenceTokens = titleTokens(parsedReference.title)
   const referenceAuthor = parsedReference.normalizedFirstAuthor ?? firstAuthorKey(parsedReference.authors)
+  const candidatePool = (() => {
+    const byAuthorYear = libraryIndex.byFirstAuthorYear.get(`${referenceAuthor}::${parsedReference.year ?? ''}`) ?? []
+    if (byAuthorYear.length > 0) {
+      return byAuthorYear
+    }
+
+    if (!parsedReference.year) {
+      return libraryDocuments
+    }
+
+    return libraryDocuments.filter((document) => document.year === parsedReference.year)
+  })()
   let bestMatch: CitationMatchResult | null = null
 
-  for (const document of libraryDocuments) {
+  for (const document of candidatePool) {
     if (document.id === sourceDocument.id) continue
 
     const similarity = jaccardSimilarity(referenceTokens, titleTokens(document.title))

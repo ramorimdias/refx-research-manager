@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { ArrowRight, ChevronDown, Link2, Network, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, EyeOff, Link2, Network, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -22,10 +22,65 @@ type DocumentGraphPanelProps = {
   targetDocument: Document | null
   relatedIncomingDocuments: Document[]
   relatedOutgoingDocuments: Document[]
+  otherIncomingDocuments: Document[]
+  otherOutgoingDocuments: Document[]
   onDeleteRelation: (relationId: string) => Promise<void> | void
   onInvertRelation?: (relationId: string) => Promise<void> | void
+  onAddLinkedDocumentToMap?: (documentId: string) => Promise<void> | void
+  onHideLinkedDocumentFromMap?: (documentId: string) => Promise<void> | void
   isDeletingRelation?: boolean
   onCloseSelection?: () => void
+}
+
+function LinkedDocumentRow({
+  document,
+  tone,
+  action,
+  actionLabel,
+  actionIcon,
+  onAction,
+}: {
+  document: Document
+  tone: 'incoming' | 'outgoing'
+  action: 'add' | 'hide'
+  actionLabel: string
+  actionIcon: React.ReactNode
+  onAction?: (documentId: string) => Promise<void> | void
+}) {
+  const t = useT()
+
+  return (
+    <div className="flex min-w-0 items-start gap-2 overflow-hidden rounded-xl border border-current/15 bg-white/90 p-2 text-inherit">
+      <Link
+        href={getDocumentOpenHref(document)}
+        className="min-w-0 flex-1 rounded-lg px-1 py-0.5 transition hover:bg-black/5"
+      >
+        <p className="break-words text-sm font-medium text-slate-900">{document.title}</p>
+        <div className="mt-1 flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 break-words text-xs text-slate-500">
+            {document.authors[0] ?? t('searchPage.unknownAuthor')}
+            {document.year ? ` - ${document.year}` : ''}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={tone === 'outgoing'
+              ? 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-sky-200 px-2.5 py-1.5 text-right leading-4 text-sky-800 hover:bg-sky-50'
+              : 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-rose-200 px-2.5 py-1.5 text-right leading-4 border-rose-200 text-rose-800 hover:bg-rose-50'}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void onAction?.(document.id)
+            }}
+          >
+            {actionIcon}
+            <span className="whitespace-nowrap">{actionLabel}</span>
+          </Button>
+        </div>
+      </Link>
+    </div>
+  )
 }
 
 export function DocumentGraphPanel({
@@ -36,16 +91,24 @@ export function DocumentGraphPanel({
   targetDocument,
   relatedIncomingDocuments,
   relatedOutgoingDocuments,
+  otherIncomingDocuments,
+  otherOutgoingDocuments,
   onDeleteRelation,
   onInvertRelation,
+  onAddLinkedDocumentToMap,
+  onHideLinkedDocumentFromMap,
   isDeletingRelation = false,
   onCloseSelection,
 }: DocumentGraphPanelProps) {
   const t = useT()
   const [isAbstractExpanded, setIsAbstractExpanded] = useState(false)
+  const [isOtherOutgoingExpanded, setIsOtherOutgoingExpanded] = useState(false)
+  const [isOtherIncomingExpanded, setIsOtherIncomingExpanded] = useState(false)
 
   useEffect(() => {
     setIsAbstractExpanded(false)
+    setIsOtherOutgoingExpanded(false)
+    setIsOtherIncomingExpanded(false)
   }, [selectedDocument?.id])
 
   if (!selectedDocument && !selectedRelation && !selectedWorkReference) {
@@ -204,11 +267,11 @@ export function DocumentGraphPanel({
                     disabled={isDeletingRelation}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    {t('mapsPage.removeLink')}
+                    {t('mapsPage.breakLink')}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" sideOffset={8}>
-                  {t('mapsPage.removeLinkHelp')}
+                  {t('mapsPage.breakLinkHelp')}
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -299,22 +362,54 @@ export function DocumentGraphPanel({
             <div className="space-y-2">
               {relatedOutgoingDocuments.length ? (
                 relatedOutgoingDocuments.map((document) => (
-                  <Link
+                  <LinkedDocumentRow
                     key={document.id}
-                    href={getDocumentOpenHref(document)}
-                    className="block rounded-xl border border-sky-200/80 bg-white/90 px-3 py-2 transition hover:border-sky-300 hover:bg-white"
-                  >
-                    <p className="text-sm font-medium text-slate-900">{document.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {document.authors[0] ?? t('searchPage.unknownAuthor')}
-                      {document.year ? ` - ${document.year}` : ''}
-                    </p>
-                  </Link>
+                    document={document}
+                    tone="outgoing"
+                    action="hide"
+                    actionLabel={t('mapsPage.hideFromMap')}
+                    actionIcon={<EyeOff className="mr-1 h-3.5 w-3.5" />}
+                    onAction={onHideLinkedDocumentFromMap}
+                  />
                 ))
               ) : (
                 <p className="text-sm text-sky-800/80">{t('mapsPage.none')}</p>
               )}
             </div>
+            {otherOutgoingDocuments.length ? (
+              <div className="space-y-2 rounded-xl border border-sky-200/70 bg-white/55 p-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOtherOutgoingExpanded((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-sky-800">
+                    {t('mapsPage.otherLinks')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Badge className="border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-100">
+                      {otherOutgoingDocuments.length}
+                    </Badge>
+                    <ChevronDown className={isOtherOutgoingExpanded ? 'h-4 w-4 rotate-180 text-sky-700' : 'h-4 w-4 text-sky-700'} />
+                  </div>
+                </button>
+                {isOtherOutgoingExpanded ? (
+                  <div className="space-y-2">
+                    {otherOutgoingDocuments.map((document) => (
+                      <LinkedDocumentRow
+                        key={`other-outgoing-${document.id}`}
+                        document={document}
+                        tone="outgoing"
+                        action="add"
+                        actionLabel={t('mapsPage.addToMap')}
+                        actionIcon={<Plus className="mr-1 h-3.5 w-3.5" />}
+                        onAction={onAddLinkedDocumentToMap}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-3 rounded-2xl border border-rose-200/80 bg-rose-50/70 p-4">
@@ -327,22 +422,54 @@ export function DocumentGraphPanel({
             <div className="space-y-2">
               {relatedIncomingDocuments.length ? (
                 relatedIncomingDocuments.map((document) => (
-                  <Link
+                  <LinkedDocumentRow
                     key={document.id}
-                    href={getDocumentOpenHref(document)}
-                    className="block rounded-xl border border-rose-200/80 bg-white/90 px-3 py-2 transition hover:border-rose-300 hover:bg-white"
-                  >
-                    <p className="text-sm font-medium text-slate-900">{document.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {document.authors[0] ?? t('searchPage.unknownAuthor')}
-                      {document.year ? ` - ${document.year}` : ''}
-                    </p>
-                  </Link>
+                    document={document}
+                    tone="incoming"
+                    action="hide"
+                    actionLabel={t('mapsPage.hideFromMap')}
+                    actionIcon={<EyeOff className="mr-1 h-3.5 w-3.5" />}
+                    onAction={onHideLinkedDocumentFromMap}
+                  />
                 ))
               ) : (
                 <p className="text-sm text-rose-800/80">{t('mapsPage.none')}</p>
               )}
             </div>
+            {otherIncomingDocuments.length ? (
+              <div className="space-y-2 rounded-xl border border-rose-200/70 bg-white/55 p-3">
+                <button
+                  type="button"
+                  onClick={() => setIsOtherIncomingExpanded((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-rose-800">
+                    {t('mapsPage.otherLinks')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Badge className="border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-100">
+                      {otherIncomingDocuments.length}
+                    </Badge>
+                    <ChevronDown className={isOtherIncomingExpanded ? 'h-4 w-4 rotate-180 text-rose-700' : 'h-4 w-4 text-rose-700'} />
+                  </div>
+                </button>
+                {isOtherIncomingExpanded ? (
+                  <div className="space-y-2">
+                    {otherIncomingDocuments.map((document) => (
+                      <LinkedDocumentRow
+                        key={`other-incoming-${document.id}`}
+                        document={document}
+                        tone="incoming"
+                        action="add"
+                        actionLabel={t('mapsPage.addToMap')}
+                        actionIcon={<Plus className="mr-1 h-3.5 w-3.5" />}
+                        onAction={onAddLinkedDocumentToMap}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </ScrollArea>

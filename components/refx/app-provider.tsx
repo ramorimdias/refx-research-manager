@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { useAppStore } from '@/lib/store'
+import { useUiStore } from '@/lib/stores/ui-store'
+import { useRuntimeActions, useRuntimeState } from '@/lib/stores/runtime-store'
 import { Loader2 } from 'lucide-react'
 import { getBaseThemeMode, getThemeAccentVariant, loadAppSettings, saveAppSettings, type StoredAppSettings } from '@/lib/app-settings'
 import * as repo from '@/lib/repositories/local-db'
@@ -45,11 +46,10 @@ export function AppProvider({ children }: AppProviderProps) {
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
   const [updateInstallStatus, setUpdateInstallStatus] = useState<string | null>(null)
-  const initialize = useAppStore((state) => state.initialize)
-  const initialized = useAppStore((state) => state.initialized)
-  const isDesktopApp = useAppStore((state) => state.isDesktopApp)
-  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed)
-  const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed)
+  const { initialize } = useRuntimeActions()
+  const { initialized, isDesktopApp } = useRuntimeState()
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed)
   const { setTheme } = useTheme()
 
   useEffect(() => {
