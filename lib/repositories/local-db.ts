@@ -450,6 +450,11 @@ export type DbUpsertGraphViewNodeLayoutInput = {
   hidden?: boolean
 }
 
+export type DbDocumentPdfPayload = {
+  path?: string | null
+  bytes: number[]
+}
+
 export async function listLibraries() {
   return invoke<DbLibrary[]>('list_libraries')
 }
@@ -500,6 +505,14 @@ export async function moveDocumentsToLibrary(documentIds: string[], targetLibrar
 
 export async function openDocumentFileLocation(path: string) {
   return invoke<void>('open_document_file_location', { path })
+}
+
+export async function ensureDocumentPdfInStorage(documentId: string) {
+  return invoke<string | null>('ensure_document_pdf_in_storage', { documentId })
+}
+
+export async function loadDocumentPdfPayload(documentId: string) {
+  return invoke<DbDocumentPdfPayload | null>('load_document_pdf_payload', { documentId })
 }
 
 export async function importBookCover(sourcePath: string) {

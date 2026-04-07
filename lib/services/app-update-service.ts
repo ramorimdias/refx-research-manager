@@ -6,6 +6,8 @@ import { isTauri } from '@/lib/tauri/client'
 
 type RawUpdate = Awaited<ReturnType<typeof check>>
 
+const UPDATER_ENDPOINT = 'https://github.com/ramorimdias/refx-research-manager/releases/latest/download/latest.json'
+
 export type AppUpdateSummary = {
   version: string
   currentVersion?: string
@@ -19,12 +21,50 @@ export type AppUpdateCheckResult =
 
 let pendingUpdate: RawUpdate = null
 
-function summarizeUpdate(update: NonNullable<RawUpdate>): AppUpdateSummary {
+type GithubReleaseMetadata = {
+  body: string
+  publishedAt: string | null
+}
+
+function inferGithubRepoFromEndpoint(endpoint: string): string | null {
+  const match = endpoint.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/releases\/latest\/download\/latest\.json$/i)
+  return match?.[1] ?? null
+}
+
+async function fetchGithubReleaseMetadata(version: string): Promise<GithubReleaseMetadata | null> {
+  const repo = inferGithubRepoFromEndpoint(UPDATER_ENDPOINT)
+  if (!repo) return null
+
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/releases/tags/v${version}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+      },
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = await response.json() as { body?: string | null; published_at?: string | null }
+    return {
+      body: payload.body?.trim() || '',
+      publishedAt: payload.published_at ?? null,
+    }
+  } catch (error) {
+    console.warn('Failed to fetch GitHub release metadata for updater dialog:', error)
+    return null
+  }
+}
+
+async function summarizeUpdate(update: NonNullable<RawUpdate>): Promise<AppUpdateSummary> {
+  const githubRelease = await fetchGithubReleaseMetadata(update.version)
+
   return {
     version: update.version,
     currentVersion: update.currentVersion,
-    notes: update.body?.trim() || '',
-    publishedAt: update.date ?? null,
+    notes: githubRelease?.body || update.body?.trim() || '',
+    publishedAt: githubRelease?.publishedAt ?? update.date ?? null,
   }
 }
 
@@ -52,7 +92,7 @@ export async function checkForAppUpdate(): Promise<AppUpdateCheckResult> {
 
   return {
     supported: true,
-    update: update ? summarizeUpdate(update) : null,
+    update: update ? await summarizeUpdate(update) : null,
   }
 }
 

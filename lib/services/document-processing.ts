@@ -328,16 +328,16 @@ function findMatchesInWordList(words: PdfWord[], query: string, maxResults = 100
 
 export async function loadPdfJsModule() {
   if (!pdfJsPromise) {
-    const runtimeImport = new Function('path', 'return import(path)') as (path: string) => Promise<{
-      getDocument: (source: Record<string, unknown>) => { promise: Promise<unknown>; destroy?: () => void }
-      GlobalWorkerOptions: { workerSrc: string }
-    }>
-
-    pdfJsPromise = runtimeImport('/pdfjs/pdf.js').then((module) => {
-      if (typeof window !== 'undefined' && !module.GlobalWorkerOptions.workerSrc) {
-        module.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.js'
+    pdfJsPromise = import('pdfjs-dist/build/pdf.mjs').then((module) => {
+      const pdfjs = module as {
+        getDocument: (source: Record<string, unknown>) => { promise: Promise<unknown>; destroy?: () => void }
+        GlobalWorkerOptions: { workerSrc: string }
       }
-      return module
+
+      if (typeof window !== 'undefined' && !module.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.js'
+      }
+      return pdfjs
     })
   }
 

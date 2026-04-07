@@ -608,8 +608,36 @@ pub struct SetSettingsInput {
     pub values: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentPdfPayload {
+    pub path: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+fn collect_pdf_file_candidates(root: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), AppError> {
+    if !root.exists() || !root.is_dir() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_pdf_file_candidates(&path, candidates)?;
+            continue;
+        }
+
+        if path.is_file() {
+            candidates.push(path);
+        }
+    }
+
+    Ok(())
 }
 
 fn read_env_value_from_file(path: &Path, key: &str) -> Option<String> {
@@ -1644,6 +1672,111 @@ pub fn open_document_file_location(path: String) -> Result<(), AppError> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn ensure_document_pdf_in_storage(
+    app: AppHandle,
+    document_id: String,
+) -> Result<Option<String>, AppError> {
+    let conn = open_db(&app)?;
+    let document_row: Option<(String, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT library_id, imported_file_path, source_path FROM documents WHERE id = ?1",
+            params![document_id.clone()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+
+    let Some((library_id, imported_file_path, source_path)) = document_row else {
+        return Ok(None);
+    };
+
+    let base_path = app.path().app_data_dir().map_err(|_| AppError::PathError)?;
+    let pdf_root = base_path.join("pdfs");
+    let library_dir = pdf_root.join(&library_id);
+    std::fs::create_dir_all(&library_dir)?;
+
+    let normalized_target = library_dir.join(format!("{document_id}.pdf"));
+    if normalized_target.exists() {
+        let normalized = normalized_target.to_string_lossy().to_string();
+        if imported_file_path.as_deref() != Some(normalized.as_str()) {
+            conn.execute(
+                "UPDATE documents SET imported_file_path = ?1, updated_at = ?2 WHERE id = ?3",
+                params![normalized.clone(), now_iso(), document_id],
+            )?;
+        }
+        return Ok(Some(normalized));
+    }
+
+    let mut candidate_paths: Vec<PathBuf> = Vec::new();
+    for raw in [imported_file_path.as_deref(), source_path.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let candidate = PathBuf::from(raw);
+        if !candidate_paths.iter().any(|entry| entry == &candidate) {
+            candidate_paths.push(candidate);
+        }
+    }
+
+    let legacy_flat_candidate = pdf_root.join(format!("{document_id}.pdf"));
+    if !candidate_paths.iter().any(|entry| entry == &legacy_flat_candidate) {
+        candidate_paths.push(legacy_flat_candidate);
+    }
+
+    let expected_stem = document_id.as_str();
+    let mut discovered_pdf_candidates = Vec::new();
+    collect_pdf_file_candidates(&pdf_root, &mut discovered_pdf_candidates)?;
+    for candidate in discovered_pdf_candidates {
+        let stem_matches = candidate
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .map(|value| value == expected_stem)
+            .unwrap_or(false);
+        if !stem_matches {
+            continue;
+        }
+
+        if !candidate_paths.iter().any(|entry| entry == &candidate) {
+            candidate_paths.push(candidate);
+        }
+    }
+
+    for candidate in candidate_paths {
+        if !candidate.exists() || !candidate.is_file() {
+            continue;
+        }
+
+        if candidate != normalized_target {
+            std::fs::copy(&candidate, &normalized_target)?;
+        }
+
+        let normalized = normalized_target.to_string_lossy().to_string();
+        conn.execute(
+            "UPDATE documents SET imported_file_path = ?1, updated_at = ?2 WHERE id = ?3",
+            params![normalized.clone(), now_iso(), document_id],
+        )?;
+        return Ok(Some(normalized));
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
+pub fn load_document_pdf_payload(
+    app: AppHandle,
+    document_id: String,
+) -> Result<Option<DocumentPdfPayload>, AppError> {
+    let Some(path) = ensure_document_pdf_in_storage(app.clone(), document_id)? else {
+        return Ok(None);
+    };
+
+    let bytes = std::fs::read(&path)?;
+    Ok(Some(DocumentPdfPayload {
+        path: Some(path),
+        bytes,
+    }))
 }
 
 fn ensure_tag_exists(conn: &Connection, tag_name: &str) -> Result<String, AppError> {

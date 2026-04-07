@@ -345,6 +345,7 @@ function RealReaderViewPage() {
   const { notes, annotations, loadNotes, refreshData, isDesktopApp } = useRuntimeState()
   const { scanDocumentsOcr, setActiveDocument, updateDocument } = useDocumentActions()
   const document = useMemo(() => documents.find((entry) => entry.id === id) ?? null, [documents, id])
+  const [resolvedFilePath, setResolvedFilePath] = useState<string | null>(null)
   const [page, setPage] = useState(Number.isFinite(pageFromRoute) && pageFromRoute > 0 ? pageFromRoute : 1)
   const [zoom, setZoom] = useState(normalizeZoomLevel(zoomFromRoute))
   const [renderZoom, setRenderZoom] = useState(normalizeZoomLevel(zoomFromRoute))
@@ -373,6 +374,7 @@ function RealReaderViewPage() {
   const [highlightPlacementCursor, setHighlightPlacementCursor] = useState<{ x: number; y: number } | null>(null)
   const [pdfDocument, setPdfDocument] = useState<{ numPages: number; getPage: (pageNumber: number) => Promise<unknown>; destroy?: () => Promise<void> } | null>(null)
   const [embeddedPdfUrl, setEmbeddedPdfUrl] = useState<string | null>(null)
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null)
   const [viewerMode, setViewerMode] = useState<'pdfjs' | 'native' | 'unavailable'>('pdfjs')
   const [renderedPageSize, setRenderedPageSize] = useState({ width: 0, height: 0 })
   const [pageWords, setPageWords] = useState<PdfWord[]>([])
@@ -466,6 +468,35 @@ function RealReaderViewPage() {
   }, [document?.id, document?.readingStage, updateDocument])
 
   useEffect(() => {
+    let cancelled = false
+
+    if (!document?.id || !isDesktopApp || !isTauri()) {
+      setResolvedFilePath(document?.filePath ?? null)
+      return
+    }
+
+    void (async () => {
+      try {
+        const normalizedPath = await repo.ensureDocumentPdfInStorage(document.id)
+        if (!cancelled) {
+          setResolvedFilePath(normalizedPath ?? document.filePath ?? null)
+        }
+      } catch (error) {
+        console.warn('Failed to normalize document PDF path for reader:', error)
+        if (!cancelled) {
+          setResolvedFilePath(document.filePath ?? null)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [document?.filePath, document?.id, isDesktopApp])
+
+  const activeFilePath = resolvedFilePath ?? document?.filePath ?? null
+
+  useEffect(() => {
     if (!isDetachedReaderWindow || !isTauri() || !document?.title) return
 
     void getCurrentWindow().setTitle(`Refx Reader - ${document.title}`)
@@ -474,6 +505,7 @@ function RealReaderViewPage() {
   useEffect(() => {
     let cancelled = false
     let loadedPdf: { destroy?: () => Promise<void> } | null = null
+    let objectUrl: string | null = null
     let settled = false
     const timeoutId = window.setTimeout(() => {
       if (!cancelled && !settled) {
@@ -483,9 +515,10 @@ function RealReaderViewPage() {
     }, 2500)
 
     const loadPdf = async () => {
-      if (!document?.filePath || !isTauri()) {
+      if (!activeFilePath || !isTauri()) {
         settled = true
         setPdfDocument(null)
+        setPdfBytes(null)
         setEmbeddedPdfUrl(null)
         setViewerMode('unavailable')
         setRenderedPageSize({ width: 0, height: 0 })
@@ -499,9 +532,20 @@ function RealReaderViewPage() {
 
       try {
         const pdfjs = await loadPdfJsModule()
-        const bytes = await readFile(document.filePath)
+        const payload = document?.id ? await repo.loadDocumentPdfPayload(document.id) : null
+        let bytes = new Uint8Array(payload?.bytes ?? [])
+        if (!bytes.length && activeFilePath) {
+          bytes = new Uint8Array(await readFile(activeFilePath))
+        }
+        if (!bytes.length) {
+          throw new Error('Could not load PDF bytes from desktop storage or the saved document path.')
+        }
+        if (payload?.path) {
+          setResolvedFilePath(payload.path)
+        }
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
         const task = pdfjs.getDocument({
-          data: new Uint8Array(bytes),
+          data: bytes,
           useWorkerFetch: false,
           isEvalSupported: false,
           stopAtErrors: false,
@@ -522,22 +566,27 @@ function RealReaderViewPage() {
         settled = true
         window.clearTimeout(timeoutId)
         setPdfDocument(nextPdf)
-        setEmbeddedPdfUrl(convertFileSrc(document.filePath))
+        setPdfBytes(bytes)
+        setEmbeddedPdfUrl(objectUrl)
         setViewerMode('pdfjs')
         setViewerError(null)
         setHasViewerTimedOut(false)
         setPage((current) => Math.min(Math.max(1, current), nextPdf.numPages))
       } catch (error) {
         console.error('Failed to load PDF for embedded viewer:', error)
+        const message = error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Advanced PDF rendering is unavailable in this build.'
         settled = true
         window.clearTimeout(timeoutId)
         setPdfDocument(null)
-        setEmbeddedPdfUrl(convertFileSrc(document.filePath))
+        setPdfBytes(null)
+        setEmbeddedPdfUrl(objectUrl ?? convertFileSrc(activeFilePath))
         setViewerMode('native')
         setRenderedPageSize({ width: 0, height: 0 })
         setPageWords([])
         setHasViewerTimedOut(false)
-        setViewerError('Advanced PDF rendering is unavailable. Showing a basic PDF preview instead.')
+        setViewerError(`${message} Showing a basic PDF preview instead.`)
       } finally {
         if (!cancelled) {
           setIsPdfLoading(false)
@@ -550,9 +599,12 @@ function RealReaderViewPage() {
     return () => {
       cancelled = true
       window.clearTimeout(timeoutId)
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl)
+      }
       void loadedPdf?.destroy?.()
     }
-  }, [document?.filePath])
+  }, [activeFilePath])
 
   useEffect(() => {
     if (!id || !document) return
@@ -575,9 +627,9 @@ function RealReaderViewPage() {
         return
       }
 
-      if (viewerMode === 'pdfjs' && document.filePath && isTauri()) {
+      if (viewerMode === 'pdfjs' && activeFilePath && isTauri()) {
         try {
-          const results = await findPdfSearchOccurrences(document.filePath, searchQuery, document.pageCount)
+          const results = await findPdfSearchOccurrences(activeFilePath, searchQuery, document.pageCount)
           if (!cancelled) {
             setSearchOccurrences(results)
             return
@@ -600,14 +652,14 @@ function RealReaderViewPage() {
     return () => {
       cancelled = true
     }
-  }, [document, searchQuery, viewerMode])
+  }, [activeFilePath, document, searchQuery, viewerMode])
 
   useEffect(() => {
     let cancelled = false
 
     const loadPageWords = async () => {
       if (
-        !document?.filePath
+        !activeFilePath
         || !isTauri()
         || viewerMode !== 'pdfjs'
         || !isTextSelectionMode
@@ -617,7 +669,7 @@ function RealReaderViewPage() {
       }
 
       try {
-        const pages = await extractPdfPageWords(document.filePath)
+        const pages = await extractPdfPageWords(activeFilePath)
         if (cancelled) return
         setPageWords(pages.find((entry) => entry.pageNumber === page)?.words ?? [])
       } catch (error) {
@@ -633,7 +685,7 @@ function RealReaderViewPage() {
     return () => {
       cancelled = true
     }
-  }, [document?.filePath, page, viewerMode, isTextSelectionMode])
+  }, [activeFilePath, page, viewerMode, isTextSelectionMode])
 
   const activeOccurrence = searchOccurrences[activeOccurrenceIndex] ?? null
   const selectedHighlightColor = getReaderColorOption(selectedHighlightColorId)
@@ -645,7 +697,7 @@ function RealReaderViewPage() {
   )
   const canUsePreciseViewer = viewerMode === 'pdfjs' && Boolean(pdfDocument)
   const showViewerLoading =
-    Boolean(document?.filePath)
+    Boolean(activeFilePath)
     && (isPdfLoading || (!canUsePreciseViewer && !embeddedPdfUrl && !hasViewerTimedOut))
   const currentPageHighlights = useMemo(
     () => currentPageOccurrences.filter((occurrence) => occurrence.rects?.length),
@@ -1016,7 +1068,7 @@ function RealReaderViewPage() {
   }
 
   const runOcrForDocument = async () => {
-    if (!isDesktopApp || !document?.id || !document.filePath) return
+    if (!isDesktopApp || !document?.id || !activeFilePath) return
 
     setIsRunningOcr(true)
     try {
@@ -1040,7 +1092,9 @@ function RealReaderViewPage() {
   }
 
   const handlePrintDocument = async () => {
-    if (!document?.filePath || !isTauri()) return
+    if (!document || !activeFilePath || !isTauri()) return
+    const currentDocument = document
+    const filePath = activeFilePath
 
     setIsPrinting(true)
 
@@ -1068,7 +1122,7 @@ function RealReaderViewPage() {
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>${document.title} - Print</title>
+    <title>${currentDocument.title} - Print</title>
     <style>
       :root { color-scheme: light; }
       * {
@@ -1165,9 +1219,9 @@ function RealReaderViewPage() {
       return
     }
 
-    try {
-      const allAreaHighlights = annotations
-        .filter((annotation) => annotation.documentId === document.id)
+      try {
+        const allAreaHighlights = annotations
+        .filter((annotation) => annotation.documentId === currentDocument.id)
         .map(parseAreaHighlight)
         .filter((annotation): annotation is ReaderAreaHighlight => Boolean(annotation))
 
@@ -1187,7 +1241,7 @@ function RealReaderViewPage() {
       }>>()
 
       for (const note of notes) {
-        if (note.documentId !== document.id) continue
+        if (note.documentId !== currentDocument.id) continue
         if (typeof note.pageNumber !== 'number') continue
         if (typeof note.positionX !== 'number' || typeof note.positionY !== 'number') continue
 
@@ -1233,7 +1287,7 @@ function RealReaderViewPage() {
         }> }
       }
 
-      const bytes = await readFile(document.filePath)
+      const bytes = await readFile(filePath)
       const loadingTask = pdfjs.getDocument({
         data: new Uint8Array(bytes),
         useWorkerFetch: false,
@@ -1341,7 +1395,7 @@ function RealReaderViewPage() {
 
           const pageImage = printWindow.document.createElement('img')
           pageImage.src = renderCanvas.toDataURL('image/png')
-          pageImage.alt = `${document.title} page ${pageNumber}`
+          pageImage.alt = `${currentDocument.title} page ${pageNumber}`
           pageSection.appendChild(pageImage)
           pagesRoot.appendChild(pageSection)
           pdfPage.cleanup?.()
@@ -1918,20 +1972,20 @@ function RealReaderViewPage() {
             <Type className="h-4 w-4" />
           </ReaderToolbarIconButton>
           <div className="ml-auto flex items-center gap-2">
-            {document.filePath && (
+            {activeFilePath && (
               <ReaderToolbarIconButton
                 label="Print document"
                 onClick={() => void handlePrintDocument()}
-                disabled={!isDesktopApp || !document.filePath || isPrinting}
+                disabled={!isDesktopApp || !activeFilePath || isPrinting}
               >
                 {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               </ReaderToolbarIconButton>
             )}
-            {document.filePath && (
+            {activeFilePath && (
               <ReaderToolbarIconButton
                 label="Open in window"
                 onClick={() => void detachReaderWindow()}
-                disabled={!isDesktopApp || !document.filePath}
+                disabled={!isDesktopApp || !activeFilePath}
               >
                 <SquareArrowOutUpRight className="h-4 w-4" />
               </ReaderToolbarIconButton>
@@ -1946,13 +2000,13 @@ function RealReaderViewPage() {
               {t('searchPage.openDetails')}
             </Button>
           </div>
-          {document.filePath && !hasNativeTextLayer && (
+          {activeFilePath && !hasNativeTextLayer && (
             <Button
               variant="outline"
               size="sm"
               className="border-border/80"
               onClick={() => void runOcrForDocument()}
-              disabled={!isDesktopApp || !document.filePath || isRunningOcr || document.ocrStatus === 'processing'}
+              disabled={!isDesktopApp || !activeFilePath || isRunningOcr || document.ocrStatus === 'processing'}
               aria-label={
                 isRunningOcr || document.ocrStatus === 'processing'
                   ? 'Running OCR'
@@ -2344,17 +2398,15 @@ function RealReaderViewPage() {
                   </div>
                 ) : null}
                 <div className="overflow-hidden rounded border bg-white shadow-sm">
-                  <object
+                  <iframe
                     key={`${embeddedPdfUrl}-${page}-${zoom}`}
-                    data={`${embeddedPdfUrl}#page=${page}&zoom=${zoom}`}
-                    type="application/pdf"
+                    src={`${embeddedPdfUrl}#page=${page}&zoom=${zoom}`}
                     aria-label={document?.title ?? 'PDF preview'}
                     className="h-[calc(100vh-13rem)] w-full bg-white"
-                  >
-                    <div className="flex h-[calc(100vh-13rem)] items-center justify-center p-6 text-sm text-muted-foreground">
-                      PDF preview unavailable. Open the file externally from the toolbar if needed.
-                    </div>
-                  </object>
+                  />
+                </div>
+                <div className="px-1 text-xs text-muted-foreground">
+                  If the preview still appears blank here, use the external-open button in the toolbar while we keep the advanced viewer available.
                 </div>
               </div>
             ) : (
@@ -2370,7 +2422,7 @@ function RealReaderViewPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => void runOcrForDocument()}
-                      disabled={!document.filePath || isRunningOcr || document.ocrStatus === 'processing'}
+                      disabled={!activeFilePath || isRunningOcr || document.ocrStatus === 'processing'}
                     >
                       {isRunningOcr || document.ocrStatus === 'processing' ? t('readerView.runningOcr') : t('readerView.runOcr')}
                     </Button>

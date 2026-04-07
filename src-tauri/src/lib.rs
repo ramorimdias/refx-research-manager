@@ -115,6 +115,8 @@ pub fn run() {
             commands::merge_documents,
             commands::move_documents_to_library,
             commands::open_document_file_location,
+            commands::ensure_document_pdf_in_storage,
+            commands::load_document_pdf_payload,
             commands::import_book_cover,
             commands::start_book_cover_upload_session,
             commands::get_book_cover_upload_session_status,
