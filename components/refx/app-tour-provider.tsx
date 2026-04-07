@@ -439,6 +439,7 @@ export function AppTourProvider({
   }, [closeTour, completeTour, router])
 
   const nextTourStep = useCallback(() => {
+    setRect(null)
     setCurrentStepIndex((current) => {
       if (current >= APP_TOUR_STEPS.length - 1) {
         void finishTour()
@@ -449,6 +450,7 @@ export function AppTourProvider({
   }, [finishTour])
 
   const previousTourStep = useCallback(() => {
+    setRect(null)
     setCurrentStepIndex((current) => Math.max(0, current - 1))
   }, [])
 
@@ -591,13 +593,15 @@ export function AppTourProvider({
         total: APP_TOUR_STEPS.length,
       })
     : ''
+  const hasVisibleSpotlight = Boolean(isOpen && currentStep && rect)
+  const spotlightRect = rect
 
   return (
     <AppTourContext.Provider value={value}>
-      <div className={cn(isOpen ? 'tour-active' : undefined)}>{children}</div>
-      {isOpen && currentStep && rect ? (
+      <div className={cn(hasVisibleSpotlight ? 'tour-active' : undefined)}>{children}</div>
+      {hasVisibleSpotlight && spotlightRect ? (
         <Spotlight
-          rect={rect}
+          rect={spotlightRect}
           title={translateTour(locale, currentStep.titleKey)}
           body={translateTour(locale, currentStep.bodyKey)}
           stepLabel={stepLabel}
