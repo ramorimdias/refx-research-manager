@@ -3,6 +3,10 @@
 export type AppTourPlacement = 'top' | 'bottom' | 'left' | 'right'
 export type AppTourDynamicPath = 'first-pdf-reader' | 'first-document-comments'
 
+// Temporarily disabled while we investigate a packaged-client freeze around the
+// Search tour step. Re-enable once the installed-build path is stable again.
+export const APP_TOUR_ENABLED = false
+
 export type AppTourStep = {
   id: string
   path?: string
@@ -33,7 +37,7 @@ export const APP_TOUR_STEPS: AppTourStep[] = [
   },
   {
     id: 'search-overview',
-    path: '/search',
+    path: '/tour/search',
     targetTourId: 'search-query',
     titleKey: 'tour.steps.searchOverview.title',
     bodyKey: 'tour.steps.searchOverview.body',

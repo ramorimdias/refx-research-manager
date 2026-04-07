@@ -12,7 +12,7 @@ import {
   type CSSProperties,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, ChevronLeft, Lightbulb, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { APP_TOUR_STEPS, type AppTourDynamicPath, type AppTourPlacement } from '@/lib/app-tour'
@@ -204,12 +204,20 @@ function resolveDynamicPath(
   return `/reader/view?id=${firstReadablePdf.id}`
 }
 
-function getComparablePath(path: string | null) {
+function normalizeRouteLocation(path: string | null) {
   if (!path) return null
   try {
-    return new URL(path, 'http://refx.local').pathname
+    const url = new URL(path, 'http://refx.local')
+    const normalizedSearchParams = new URLSearchParams(url.search)
+    normalizedSearchParams.sort()
+    const query = normalizedSearchParams.toString()
+    return query ? `${url.pathname}?${query}` : url.pathname
   } catch {
-    return path.split('?')[0] ?? path
+    const [pathname, rawQuery = ''] = path.split('?')
+    const normalizedSearchParams = new URLSearchParams(rawQuery)
+    normalizedSearchParams.sort()
+    const query = normalizedSearchParams.toString()
+    return query ? `${pathname ?? path}?${query}` : (pathname ?? path)
   }
 }
 
@@ -308,7 +316,7 @@ function Spotlight({
   const arrowPath = buildArrowPath(rect, balloonStyle)
 
   return createPortal(
-    <div className="pointer-events-auto fixed inset-0 z-[1600]">
+    <div className="pointer-events-none fixed inset-0 z-[1600]">
       <div className="absolute inset-0 bg-slate-950/18" />
       <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
         <defs>
@@ -345,7 +353,7 @@ function Spotlight({
       />
 
       <div
-        className="absolute rounded-3xl border border-amber-200/50 bg-background/98 p-5 shadow-[0_28px_90px_rgba(15,23,42,0.42)]"
+        className="pointer-events-auto absolute rounded-3xl border border-amber-200/50 bg-background/98 p-5 shadow-[0_28px_90px_rgba(15,23,42,0.42)]"
         style={balloonStyle}
         role="dialog"
         aria-modal="true"
@@ -399,6 +407,7 @@ export function AppTourProvider({
   const { locale } = useLocale()
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const documents = useDocumentStore((state) => state.documents)
   const [isOpen, setIsOpen] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
@@ -419,11 +428,12 @@ export function AppTourProvider({
   }, [])
 
   const startAppTour = useCallback(() => {
+    if (!enabled) return
     completeOnceRef.current = false
     setCurrentStepIndex(0)
     setRect(null)
     setIsOpen(true)
-  }, [])
+  }, [enabled])
 
   const finishTour = useCallback(async () => {
     await completeTour()
@@ -461,8 +471,14 @@ export function AppTourProvider({
     if (currentStep.dynamicPath) return resolveDynamicPath(currentStep.dynamicPath, documents)
     return null
   }, [currentStep, documents])
-  const currentStepComparablePath = useMemo(
-    () => getComparablePath(currentStepPath),
+  const currentRoute = useMemo(
+    () => normalizeRouteLocation(
+      searchParams.toString().length > 0 ? `${pathname}?${searchParams.toString()}` : pathname,
+    ),
+    [pathname, searchParams],
+  )
+  const currentStepRoute = useMemo(
+    () => normalizeRouteLocation(currentStepPath),
     [currentStepPath],
   )
 
@@ -480,10 +496,10 @@ export function AppTourProvider({
       }
       return
     }
-    if (pathname === currentStepComparablePath) return
+    if (currentRoute === currentStepRoute) return
     setRect(null)
     router.push(currentStepPath)
-  }, [currentStep, currentStepComparablePath, currentStepPath, isOpen, nextTourStep, pathname, router])
+  }, [currentRoute, currentStep, currentStepPath, currentStepRoute, isOpen, nextTourStep, router])
 
   useEffect(() => {
     if (!isOpen) return
@@ -506,7 +522,7 @@ export function AppTourProvider({
   }, [isOpen, nextTourStep, previousTourStep, skipAppTour])
 
   useLayoutEffect(() => {
-    if (!isOpen || !currentStep || !currentStepComparablePath || pathname !== currentStepComparablePath) return
+    if (!isOpen || !currentStep || !currentStepRoute || currentRoute !== currentStepRoute) return
 
     let cancelled = false
     let frameId = 0
@@ -546,10 +562,10 @@ export function AppTourProvider({
         window.cancelAnimationFrame(frameId)
       }
     }
-  }, [currentStep, currentStepComparablePath, isOpen, nextTourStep, pathname])
+  }, [currentRoute, currentStep, currentStepRoute, isOpen, nextTourStep])
 
   useEffect(() => {
-    if (!isOpen || !currentStep || !currentStepComparablePath || pathname !== currentStepComparablePath || !rect) return
+    if (!isOpen || !currentStep || !currentStepRoute || currentRoute !== currentStepRoute || !rect) return
 
     const updateRect = () => {
       const element = queryTourTarget(currentStep.targetTourId)
@@ -573,7 +589,7 @@ export function AppTourProvider({
       window.removeEventListener('resize', updateRect)
       window.removeEventListener('scroll', updateRect, true)
     }
-  }, [currentStep, currentStepComparablePath, isOpen, pathname, rect])
+  }, [currentRoute, currentStep, currentStepRoute, isOpen, rect])
 
   const value = useMemo<AppTourContextValue>(
     () => ({

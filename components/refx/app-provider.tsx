@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { APP_LOCALES, LocaleProvider, translate, type AppLocale } from '@/lib/localization'
+import { APP_TOUR_ENABLED } from '@/lib/app-tour'
 import {
   checkForAppUpdate,
   dismissPendingAppUpdate,
@@ -304,8 +305,8 @@ export function AppProvider({ children }: AppProviderProps) {
   return (
     <LocaleProvider initialLocale={locale}>
       <AppTourProvider
-        enabled={!isNameDialogOpen}
-        shouldAutostart={Boolean(isWelcomeFlowResolved && !isNameDialogOpen && appSettings && !appSettings.hasCompletedAppTour)}
+        enabled={Boolean(APP_TOUR_ENABLED && !isNameDialogOpen)}
+        shouldAutostart={Boolean(APP_TOUR_ENABLED && isWelcomeFlowResolved && !isNameDialogOpen && appSettings && !appSettings.hasCompletedAppTour)}
         onTourCompleted={handleMarkTourCompleted}
       >
         {!isNameDialogOpen ? children : null}

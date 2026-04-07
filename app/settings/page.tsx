@@ -41,7 +41,7 @@ import * as repo from '@/lib/repositories/local-db'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { AppUpdateDialog } from '@/components/refx/app-update-dialog'
-import { useAppTour } from '@/components/refx/app-tour-provider'
+import { APP_TOUR_ENABLED } from '@/lib/app-tour'
 import { checkForAppUpdate, downloadAndInstallAppUpdate, type AppUpdateSummary } from '@/lib/services/app-update-service'
 import { APP_LOCALES, useLocale, useT } from '@/lib/localization'
 import { APP_VERSION, getAppVersion } from '@/lib/app-version'
@@ -55,7 +55,6 @@ export default function SettingsPage() {
   const { locale } = useLocale()
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { startAppTour } = useAppTour()
   const documents = useDocumentStore((state) => state.documents)
   const { scanDocumentsOcr, classifyDocuments } = useDocumentActions()
   const { clearLocalData, refreshData } = useRuntimeActions()
@@ -882,11 +881,13 @@ export default function SettingsPage() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium">{t('settings.seeAppTour')}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{t('tour.settingsRelaunchHelp')}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {APP_TOUR_ENABLED ? t('tour.settingsRelaunchHelp') : t('settings.appTourTemporarilyUnavailable')}
+                          </p>
                         </div>
-                        <Button type="button" variant="outline" onClick={startAppTour}>
+                        <Button type="button" variant="outline" disabled={!APP_TOUR_ENABLED}>
                           <Lightbulb className="mr-2 h-4 w-4" />
-                          {t('settings.seeAppTour')}
+                          {APP_TOUR_ENABLED ? t('settings.seeAppTour') : t('settings.appTourDisabledCta')}
                         </Button>
                       </div>
                     </div>
