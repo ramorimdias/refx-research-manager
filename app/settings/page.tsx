@@ -44,7 +44,7 @@ import { AppUpdateDialog } from '@/components/refx/app-update-dialog'
 import { useAppTour } from '@/components/refx/app-tour-provider'
 import { checkForAppUpdate, downloadAndInstallAppUpdate, type AppUpdateSummary } from '@/lib/services/app-update-service'
 import { APP_LOCALES, useLocale, useT } from '@/lib/localization'
-import { APP_VERSION } from '@/lib/app-version'
+import { APP_VERSION, getAppVersion } from '@/lib/app-version'
 import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
 import { useRuntimeActions, useRuntimeState } from '@/lib/stores/runtime-store'
 
@@ -71,6 +71,7 @@ export default function SettingsPage() {
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
+  const [displayVersion, setDisplayVersion] = useState(APP_VERSION)
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateSummary | null>(null)
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
   const [ocrScanTargetIds, setOcrScanTargetIds] = useState<string[]>([])
@@ -87,6 +88,21 @@ export default function SettingsPage() {
   const hasLoadedSettingsRef = useRef(false)
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false)
   const isDevSplashPreviewAvailable = process.env.NODE_ENV === 'development'
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      const version = await getAppVersion()
+      if (!cancelled) {
+        setDisplayVersion(version)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const processingCopy = useMemo(() => {
     switch (locale) {
@@ -1456,7 +1472,7 @@ export default function SettingsPage() {
                     <Separator />
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Version</span>
-                      <Badge variant="secondary">v{APP_VERSION}</Badge>
+                      <Badge variant="secondary">v{displayVersion}</Badge>
                     </div>
                     {isDevSplashPreviewAvailable ? (
                       <>
