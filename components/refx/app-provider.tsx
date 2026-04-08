@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useUiStore } from '@/lib/stores/ui-store'
 import { useRuntimeActions, useRuntimeState } from '@/lib/stores/runtime-store'
 import {
+  DEFAULT_APP_SETTINGS,
   getBaseThemeMode,
   getThemeAccentVariant,
   loadAppSettings,
@@ -83,34 +84,41 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!initialized) return
 
     const applySettings = async () => {
-      const settings = await loadAppSettings(isDesktopApp)
-      setAppSettings(settings)
-      window.localStorage.setItem(SPLASH_LOCALE_STORAGE_KEY, settings.locale)
-      setDraftUserName(settings.userName)
-      setDontAskNameAgain(settings.skipNamePrompt)
-      const shouldAskForName = !settings.userName.trim() && !settings.skipNamePrompt
-      setIsNameDialogOpen(shouldAskForName)
-      setIsWelcomeFlowResolved(!shouldAskForName)
-      setTheme(getBaseThemeMode(settings.theme))
-      const accentVariant = getThemeAccentVariant(settings.theme)
-      if (accentVariant) {
-        document.documentElement.dataset.refxAccent = accentVariant
-      } else {
-        delete document.documentElement.dataset.refxAccent
-      }
-      document.documentElement.style.fontSize = `${settings.fontSize}px`
+      let settings = DEFAULT_APP_SETTINGS
 
-      if (isDesktopApp && settings.autoBackupEnabled) {
-        void repo.runScheduledBackupIfDue(
-          settings.autoBackupScope,
-          Number(settings.autoBackupIntervalDays),
-          Number(settings.autoBackupKeepCount),
-        ).catch((error) => {
-          console.error('Automatic backup failed:', error)
-        })
-      }
+      try {
+        settings = await loadAppSettings(isDesktopApp)
+      } catch (error) {
+        console.error('Failed to load app settings; using defaults.', error)
+      } finally {
+        setAppSettings(settings)
+        window.localStorage.setItem(SPLASH_LOCALE_STORAGE_KEY, settings.locale)
+        setDraftUserName(settings.userName)
+        setDontAskNameAgain(settings.skipNamePrompt)
+        const shouldAskForName = !settings.userName.trim() && !settings.skipNamePrompt
+        setIsNameDialogOpen(shouldAskForName)
+        setIsWelcomeFlowResolved(!shouldAskForName)
+        setTheme(getBaseThemeMode(settings.theme))
+        const accentVariant = getThemeAccentVariant(settings.theme)
+        if (accentVariant) {
+          document.documentElement.dataset.refxAccent = accentVariant
+        } else {
+          delete document.documentElement.dataset.refxAccent
+        }
+        document.documentElement.style.fontSize = `${settings.fontSize}px`
 
-      setIsSettingsReady(true)
+        if (isDesktopApp && settings.autoBackupEnabled) {
+          void repo.runScheduledBackupIfDue(
+            settings.autoBackupScope,
+            Number(settings.autoBackupIntervalDays),
+            Number(settings.autoBackupKeepCount),
+          ).catch((error) => {
+            console.error('Automatic backup failed:', error)
+          })
+        }
+
+        setIsSettingsReady(true)
+      }
     }
 
     void applySettings()
