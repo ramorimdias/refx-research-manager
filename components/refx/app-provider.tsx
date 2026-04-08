@@ -98,7 +98,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed)
   const { setTheme } = useTheme()
-  const isMacDesktop = isDesktopApp && isLikelyMacDesktop()
+  const isMacTauri = isTauri() && isLikelyMacDesktop()
 
   const pushStartupDiagnostic = (message: string) => {
     setStartupDiagnostics((current) => [...current.slice(-5), message])
@@ -331,7 +331,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const shouldShowLoadingScreen = isLoading || !initialized || !isUiPrefsReady || !isSettingsReady || isDebugSplashActive
 
   useEffect(() => {
-    if (!isMacDesktop || !isTauri() || !shouldShowLoadingScreen) return
+    if (!isMacTauri || !shouldShowLoadingScreen) return
 
     const timeoutId = window.setTimeout(() => {
       console.error('Startup watchdog triggered; forcing safe desktop fallback.')
@@ -355,7 +355,7 @@ export function AppProvider({ children }: AppProviderProps) {
     }, STARTUP_WATCHDOG_TIMEOUT_MS)
 
     return () => window.clearTimeout(timeoutId)
-  }, [isMacDesktop, setTheme, shouldShowLoadingScreen])
+  }, [isMacTauri, setTheme, shouldShowLoadingScreen])
 
   useEffect(() => {
     if (!isDesktopApp || !isTauri() || shouldShowLoadingScreen || hasRevealedDesktopWindow.current) return
@@ -390,8 +390,8 @@ export function AppProvider({ children }: AppProviderProps) {
       <AppLoadingScreen
         compact
         locale={locale}
-        statusLine={isMacDesktop ? startupStatusLine : undefined}
-        diagnostics={isMacDesktop ? startupDiagnostics : undefined}
+        statusLine={isMacTauri ? startupStatusLine : undefined}
+        diagnostics={isMacTauri ? startupDiagnostics : undefined}
         className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#f8fafc_34%,#eef2ff_100%)] dark:bg-[radial-gradient(circle_at_top,#1d2841_0%,#0f172a_36%,#09090b_100%)]"
       />
     )
