@@ -45,36 +45,11 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: pnpm exec tauri build --bundles app --target x86_64-apple-darwin --no-sign
 
-      - name: Merge universal app bundle
-        shell: bash
-        run: |
-          APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-          ARM_APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
-          X64_APP="src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app"
-          UNIVERSAL_ROOT="src-tauri/target/universal-apple-darwin/release/bundle"
-          UNIVERSAL_APP_DIR="${UNIVERSAL_ROOT}/macos"
-          UNIVERSAL_APP="${UNIVERSAL_APP_DIR}/${APP_NAME}.app"
-
-          mkdir -p "${UNIVERSAL_APP_DIR}" "${UNIVERSAL_ROOT}/dmg"
-          ditto "${ARM_APP}" "${UNIVERSAL_APP}"
-
-          while IFS= read -r -d '' arm_file; do
-            rel_path="${arm_file#${ARM_APP}/}"
-            x64_file="${X64_APP}/${rel_path}"
-            universal_file="${UNIVERSAL_APP}/${rel_path}"
-
-            if [[ -f "${x64_file}" ]] && file "${arm_file}" | grep -q "Mach-O"; then
-              lipo -create "${arm_file}" "${x64_file}" -output "${universal_file}"
-            fi
-          done < <(find "${ARM_APP}" -type f -print0)
-
-          codesign --force --deep -s - "${UNIVERSAL_APP}"
-
-          EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${UNIVERSAL_APP}/Contents/Info.plist")"
-          file "${UNIVERSAL_APP}/Contents/MacOS/${EXECUTABLE_NAME}"
-
-          ditto -c -k --sequesterRsrc --keepParent "${UNIVERSAL_APP}" "${UNIVERSAL_ROOT}/${APP_NAME}.app.zip"
-          hdiutil create -volname "${APP_NAME}" -srcfolder "${UNIVERSAL_APP}" -ov -format UDZO "${UNIVERSAL_ROOT}/dmg/${APP_NAME}.dmg"
+      - name: Package universal macOS build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/package-macos-universal.sh
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v4
@@ -84,3 +59,5 @@ jobs:
             src-tauri/target/universal-apple-darwin/release/bundle/**/*.app
             src-tauri/target/universal-apple-darwin/release/bundle/**/*.zip
             src-tauri/target/universal-apple-darwin/release/bundle/**/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.sig

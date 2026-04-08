@@ -6,6 +6,7 @@ const tauriConfigPath = resolve(repoRoot, 'src-tauri', 'tauri.conf.json')
 const releaseAssetsDir = resolve(repoRoot, 'release-assets')
 const windowsAssetsDir = join(releaseAssetsDir, 'windows')
 const macosAssetsDir = join(releaseAssetsDir, 'macos')
+const existingManifestPath = join(releaseAssetsDir, 'existing', 'latest.json')
 const outputPath = join(releaseAssetsDir, 'latest.json')
 
 function walk(dir) {
@@ -35,18 +36,25 @@ function findWindowsManifest() {
   return manifest.platforms ?? {}
 }
 
-function inferMacPlatformKey() {
-  const dmgNames = walk(macosAssetsDir).map((filePath) => basename(filePath).toLowerCase())
+function readExistingPlatforms() {
+  if (!existsSync(existingManifestPath)) return {}
 
-  if (dmgNames.some((name) => name.includes('aarch64') || name.includes('arm64'))) {
-    return 'darwin-aarch64'
+  const manifest = JSON.parse(readFileSync(existingManifestPath, 'utf8'))
+  return manifest.platforms ?? {}
+}
+
+function inferMacPlatformKeys(tarballName) {
+  const normalized = tarballName.toLowerCase()
+
+  if (normalized.includes('aarch64') || normalized.includes('arm64')) {
+    return ['darwin-aarch64']
   }
 
-  if (dmgNames.some((name) => name.includes('x86_64') || name.includes('x64'))) {
-    return 'darwin-x86_64'
+  if (normalized.includes('x86_64') || normalized.includes('x64')) {
+    return ['darwin-x86_64']
   }
 
-  throw new Error('Could not infer macOS updater architecture from release assets.')
+  return ['darwin-aarch64', 'darwin-x86_64']
 }
 
 function findMacUpdaterEntry(releaseBase) {
@@ -59,14 +67,16 @@ function findMacUpdaterEntry(releaseBase) {
     throw new Error(`Missing updater signature for ${basename(tarballPath)}`)
   }
 
-  const platformKey = inferMacPlatformKey()
+  const tarballName = basename(tarballPath)
+  const signature = readFileSync(signaturePath, 'utf8').trim()
 
-  return {
-    [platformKey]: {
-      signature: readFileSync(signaturePath, 'utf8').trim(),
-      url: `${releaseBase}/${encodeURIComponent(basename(tarballPath))}`,
+  return Object.fromEntries(inferMacPlatformKeys(tarballName).map((platformKey) => [
+    platformKey,
+    {
+      signature,
+      url: `${releaseBase}/${encodeURIComponent(tarballName)}`,
     },
-  }
+  ]))
 }
 
 const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, 'utf8'))
@@ -78,13 +88,17 @@ if (!version || !endpoint) {
 }
 
 const releaseBase = normalizeRepoReleaseBase(endpoint, version)
+const existingPlatforms = readExistingPlatforms()
+const windowsPlatforms = findWindowsManifest()
+const macPlatforms = findMacUpdaterEntry(releaseBase)
 const manifest = {
   version,
   notes: `Refx ${version} is available.`,
   pub_date: new Date().toISOString(),
   platforms: {
-    ...findWindowsManifest(),
-    ...findMacUpdaterEntry(releaseBase),
+    ...existingPlatforms,
+    ...windowsPlatforms,
+    ...macPlatforms,
   },
 }
 

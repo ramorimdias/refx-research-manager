@@ -1,0 +1,322 @@
+name: Release Desktop Platform
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version number without v prefix, example 0.1.27
+        required: true
+        type: string
+      release_notes:
+        description: Optional release notes
+        required: false
+        default: ''
+        type: string
+      platforms:
+        description: Which desktop platforms to release
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      version: ${{ steps.meta.outputs.version }}
+      release_notes: ${{ steps.meta.outputs.release_notes }}
+      build_windows: ${{ steps.meta.outputs.build_windows }}
+      build_macos: ${{ steps.meta.outputs.build_macos }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Define release metadata
+        id: meta
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG_NAME="v$VERSION"
+          PLATFORMS="${{ inputs.platforms }}"
+
+          if [[ "$PLATFORMS" == "windows" || "$PLATFORMS" == "both" ]]; then
+            echo "build_windows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_windows=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ "$PLATFORMS" == "macos" || "$PLATFORMS" == "both" ]]; then
+            echo "build_macos=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_macos=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_notes<<EOF"
+            echo "${{ inputs.release_notes }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate semver
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $VERSION"
+            exit 1
+          fi
+
+      - name: Check existing tag
+        id: tag
+        shell: bash
+        run: |
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update versions
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          node -e "
+          const fs = require('fs');
+
+          const pkgPath = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          pkg.version = process.argv[1];
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+          const tauriPath = 'src-tauri/tauri.conf.json';
+          const tauri = JSON.parse(fs.readFileSync(tauriPath, 'utf8'));
+          tauri.version = process.argv[1];
+          fs.writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + '\n');
+
+          const cargoPath = 'src-tauri/Cargo.toml';
+          const cargo = fs.readFileSync(cargoPath, 'utf8').replace(
+            /^version = \"[^\"]+\"$/m,
+            'version = \"' + process.argv[1] + '\"'
+          );
+          fs.writeFileSync(cargoPath, cargo);
+
+          const appVersionPath = 'lib/app-version.ts';
+          const appVersion = fs.readFileSync(appVersionPath, 'utf8').replace(
+            /APP_VERSION = '[^']+'/,
+            \"APP_VERSION = '\" + process.argv[1] + \"'\"
+          );
+          fs.writeFileSync(appVersionPath, appVersion);
+          " "$VERSION"
+
+      - name: Commit and tag
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml lib/app-version.ts
+          git commit -m "Release $VERSION"
+          git tag "$TAG_NAME"
+          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin "$TAG_NAME"
+
+  build-windows:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.build_windows == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows release artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri:build
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-assets
+          path: |
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.sig
+            src-tauri/target/release/bundle/**/latest.json
+
+  build-macos:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.build_macos == 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag_name }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Tauri icons
+        run: pnpm tauri:icons
+
+      - name: Build Apple Silicon app bundle
+        env:
+          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: pnpm exec tauri build --bundles app --target aarch64-apple-darwin --no-sign
+
+      - name: Build Intel app bundle
+        env:
+          NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: pnpm exec tauri build --bundles app --target x86_64-apple-darwin --no-sign
+
+      - name: Package universal macOS release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/package-macos-universal.sh
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-assets
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.app
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.zip
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/**/*.sig
+
+  publish-release:
+    needs: [prepare-release, build-windows, build-macos]
+    if: |
+      always() &&
+      needs.prepare-release.result == 'success' &&
+      (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped') &&
+      (needs.build-macos.result == 'success' || needs.build-macos.result == 'skipped')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag_name }}
+
+      - name: Download Windows artifacts
+        if: needs.prepare-release.outputs.build_windows == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-assets
+          path: release-assets/windows
+
+      - name: Download macOS artifacts
+        if: needs.prepare-release.outputs.build_macos == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release-assets
+          path: release-assets/macos
+
+      - name: Download existing release manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG_NAME="${{ needs.prepare-release.outputs.tag_name }}"
+          mkdir -p release-assets/existing
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release download "$TAG_NAME" --pattern latest.json --dir release-assets/existing || true
+          fi
+
+      - name: Generate updater manifest
+        run: node scripts/generate-release-manifest.mjs
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG_NAME="${{ needs.prepare-release.outputs.tag_name }}"
+          RELEASE_TITLE="Refx ${TAG_NAME}"
+          RELEASE_NOTES="${{ needs.prepare-release.outputs.release_notes }}"
+
+          files=("release-assets/latest.json")
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(
+            find release-assets/windows release-assets/macos -type f \
+              \( -name '*.msi' -o -name '*.exe' -o -name '*.sig' -o -name '*.dmg' -o -name '*.tar.gz' \) \
+              -print0 2>/dev/null || true
+          )
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${files[@]}" --clobber
+            if [[ -n "$RELEASE_NOTES" ]]; then
+              gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES"
+            fi
+          else
+            if [[ -n "$RELEASE_NOTES" ]]; then
+              gh release create "$TAG_NAME" "${files[@]}" --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES"
+            else
+              gh release create "$TAG_NAME" "${files[@]}" --title "$RELEASE_TITLE" --generate-notes
+            fi
+          fi
