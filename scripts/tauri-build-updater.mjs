@@ -30,6 +30,19 @@ if ((buildIcons.status ?? 1) !== 0) {
   process.exit(buildIcons.status ?? 1)
 }
 
+if (process.platform === 'darwin') {
+  const generateMacIcns = spawnSync('bash', ['scripts/generate-macos-icns.sh'], {
+    cwd: repoRoot,
+    env,
+    stdio: 'inherit',
+    shell: true,
+  })
+
+  if ((generateMacIcns.status ?? 1) !== 0) {
+    process.exit(generateMacIcns.status ?? 1)
+  }
+}
+
 const tauriBuild = spawnSync(pnpmCommand, ['exec', 'tauri', 'build', ...forwardedBuildArgs], {
   cwd: repoRoot,
   env,

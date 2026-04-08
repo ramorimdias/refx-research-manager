@@ -218,6 +218,9 @@ jobs:
       - name: Generate Tauri icons
         run: pnpm tauri:icons
 
+      - name: Generate macOS ICNS
+        run: bash scripts/generate-macos-icns.sh
+
       - name: Build Apple Silicon app bundle
         env:
           NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.NEXT_PUBLIC_SEMANTIC_SCHOLAR_API_KEY }}
