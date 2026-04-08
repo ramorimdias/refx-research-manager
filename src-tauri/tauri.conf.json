@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self' https://api.github.com https://github.com; img-src 'self' data: asset: https:; object-src 'self' asset: data: blob:; frame-src 'self' asset: data: blob:; worker-src 'self' blob:;"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com https://github.com; img-src 'self' data: asset: https:; object-src 'self' asset: data: blob:; frame-src 'self' asset: data: blob:; worker-src 'self' blob:;"
     }
   },
   "bundle": {
