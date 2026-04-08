@@ -2,6 +2,7 @@
 
 import { readFile } from '@tauri-apps/plugin-fs'
 import type { Document } from '@/lib/types'
+import { splitIntoSentenceLikeSegments } from '@/lib/utils/sentence-segmentation'
 
 const STOP_WORDS = new Set([
   'about', 'after', 'again', 'also', 'among', 'and', 'been', 'being', 'between', 'both', 'does', 'during', 'each',
@@ -230,8 +231,7 @@ function splitIntoSearchFragments(input: string) {
   const normalized = input.replace(/\s+/g, ' ').trim()
   if (!normalized) return []
 
-  const sentenceLike = normalized
-    .split(/(?<=[.!?])\s+|\s{2,}/)
+  const sentenceLike = splitIntoSentenceLikeSegments(normalized)
     .map((part) => part.trim())
     .filter((part) => part.length >= 20)
 

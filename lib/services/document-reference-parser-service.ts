@@ -1,6 +1,7 @@
 'use client'
 
 import type { ParsedDocumentReference } from '@/lib/types'
+import { splitIntoSentenceLikeSegments } from '@/lib/utils/sentence-segmentation'
 
 const DOI_PATTERN = /\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+\b/i
 const YEAR_PATTERN = /\b(19|20)\d{2}\b/
@@ -79,8 +80,7 @@ function parseTitle(remainder: string) {
   const quotedTitle = sentenceMatches?.[1] ?? sentenceMatches?.[2]
   if (quotedTitle) return stripTrailingPunctuation(quotedTitle)
 
-  const titleCandidates = cleaned
-    .split(/(?<=[.?!])\s+/)
+  const titleCandidates = splitIntoSentenceLikeSegments(cleaned)
     .map((candidate) => stripTrailingPunctuation(candidate))
     .filter((candidate) => candidate.length >= 8)
 
@@ -95,8 +95,7 @@ function parseJournal(remainder: string, title?: string) {
     ? cleaned.slice(Math.max(0, cleaned.toLowerCase().indexOf(title.toLowerCase())) + title.length).trim()
     : cleaned
 
-  return afterTitle
-    .split(/(?<=[.?!])\s+/)
+  return splitIntoSentenceLikeSegments(afterTitle)
     .map((segment) => stripTrailingPunctuation(segment))
     .filter((segment) => segment.length >= 4)
     .find((segment) => /[A-Za-z]/.test(segment))
