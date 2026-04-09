@@ -38,6 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -59,6 +60,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { deriveMetadataStatus, serializeMetadataProvenance, serializeMetadataUserEditedFields } from '@/lib/services/document-metadata-service'
+import { getLibraryForegroundColor, LIBRARY_COLOR_OPTIONS } from '@/lib/library-colors'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -73,6 +75,7 @@ import { DocumentTable, DocumentTableColumnControls } from '@/components/refx/do
 import { FilterPanel } from '@/components/refx/filter-panel'
 import { DocumentCard } from '@/components/refx/document-card'
 import { useDocumentViewFlags } from '@/lib/hooks/use-document-view-flags'
+import { DEFAULT_LIBRARY_ICON, getLibraryIcon, getLibraryIconLabel, LIBRARY_ICON_OPTIONS } from '@/lib/library-icons'
 import type { Document, SortField, ViewMode } from '@/lib/types'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
@@ -90,6 +93,7 @@ type LibraryFormState = {
   name: string
   description: string
   color: string
+  icon: string
 }
 
 type PhysicalBookFormState = {
@@ -102,23 +106,11 @@ type PhysicalBookFormState = {
   coverImagePath?: string
 }
 
-const LIBRARY_COLOR_OPTIONS = [
-  '#3b82f6',
-  '#2563eb',
-  '#0f766e',
-  '#10b981',
-  '#65a30d',
-  '#f59e0b',
-  '#f97316',
-  '#ef4444',
-  '#db2777',
-  '#7c3aed',
-] as const
-
 const DEFAULT_LIBRARY_FORM: LibraryFormState = {
   name: '',
   description: '',
   color: LIBRARY_COLOR_OPTIONS[0],
+  icon: DEFAULT_LIBRARY_ICON,
 }
 
 const DEFAULT_PHYSICAL_BOOK_FORM: PhysicalBookFormState = {
@@ -169,6 +161,83 @@ function buildPaginationItems(currentPage: number, totalPages: number) {
 function fileNameFromPath(path?: string) {
   if (!path) return ''
   return path.split(/[\\/]/).pop() ?? path
+}
+
+type LibraryIconPickerProps = {
+  value: string
+  color: string
+  label: string
+  id: string
+  onChange: (icon: string) => void
+}
+
+function LibraryIconPicker({ value, color, label, id, onChange }: LibraryIconPickerProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const SelectedIcon = getLibraryIcon(value)
+  const selectedLabel = getLibraryIconLabel(value)
+  const selectedForegroundColor = getLibraryForegroundColor(color)
+
+  return (
+    <div className="space-y-2 md:min-w-[13rem]">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-3 rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+        <Popover open={isOpen} onOpenChange={setIsOpen}>
+          <PopoverTrigger asChild>
+            <button
+              id={id}
+              type="button"
+              aria-label={`${label}: ${selectedLabel}`}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm transition hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              style={{ backgroundColor: color, color: selectedForegroundColor }}
+            >
+              <SelectedIcon className="h-5 w-5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[18rem] p-3">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground">{selectedLabel}</p>
+              </div>
+              <div className="grid grid-cols-5 gap-2">
+                {LIBRARY_ICON_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const selected = value === option.value
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      title={option.label}
+                      aria-label={`${label}: ${option.label}`}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        onChange(option.value)
+                        setIsOpen(false)
+                      }}
+                      className={cn(
+                        'flex h-11 w-full items-center justify-center rounded-2xl border transition',
+                        selected
+                          ? 'border-foreground text-white shadow-sm'
+                          : 'border-border/70 bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                      )}
+                      style={selected ? { backgroundColor: color, color: selectedForegroundColor } : undefined}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{selectedLabel}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const SORT_FIELD_LABELS: Record<SortField, string> = {
@@ -380,6 +449,8 @@ export default function LibrariesPage() {
   }, [locale])
 
   const activeLibrary = libraries.find((lib) => lib.id === activeLibraryId)
+  const ActiveLibraryIcon = activeLibrary ? getLibraryIcon(activeLibrary.icon) : null
+  const activeLibraryIconColor = activeLibrary ? getLibraryForegroundColor(activeLibrary.color) : '#ffffff'
   const visibleLibraryDocuments = useMemo(
     () => documents.filter((document) => document.documentType !== 'my_work'),
     [documents],
@@ -522,6 +593,7 @@ export default function LibrariesPage() {
       name: activeLibrary.name,
       description: activeLibrary.description,
       color: activeLibrary.color,
+      icon: activeLibrary.icon || DEFAULT_LIBRARY_ICON,
     })
     setIsRenameDialogOpen(true)
   }
@@ -609,6 +681,7 @@ export default function LibrariesPage() {
         name,
         description: libraryForm.description.trim(),
         color: libraryForm.color,
+        icon: libraryForm.icon,
       })
       setIsCreateDialogOpen(false)
       resetLibraryForm()
@@ -628,6 +701,7 @@ export default function LibrariesPage() {
         name,
         description: libraryForm.description.trim(),
         color: libraryForm.color,
+        icon: libraryForm.icon,
       })
       setIsRenameDialogOpen(false)
       resetLibraryForm()
@@ -913,9 +987,11 @@ export default function LibrariesPage() {
             <div className="flex items-center justify-between border-0 !bg-transparent px-5 py-3 shadow-none">
               <div className="flex items-center gap-3">
                 <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: activeLibrary.color }}
-                />
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm"
+                  style={{ backgroundColor: activeLibrary.color, color: activeLibraryIconColor }}
+                >
+                  {ActiveLibraryIcon ? <ActiveLibraryIcon className="h-5 w-5" /> : null}
+                </div>
                 <div>
                   <h2 className="text-lg font-semibold tracking-tight">{activeLibrary.name}</h2>
                   <p className="text-sm text-muted-foreground">{activeLibrary.description || t('libraries.localLibrary')}</p>
@@ -1400,24 +1476,33 @@ export default function LibrariesPage() {
                 placeholder={t('libraries.libraryDescriptionPlaceholder')}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="library-color">{t('libraries.libraryColorLabel')}</Label>
-              <div id="library-color" className="flex flex-wrap gap-2">
-                {LIBRARY_COLOR_OPTIONS.map((color) => {
-                  const selected = libraryForm.color === color
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      aria-label={`Select color ${color}`}
-                      aria-pressed={selected}
-                      onClick={() => setLibraryForm((state) => ({ ...state, color }))}
-                      className={`h-8 w-8 rounded-full border-2 transition ${selected ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  )
-                })}
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+              <div className="space-y-2">
+                <Label htmlFor="library-color">{t('libraries.libraryColorLabel')}</Label>
+                <div id="library-color" className="grid max-w-fit grid-cols-6 gap-2">
+                  {LIBRARY_COLOR_OPTIONS.map((color) => {
+                    const selected = libraryForm.color === color
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-label={`Select color ${color}`}
+                        aria-pressed={selected}
+                        onClick={() => setLibraryForm((state) => ({ ...state, color }))}
+                        className={`h-8 w-8 rounded-full border-2 transition ${selected ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    )
+                  })}
+                </div>
               </div>
+              <LibraryIconPicker
+                id="library-icon"
+                label={t('libraries.libraryIconLabel')}
+                value={libraryForm.icon}
+                color={libraryForm.color}
+                onChange={(icon) => setLibraryForm((state) => ({ ...state, icon }))}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -1463,24 +1548,33 @@ export default function LibrariesPage() {
                 onChange={(event) => setLibraryForm((state) => ({ ...state, description: event.target.value }))}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="rename-library-color">{t('libraries.libraryColorLabel')}</Label>
-              <div id="rename-library-color" className="flex flex-wrap gap-2">
-                {LIBRARY_COLOR_OPTIONS.map((color) => {
-                  const selected = libraryForm.color === color
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      aria-label={`Select color ${color}`}
-                      aria-pressed={selected}
-                      onClick={() => setLibraryForm((state) => ({ ...state, color }))}
-                      className={`h-8 w-8 rounded-full border-2 transition ${selected ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  )
-                })}
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+              <div className="space-y-2">
+                <Label htmlFor="rename-library-color">{t('libraries.libraryColorLabel')}</Label>
+                <div id="rename-library-color" className="grid max-w-fit grid-cols-6 gap-2">
+                  {LIBRARY_COLOR_OPTIONS.map((color) => {
+                    const selected = libraryForm.color === color
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-label={`Select color ${color}`}
+                        aria-pressed={selected}
+                        onClick={() => setLibraryForm((state) => ({ ...state, color }))}
+                        className={`h-8 w-8 rounded-full border-2 transition ${selected ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    )
+                  })}
+                </div>
               </div>
+              <LibraryIconPicker
+                id="rename-library-icon"
+                label={t('libraries.libraryIconLabel')}
+                value={libraryForm.icon}
+                color={libraryForm.color}
+                onChange={(icon) => setLibraryForm((state) => ({ ...state, icon }))}
+              />
             </div>
 
             {activeLibrary && (

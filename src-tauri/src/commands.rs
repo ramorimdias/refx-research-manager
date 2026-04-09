@@ -37,6 +37,7 @@ pub struct Library {
     pub name: String,
     pub description: String,
     pub color: String,
+    pub icon: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -258,6 +259,7 @@ pub struct CreateLibraryInput {
     pub name: String,
     pub description: Option<String>,
     pub color: Option<String>,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +268,7 @@ pub struct UpdateLibraryInput {
     pub name: Option<String>,
     pub description: Option<String>,
     pub color: Option<String>,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1118,7 +1121,7 @@ fn document_tags(conn: &Connection, document_id: &str) -> Result<Vec<String>, Ap
 fn get_library_by_id(conn: &Connection, id: &str) -> Result<Option<Library>, AppError> {
     let library = conn
         .query_row(
-            "SELECT id, name, description, color, created_at, updated_at FROM libraries WHERE id = ?1",
+            "SELECT id, name, description, color, COALESCE(icon, 'library-big'), created_at, updated_at FROM libraries WHERE id = ?1",
             params![id],
             |r| {
                 Ok(Library {
@@ -1126,8 +1129,9 @@ fn get_library_by_id(conn: &Connection, id: &str) -> Result<Option<Library>, App
                     name: r.get(1)?,
                     description: r.get(2)?,
                     color: r.get(3)?,
-                    created_at: r.get(4)?,
-                    updated_at: r.get(5)?,
+                    icon: r.get(4)?,
+                    created_at: r.get(5)?,
+                    updated_at: r.get(6)?,
                 })
             },
         )
@@ -1231,6 +1235,7 @@ CREATE TABLE IF NOT EXISTS libraries (
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   color TEXT DEFAULT '#3b82f6',
+  icon TEXT NOT NULL DEFAULT 'library-big',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -1489,6 +1494,7 @@ CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_vi
     ensure_column(&conn, "documents", "has_extracted_text", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "documents", "has_ocr_text", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(&conn, "documents", "document_type", "TEXT NOT NULL DEFAULT 'pdf'")?;
+    ensure_column(&conn, "libraries", "icon", "TEXT NOT NULL DEFAULT 'library-big'")?;
     ensure_column(&conn, "documents", "isbn", "TEXT")?;
     ensure_column(&conn, "documents", "publisher", "TEXT")?;
     ensure_column(&conn, "documents", "commentary_text", "TEXT")?;
@@ -1536,8 +1542,8 @@ CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_vi
     if count == 0 {
         let now = now_iso();
         conn.execute(
-            "INSERT INTO libraries (id, name, description, color, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params!["lib-default", "My Library", "Default local library", "#3b82f6", now, now],
+            "INSERT INTO libraries (id, name, description, color, icon, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params!["lib-default", "My Library", "Default local library", "#3b82f6", "library-big", now, now],
         )?;
     }
 
@@ -1547,15 +1553,16 @@ CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_vi
 #[tauri::command]
 pub fn list_libraries(app: AppHandle) -> Result<Vec<Library>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare("SELECT id, name, description, color, created_at, updated_at FROM libraries ORDER BY created_at")?;
+    let mut stmt = conn.prepare("SELECT id, name, description, color, COALESCE(icon, 'library-big'), created_at, updated_at FROM libraries ORDER BY created_at")?;
     let rows = stmt.query_map([], |r| {
         Ok(Library {
             id: r.get(0)?,
             name: r.get(1)?,
             description: r.get(2)?,
             color: r.get(3)?,
-            created_at: r.get(4)?,
-            updated_at: r.get(5)?,
+            icon: r.get(4)?,
+            created_at: r.get(5)?,
+            updated_at: r.get(6)?,
         })
     })?;
     Ok(rows.filter_map(Result::ok).collect())
@@ -1569,15 +1576,17 @@ pub fn create_library(app: AppHandle, input: CreateLibraryInput) -> Result<Libra
     let name = input.name;
     let description = input.description.unwrap_or_default();
     let color = input.color.unwrap_or("#3b82f6".into());
+    let icon = input.icon.unwrap_or("library-big".into());
     conn.execute(
-        "INSERT INTO libraries (id, name, description, color, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, name, description, color, now, now],
+        "INSERT INTO libraries (id, name, description, color, icon, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, name, description, color, icon, now, now],
     )?;
     Ok(Library {
         id,
         name,
         description,
         color,
+        icon,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -1596,9 +1605,10 @@ pub fn update_library(
           name = COALESCE(?1, name),
           description = COALESCE(?2, description),
           color = COALESCE(?3, color),
-          updated_at = ?4
-          WHERE id = ?5"#,
-        params![input.name, input.description, input.color, now, id],
+          icon = COALESCE(?4, icon, 'library-big'),
+          updated_at = ?5
+          WHERE id = ?6"#,
+        params![input.name, input.description, input.color, input.icon, now, id],
     )?;
 
     get_library_by_id(&conn, &id)
@@ -5660,8 +5670,8 @@ pub fn clear_local_data(app: AppHandle) -> Result<(), AppError> {
 
     let now = now_iso();
     conn.execute(
-        "INSERT INTO libraries (id, name, description, color, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params!["lib-default", "My Library", "Default local library", "#3b82f6", now, now],
+        "INSERT INTO libraries (id, name, description, color, icon, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params!["lib-default", "My Library", "Default local library", "#3b82f6", "library-big", now, now],
     )?;
 
     Ok(())

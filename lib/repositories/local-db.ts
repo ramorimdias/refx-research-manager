@@ -7,6 +7,7 @@ export type DbLibrary = {
   name: string
   description: string
   color: string
+  icon: string
   createdAt: string
   updatedAt: string
 }
@@ -463,11 +464,11 @@ export async function listAllDocuments() {
   return invoke<DbDocument[]>('list_all_documents')
 }
 
-export async function createLibrary(input: { name: string; description?: string; color?: string }) {
+export async function createLibrary(input: { name: string; description?: string; color?: string; icon?: string }) {
   return invoke<DbLibrary>('create_library', { input })
 }
 
-export async function updateLibrary(id: string, input: { name?: string; description?: string; color?: string }) {
+export async function updateLibrary(id: string, input: { name?: string; description?: string; color?: string; icon?: string }) {
   return invoke<DbLibrary | null>('update_library', { id, input })
 }
 

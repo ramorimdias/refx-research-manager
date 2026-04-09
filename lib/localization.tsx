@@ -304,6 +304,7 @@ const translations = {
       libraryDescriptionLabel: 'Description',
       libraryDescriptionPlaceholder: 'Optional description',
       libraryColorLabel: 'Color',
+      libraryIconLabel: 'Icon',
       duplicateDocumentsCount: '{count} documents',
       activeFilters: '{count} filter{suffix}',
       clearFilters: 'Clear',

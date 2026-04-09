@@ -3,6 +3,7 @@
 import { bootstrapDesktop } from '@/lib/services/desktop-service'
 import { dbDocumentToUi } from '@/lib/utils/document-mapper'
 import { normalizeErrorMessage } from '@/lib/utils/error'
+import { DEFAULT_LIBRARY_ICON } from '@/lib/library-icons'
 import { toast } from 'sonner'
 import * as repo from '@/lib/repositories/local-db'
 import type {
@@ -36,7 +37,7 @@ export function defaultLibrary(): Library {
     name: 'My Library',
     description: 'Default local library',
     color: '#3b82f6',
-    icon: 'folder',
+    icon: DEFAULT_LIBRARY_ICON,
     type: 'local',
     documentCount: 0,
     createdAt: now,
@@ -55,7 +56,7 @@ export function withDerivedCounts(documents: Document[], libraries: repo.DbLibra
     name: library.name,
     description: library.description,
     color: library.color,
-    icon: 'folder',
+    icon: library.icon || DEFAULT_LIBRARY_ICON,
     type: 'local' as const,
     documentCount: counts[library.id] ?? 0,
     createdAt: new Date(library.createdAt),

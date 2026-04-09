@@ -3,12 +3,14 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2, ChevronDown, Clock, FilePlus2, FolderPlus, Highlighter, Home, LibraryBig, type LucideIcon, StickyNote } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ChevronDown, Clock, FilePlus2, FolderPlus, Highlighter, Home, type LucideIcon, StickyNote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyState } from '@/components/refx/common'
 import { loadAppSettings } from '@/lib/app-settings'
+import { getLibraryForegroundColor, getLibraryOverlayColor } from '@/lib/library-colors'
+import { getLibraryIcon } from '@/lib/library-icons'
 import { useT } from '@/lib/localization'
 import type { Document } from '@/lib/types'
 import { useDocumentStore } from '@/lib/stores/document-store'
@@ -304,29 +306,35 @@ export default function HomePage() {
             <CardTitle>{t('home.quickActions')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            {libraries.map((library) => (
-              <button
-                key={library.id}
-                type="button"
-                className="flex min-h-[5.5rem] w-full max-w-[18rem] items-center justify-between rounded-2xl border border-transparent px-4 py-4 text-left text-white shadow-sm transition hover:opacity-95"
-                style={{ backgroundColor: library.color }}
-                onClick={() => {
-                  setActiveLibrary(library.id)
-                  router.push('/libraries')
-                }}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/18 text-white">
-                    <LibraryBig className="h-6 w-6" />
+            {libraries.map((library) => {
+              const LibraryIcon = getLibraryIcon(library.icon)
+              const foregroundColor = getLibraryForegroundColor(library.color)
+              const overlayColor = getLibraryOverlayColor(library.color)
+
+              return (
+                <button
+                  key={library.id}
+                  type="button"
+                  className="flex min-h-[5.5rem] w-full max-w-[18rem] items-center justify-between rounded-2xl border border-transparent px-4 py-4 text-left shadow-sm transition hover:opacity-95"
+                  style={{ backgroundColor: library.color, color: foregroundColor }}
+                  onClick={() => {
+                    setActiveLibrary(library.id)
+                    router.push('/libraries')
+                  }}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: overlayColor }}>
+                      <LibraryIcon className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{library.name}</p>
+                      <p className="text-xs" style={{ color: foregroundColor, opacity: 0.82 }}>{library.documentCount} {t('home.totalDocuments').toLowerCase()}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{library.name}</p>
-                    <p className="text-xs text-white/80">{library.documentCount} {t('home.totalDocuments').toLowerCase()}</p>
-                  </div>
-                </div>
-                <ArrowRight className="ml-3 h-4 w-4 shrink-0" />
-              </button>
-            ))}
+                  <ArrowRight className="ml-3 h-4 w-4 shrink-0" />
+                </button>
+              )
+            })}
           </CardContent>
         </Card>
       </div>

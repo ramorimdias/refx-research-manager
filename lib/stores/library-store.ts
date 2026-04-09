@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import { DEFAULT_LIBRARY_ICON } from '@/lib/library-icons'
 import { removeDocumentFromIndex } from '@/lib/services/document-search-service'
 import { isTauri } from '@/lib/tauri/client'
 import * as repo from '@/lib/repositories/local-db'
@@ -16,8 +17,8 @@ interface LibraryStoreState {
   setLibraries: (libraries: Library[]) => void
   setActiveLibrary: (id: string | null) => void
   loadLibraryDocuments: (_libraryId?: string | null) => Promise<void>
-  createLibrary: (input: { name: string; description?: string; color?: string }) => Promise<void>
-  updateLibrary: (id: string, updates: { name?: string; description?: string; color?: string }) => Promise<void>
+  createLibrary: (input: { name: string; description?: string; color?: string; icon?: string }) => Promise<void>
+  updateLibrary: (id: string, updates: { name?: string; description?: string; color?: string; icon?: string }) => Promise<void>
   deleteLibrary: (id: string) => Promise<boolean>
   resetLibraries: () => void
 }
@@ -61,7 +62,7 @@ export const useLibraryStore = create<LibraryStoreState>((set) => ({
         name: input.name,
         description: input.description ?? '',
         color: input.color ?? '#3b82f6',
-        icon: 'folder',
+        icon: input.icon ?? DEFAULT_LIBRARY_ICON,
         type: 'local',
         documentCount: 0,
         createdAt: now,
