@@ -155,11 +155,17 @@ export function toUiGraphView(view: repo.DbGraphView): GraphView {
 }
 
 export function toUiGraphViewNodeLayout(layout: repo.DbGraphViewNodeLayout): GraphViewNodeLayout {
+  const normalizeCoordinate = (value: number) => (
+    Number.isFinite(value)
+      ? Math.max(-12000, Math.min(12000, value))
+      : 0
+  )
+
   return {
     graphViewId: layout.graphViewId,
     documentId: layout.documentId,
-    x: layout.positionX,
-    y: layout.positionY,
+    x: normalizeCoordinate(layout.positionX),
+    y: normalizeCoordinate(layout.positionY),
     pinned: layout.pinned,
     hidden: layout.hidden,
     updatedAt: new Date(layout.updatedAt),

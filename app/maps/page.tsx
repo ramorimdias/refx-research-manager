@@ -13,20 +13,13 @@ import { useSearchParams } from 'next/navigation'
 import {
   Background,
   BackgroundVariant,
-  BaseEdge,
   Controls,
-  EdgeLabelRenderer,
-  Handle,
   MarkerType,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  Position,
-  getStraightPath,
   type Connection,
-  type EdgeProps,
   type Node,
-  type NodeProps,
   type OnConnect,
   type OnConnectEnd,
   type OnConnectStart,
@@ -37,12 +30,10 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
-  useStore,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import {
   Check,
-  ArrowRight,
   ChevronDown,
   ChevronUp,
   GitBranch,
@@ -112,11 +103,16 @@ import {
   type DocumentGraphNodeData,
 } from '@/lib/services/document-relation-service'
 import { formatReference } from '@/lib/services/work-reference-service'
-import type { GraphView } from '@/lib/types'
+import type { GraphView, GraphViewNodeLayout } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useT } from '@/lib/localization'
-
-type ConnectionDirection = 'outbound' | 'inbound'
+import {
+  MAP_EDGE_TYPES as FLOW_EDGE_TYPES,
+  MAP_NODE_TYPES as FLOW_NODE_TYPES,
+  type AnyGraphNodeData,
+  type ConnectionDirection,
+  type ReferenceGraphNodeData,
+} from '@/components/refx/map-flow-types'
 
 type GraphPreferences = {
   colorMode: GraphColorMode
@@ -130,20 +126,6 @@ type GraphPreferences = {
   yearMax?: number
   yearMin?: number
 }
-
-type GraphNodeExtraState = {
-  pendingConnectionDirection: ConnectionDirection | null
-  onStartConnection: (documentId: string, direction: ConnectionDirection) => void
-}
-
-type GraphNodeData = DocumentGraphNodeData & GraphNodeExtraState
-type ReferenceGraphNodeData = {
-  workReference: repo.DbWorkReference
-  label: string
-  isSelected?: boolean
-  isHovered?: boolean
-}
-type AnyGraphNodeData = GraphNodeData | ReferenceGraphNodeData
 
 type GraphViewDraft = {
   name: string
@@ -168,7 +150,9 @@ type GraphContextMenuState =
 const GRAPH_PREFERENCES_STORAGE_KEY = 'refx.maps.phase4.preferences'
 const WORKING_MAP_LAYOUT_STORAGE_KEY = 'refx.maps.working-layouts'
 const LAST_ACTIVE_MAP_STORAGE_KEY = 'refx.maps.last-active-map'
+const WORKING_MAP_SELECT_VALUE = '__working__'
 const MY_WORK_HEXAGON_CLIP_PATH = 'polygon(25% 6%, 75% 6%, 98% 50%, 75% 94%, 25% 94%, 2% 50%)'
+const GRAPH_POSITION_LIMIT = 12000
 const DEFAULT_GRAPH_PREFERENCES: GraphPreferences = {
   colorMode: 'density',
   confidenceThreshold: 0,
@@ -187,6 +171,7 @@ const DEFAULT_GRAPH_VIEW_DRAFT: GraphViewDraft = {
 
 type WorkingMapLayouts = Record<string, Record<string, { x: number; y: number }>>
 
+/*
 function resolveEdgeDirections(
   sourceX: number,
   sourceY: number,
@@ -540,14 +525,15 @@ function ReferenceGraphNode({ data, selected }: NodeProps<ReferenceGraphNodeData
   )
 }
 
-const nodeTypes = {
+const MAP_NODE_TYPES = Object.freeze({
   document: DocumentGraphNode,
   reference: ReferenceGraphNode,
-}
+})
 
-const edgeTypes = {
+const MAP_EDGE_TYPES = Object.freeze({
   relationship: RelationshipEdge,
-}
+})
+*/
 
 function preserveNodePositions(
   nextNodes: Node<AnyGraphNodeData>[],
@@ -560,6 +546,51 @@ function preserveNodePositions(
     ...node,
     position: lockedPositions?.get(node.id) ?? positions.get(node.id) ?? node.position,
   }))
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+
+  return true
+}
+
+function areGraphPreferencesEqual(left: GraphPreferences, right: GraphPreferences) {
+  return (
+    left.colorMode === right.colorMode
+    && left.confidenceThreshold === right.confidenceThreshold
+    && left.focusMode === right.focusMode
+    && left.hideOrphans === right.hideOrphans
+    && left.neighborhoodDepth === right.neighborhoodDepth
+    && left.relationFilter === right.relationFilter
+    && left.scopeMode === right.scopeMode
+    && left.sizeMode === right.sizeMode
+    && left.yearMin === right.yearMin
+    && left.yearMax === right.yearMax
+  )
+}
+
+function sanitizeGraphPosition(
+  position?: { x: unknown; y: unknown } | null,
+  fallback?: { x: number; y: number },
+) {
+  if (!position) return fallback ?? null
+
+  const rawX = typeof position.x === 'number' ? position.x : Number(position.x)
+  const rawY = typeof position.y === 'number' ? position.y : Number(position.y)
+
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+    return fallback ?? null
+  }
+
+  return {
+    x: Math.max(-GRAPH_POSITION_LIMIT, Math.min(GRAPH_POSITION_LIMIT, rawX)),
+    y: Math.max(-GRAPH_POSITION_LIMIT, Math.min(GRAPH_POSITION_LIMIT, rawY)),
+  }
 }
 
 function readStoredGraphPreferences() {
@@ -583,7 +614,19 @@ function readWorkingMapLayouts() {
   try {
     const raw = window.localStorage.getItem(WORKING_MAP_LAYOUT_STORAGE_KEY)
     if (!raw) return {}
-    return JSON.parse(raw) as WorkingMapLayouts
+    const parsed = JSON.parse(raw) as WorkingMapLayouts
+
+    return Object.fromEntries(
+      Object.entries(parsed).map(([libraryId, layouts]) => [
+        libraryId,
+        Object.fromEntries(
+          Object.entries(layouts ?? {}).flatMap(([nodeId, position]) => {
+            const normalized = sanitizeGraphPosition(position)
+            return normalized ? [[nodeId, normalized] as const] : []
+          }),
+        ),
+      ]),
+    ) as WorkingMapLayouts
   } catch {
     return {}
   }
@@ -591,7 +634,19 @@ function readWorkingMapLayouts() {
 
 function writeWorkingMapLayouts(value: WorkingMapLayouts) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(WORKING_MAP_LAYOUT_STORAGE_KEY, JSON.stringify(value))
+  const normalized = Object.fromEntries(
+    Object.entries(value).map(([libraryId, layouts]) => [
+      libraryId,
+      Object.fromEntries(
+        Object.entries(layouts ?? {}).flatMap(([nodeId, position]) => {
+          const sanitized = sanitizeGraphPosition(position)
+          return sanitized ? [[nodeId, sanitized] as const] : []
+        }),
+      ),
+    ]),
+  )
+
+  window.localStorage.setItem(WORKING_MAP_LAYOUT_STORAGE_KEY, JSON.stringify(normalized))
 }
 
 function readLastActiveMaps() {
@@ -667,16 +722,16 @@ function MapsPageContent() {
   const [isSaveViewDialogOpen, setIsSaveViewDialogOpen] = useState(false)
   const [isEditingViewDialogOpen, setIsEditingViewDialogOpen] = useState(false)
   const [graphViewDraft, setGraphViewDraft] = useState<GraphViewDraft>(DEFAULT_GRAPH_VIEW_DRAFT)
-  const [selectedMyWorkPickerValue, setSelectedMyWorkPickerValue] = useState('')
+  const [selectedMyWorkPickerResetKey, setSelectedMyWorkPickerResetKey] = useState(0)
   const [workReferencesByDocumentId, setWorkReferencesByDocumentId] = useState<Record<string, repo.DbWorkReference[]>>({})
   const [workingLayoutPositions, setWorkingLayoutPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [pendingDocumentPlacements, setPendingDocumentPlacements] = useState<Record<string, { x: number; y: number }>>({})
-  const stableNodeTypes = useMemo(() => nodeTypes, [])
-  const stableEdgeTypes = useMemo(() => edgeTypes, [])
   const dragConnectionSourceIdRef = useRef<string | null>(null)
   const dragConnectionHandleIdRef = useRef<string | null>(null)
   const dragConnectionCompletedRef = useRef(false)
   const lastAutoFitKeyRef = useRef<string | null>(null)
+  const pendingPlacementCommitIdsRef = useRef<Set<string>>(new Set())
+  const recentlyRevealedDocumentIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     setGraphPreferences(readStoredGraphPreferences())
@@ -782,7 +837,7 @@ function MapsPageContent() {
       return
     }
 
-    setGraphPreferences({
+    const nextPreferences: GraphPreferences = {
       colorMode: activeGraphView.colorMode,
       confidenceThreshold: 0,
       focusMode: activeGraphView.neighborhoodDepth !== 'full',
@@ -793,19 +848,30 @@ function MapsPageContent() {
       sizeMode: activeGraphView.sizeMode,
       yearMin: activeGraphView.yearMin,
       yearMax: activeGraphView.yearMax,
-    })
-    setManualVisibleDocumentIds(activeGraphView.documentIds)
-    setSelectedDocumentId(activeGraphView.selectedDocumentId ?? null)
+    }
+    const nextSelectedDocumentId = activeGraphView.selectedDocumentId ?? null
+
+    setGraphPreferences((currentPreferences) => (
+      areGraphPreferencesEqual(currentPreferences, nextPreferences) ? currentPreferences : nextPreferences
+    ))
+    setManualVisibleDocumentIds((currentIds) => (
+      areStringArraysEqual(currentIds, activeGraphView.documentIds) ? currentIds : activeGraphView.documentIds
+    ))
+    setSelectedDocumentId((currentId) => (
+      currentId === nextSelectedDocumentId ? currentId : nextSelectedDocumentId
+    ))
   }, [activeGraphView])
 
   useEffect(() => {
     if (!activeGraphView) return
 
-    setHiddenDocumentIds(
-      graphViewLayouts
-        .filter((layout) => layout.graphViewId === activeGraphView.id && layout.hidden)
-        .map((layout) => layout.documentId),
-    )
+    const nextHiddenDocumentIds = graphViewLayouts
+      .filter((layout) => layout.graphViewId === activeGraphView.id && layout.hidden)
+      .map((layout) => layout.documentId)
+
+    setHiddenDocumentIds((currentIds) => (
+      areStringArraysEqual(currentIds, nextHiddenDocumentIds) ? currentIds : nextHiddenDocumentIds
+    ))
   }, [activeGraphView, graphViewLayouts])
 
   const libraryDocuments = useMemo(() => {
@@ -923,6 +989,15 @@ function MapsPageContent() {
         .flatMap((document) => workReferencesByDocumentId[document.id] ?? []),
     [visibleDocuments, workReferencesByDocumentId],
   )
+  const visibleCanvasNodeKey = useMemo(
+    () =>
+      nodes
+        .filter((node) => node.type === 'document' || node.type === 'reference')
+        .map((node) => `${node.type}:${node.id}`)
+        .sort()
+        .join('|'),
+    [nodes],
+  )
 
   const addableDocuments = useMemo(
     () => libraryDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
@@ -1023,39 +1098,61 @@ function MapsPageContent() {
       new Map(
         graphViewLayouts
           .filter((layout) => !activeGraphViewId || layout.graphViewId === activeGraphViewId)
-          .map((layout) => [layout.documentId, layout]),
+          .flatMap((layout) => {
+            const normalizedPosition = sanitizeGraphPosition({ x: layout.x, y: layout.y })
+            if (!normalizedPosition) return []
+
+            return [[
+              layout.documentId,
+              {
+                ...layout,
+                x: normalizedPosition.x,
+                y: normalizedPosition.y,
+              },
+            ] as const]
+          }),
       ),
     [activeGraphViewId, graphViewLayouts],
   )
 
   const effectiveLayoutMap = useMemo(() => {
     const workingLayoutMap = new Map(
-      Object.entries(workingLayoutPositions).map(([nodeId, position]) => [
-        nodeId,
-        {
-          documentId: nodeId,
-          graphViewId: '__working__',
-          hidden: false,
-          pinned: false,
-          updatedAt: new Date(),
-          x: position.x,
-          y: position.y,
-        },
-      ]),
+      Object.entries(workingLayoutPositions).flatMap(([nodeId, position]) => {
+        const normalizedPosition = sanitizeGraphPosition(position)
+        if (!normalizedPosition) return []
+
+        return [[
+          nodeId,
+          {
+            documentId: nodeId,
+            graphViewId: '__working__',
+            hidden: false,
+            pinned: false,
+            updatedAt: new Date(),
+            x: normalizedPosition.x,
+            y: normalizedPosition.y,
+          },
+        ] as const]
+      }),
     )
     const pendingLayoutMap = new Map(
-      Object.entries(pendingDocumentPlacements).map(([nodeId, position]) => [
-        nodeId,
-        {
-          documentId: nodeId,
-          graphViewId: activeGraphViewId ?? '__working__',
-          hidden: false,
-          pinned: false,
-          updatedAt: new Date(),
-          x: position.x,
-          y: position.y,
-        },
-      ]),
+      Object.entries(pendingDocumentPlacements).flatMap(([nodeId, position]) => {
+        const normalizedPosition = sanitizeGraphPosition(position)
+        if (!normalizedPosition) return []
+
+        return [[
+          nodeId,
+          {
+            documentId: nodeId,
+            graphViewId: activeGraphViewId ?? '__working__',
+            hidden: false,
+            pinned: false,
+            updatedAt: new Date(),
+            x: normalizedPosition.x,
+            y: normalizedPosition.y,
+          },
+        ] as const]
+      }),
     )
 
     if (!activeGraphViewId) return new Map([...workingLayoutMap.entries(), ...pendingLayoutMap.entries()])
@@ -1180,6 +1277,24 @@ function MapsPageContent() {
     setAddDocumentQuery('')
   }
 
+  const handleStartConnection = (documentId: string, direction: ConnectionDirection) => {
+    setSelectedRelationId(null)
+    setSelectedDocumentId(documentId)
+
+    const isSameSelection =
+      pendingConnectionDocumentId === documentId && pendingConnectionDirection === direction
+
+    if (isSameSelection) {
+      clearPendingConnection()
+      return
+    }
+
+    setPendingConnectionDocumentId(documentId)
+    setPendingConnectionDirection(direction)
+    setSearchQuery('')
+    setIsAddDocumentPopoverOpen(true)
+  }
+
   useEffect(() => {
     if (!focusDocumentId || !libraryDocumentIds.has(focusDocumentId)) return
     setManualVisibleDocumentIds((currentIds) => (
@@ -1207,7 +1322,7 @@ function MapsPageContent() {
   }, [allWorkReferencesById, selectedWorkReferenceId])
 
   useEffect(() => {
-    if (visibleDocuments.length === 0) {
+    if (visibleCanvasNodeKey.length === 0) {
       lastAutoFitKeyRef.current = null
       return
     }
@@ -1215,9 +1330,8 @@ function MapsPageContent() {
     const fitKey = [
       activeLibrary?.id ?? '__none__',
       activeGraphViewId ?? '__working__',
-      visibleDocuments.length,
-      visibleRelations.length,
-      visibleWorkReferences.length,
+      visibleCanvasNodeKey,
+      edges.length,
     ].join(':')
 
     if (lastAutoFitKeyRef.current === fitKey) return
@@ -1231,10 +1345,9 @@ function MapsPageContent() {
   }, [
     activeGraphViewId,
     activeLibrary?.id,
+    edges.length,
     reactFlow,
-    visibleWorkReferences.length,
-    visibleDocuments.length,
-    visibleRelations.length,
+    visibleCanvasNodeKey,
   ])
 
   useEffect(() => {
@@ -1319,23 +1432,7 @@ function MapsPageContent() {
           ...node.data,
           pendingConnectionDirection:
             node.id === pendingConnectionDocumentId ? pendingConnectionDirection : null,
-          onStartConnection: (documentId: string, direction: ConnectionDirection) => {
-            setSelectedRelationId(null)
-            setSelectedDocumentId(documentId)
-
-            const isSameSelection =
-              pendingConnectionDocumentId === documentId && pendingConnectionDirection === direction
-
-            if (isSameSelection) {
-              clearPendingConnection()
-              return
-            }
-
-            setPendingConnectionDocumentId(documentId)
-            setPendingConnectionDirection(direction)
-            setSearchQuery('')
-            setIsAddDocumentPopoverOpen(true)
-          },
+          onStartConnection: handleStartConnection,
         },
       }
     })
@@ -1447,7 +1544,9 @@ function MapsPageContent() {
   ])
 
   useEffect(() => {
-    const pendingIds = Object.keys(pendingDocumentPlacements)
+    const pendingIds = Object.keys(pendingDocumentPlacements).filter(
+      (documentId) => !pendingPlacementCommitIdsRef.current.has(documentId),
+    )
     if (pendingIds.length === 0) return
 
     const readyNodes = pendingIds
@@ -1455,52 +1554,67 @@ function MapsPageContent() {
       .filter((node): node is Node<AnyGraphNodeData> => Boolean(node))
 
     if (readyNodes.length === 0) return
+    readyNodes.forEach((node) => pendingPlacementCommitIdsRef.current.add(node.id))
 
     const persistPendingLayouts = async () => {
-      await Promise.all(
-        readyNodes.map(async (node) => {
-          if (activeGraphViewId) {
-            await upsertGraphViewNodeLayout({
-              graphViewId: activeGraphViewId,
-              documentId: node.id,
-              x: node.position.x,
-              y: node.position.y,
-              hidden: false,
-            })
-            return
-          }
-
-          if (!activeLibraryId) return
-
-          setWorkingLayoutPositions((currentLayouts) => {
-            const nextLayouts = {
-              ...currentLayouts,
-              [node.id]: { x: node.position.x, y: node.position.y },
+      try {
+        await Promise.all(
+          readyNodes.map(async (node) => {
+            if (activeGraphViewId) {
+              await upsertGraphViewNodeLayout({
+                graphViewId: activeGraphViewId,
+                documentId: node.id,
+                x: node.position.x,
+                y: node.position.y,
+                hidden: false,
+              })
+              return
             }
-            const storedLayouts = readWorkingMapLayouts()
-            writeWorkingMapLayouts({
-              ...storedLayouts,
-              [activeLibraryId]: {
-                ...(storedLayouts[activeLibraryId] ?? {}),
-                ...nextLayouts,
-              },
-            })
-            return nextLayouts
-          })
-        }),
-      )
 
-      setPendingDocumentPlacements((currentPlacements) => {
-        const nextPlacements = { ...currentPlacements }
-        readyNodes.forEach((node) => {
-          delete nextPlacements[node.id]
+            if (!activeLibraryId) return
+
+            setWorkingLayoutPositions((currentLayouts) => {
+              const nextLayouts = {
+                ...currentLayouts,
+                [node.id]: { x: node.position.x, y: node.position.y },
+              }
+              const storedLayouts = readWorkingMapLayouts()
+              writeWorkingMapLayouts({
+                ...storedLayouts,
+                [activeLibraryId]: {
+                  ...(storedLayouts[activeLibraryId] ?? {}),
+                  ...nextLayouts,
+                },
+              })
+              return nextLayouts
+            })
+          }),
+        )
+      } finally {
+        setPendingDocumentPlacements((currentPlacements) => {
+          const nextPlacements = { ...currentPlacements }
+          readyNodes.forEach((node) => {
+            delete nextPlacements[node.id]
+            pendingPlacementCommitIdsRef.current.delete(node.id)
+          })
+          return nextPlacements
         })
-        return nextPlacements
-      })
+      }
     }
 
     void persistPendingLayouts()
   }, [activeGraphViewId, activeLibraryId, nodes, pendingDocumentPlacements, upsertGraphViewNodeLayout])
+
+  useEffect(() => {
+    const recentlyRevealedDocumentId = recentlyRevealedDocumentIdRef.current
+    if (!recentlyRevealedDocumentId) return
+
+    const revealedNode = nodes.find((node) => node.type === 'document' && node.id === recentlyRevealedDocumentId)
+    if (!revealedNode) return
+
+    recentlyRevealedDocumentIdRef.current = null
+    centerOnDocument(recentlyRevealedDocumentId)
+  }, [nodes, reactFlow])
 
   const handleConnect: OnConnect = async (connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
@@ -1809,21 +1923,29 @@ function MapsPageContent() {
       ?? currentViewDocumentIds.find((id) => id !== documentId)
       ?? null
     const anchorNode = anchorId ? reactFlow.getNode(anchorId) : null
+    const anchorPosition = sanitizeGraphPosition(anchorNode?.position, { x: 720, y: 420 }) ?? { x: 720, y: 420 }
     const placementIndex = currentViewDocumentIds.length + Object.keys(pendingDocumentPlacements).length
     const angle = (placementIndex % 8) * (Math.PI / 4)
     const radius = 320 + Math.floor(placementIndex / 8) * 56
 
     return {
-      x: (anchorNode?.position.x ?? 720) + Math.cos(angle) * radius,
-      y: (anchorNode?.position.y ?? 420) + Math.sin(angle) * radius,
+      x: anchorPosition.x + Math.cos(angle) * radius,
+      y: anchorPosition.y + Math.sin(angle) * radius,
     }
   }
 
   const revealDocumentOnMap = async (documentId: string, options?: { select?: boolean }) => {
+    recentlyRevealedDocumentIdRef.current = documentId
     const nextDocumentIds = Array.from(new Set([...(activeGraphView?.documentIds ?? manualVisibleDocumentIds), documentId]))
     const nextSelectedDocumentId = options?.select
       ? documentId
       : activeGraphView?.selectedDocumentId
+    const hasGraphViewDocumentChanges = activeGraphView
+      ? !areStringArraysEqual(activeGraphView.documentIds, nextDocumentIds)
+      : false
+    const hasGraphViewSelectionChanges = activeGraphView
+      ? (activeGraphView.selectedDocumentId ?? null) !== (nextSelectedDocumentId ?? null)
+      : false
     setManualVisibleDocumentIds(nextDocumentIds)
     setHiddenDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
 
@@ -1833,7 +1955,7 @@ function MapsPageContent() {
       setActiveDocument(documentId)
     }
 
-    if (activeGraphView) {
+    if (activeGraphView && (hasGraphViewDocumentChanges || hasGraphViewSelectionChanges)) {
       useGraphStore.setState((state) => ({
         graphViews: state.graphViews.map((view) => (
           view.id === activeGraphView.id
@@ -1854,6 +1976,7 @@ function MapsPageContent() {
 
     const existingNode = reactFlow.getNode(documentId)
     if (existingNode) {
+      centerOnDocument(documentId)
       if (activeGraphView) {
         await upsertGraphViewNodeLayout({
           graphViewId: activeGraphView.id,
@@ -1866,10 +1989,56 @@ function MapsPageContent() {
       return
     }
 
+    const fallbackPosition = getFallbackDocumentPosition(documentId)
+
+    if (activeGraphView) {
+      const nextLayout: GraphViewNodeLayout = {
+        graphViewId: activeGraphView.id,
+        documentId,
+        x: fallbackPosition.x,
+        y: fallbackPosition.y,
+        pinned: graphViewLayoutMap.get(documentId)?.pinned ?? false,
+        hidden: false,
+        updatedAt: new Date(),
+      }
+
+      useGraphStore.setState((state) => ({
+        graphViewLayouts: [
+          ...state.graphViewLayouts.filter(
+            (layout) => !(layout.graphViewId === activeGraphView.id && layout.documentId === documentId),
+          ),
+          nextLayout,
+        ],
+      }))
+    } else if (activeLibraryId) {
+      setWorkingLayoutPositions((currentLayouts) => {
+        if (currentLayouts[documentId]) return currentLayouts
+
+        const nextLayouts = {
+          ...currentLayouts,
+          [documentId]: fallbackPosition,
+        }
+        const storedLayouts = readWorkingMapLayouts()
+        writeWorkingMapLayouts({
+          ...storedLayouts,
+          [activeLibraryId]: {
+            ...(storedLayouts[activeLibraryId] ?? {}),
+            ...nextLayouts,
+          },
+        })
+        return nextLayouts
+      })
+    }
+
     setPendingDocumentPlacements((currentPlacements) => ({
       ...currentPlacements,
-      [documentId]: currentPlacements[documentId] ?? getFallbackDocumentPosition(documentId),
+      [documentId]: currentPlacements[documentId] ?? fallbackPosition,
     }))
+
+    reactFlow.setCenter(fallbackPosition.x + 110, fallbackPosition.y + 110, {
+      duration: 280,
+      zoom: Math.max(reactFlow.getZoom(), 1),
+    })
   }
 
   const handleAddLinkedDocumentToMap = async (documentId: string) => {
@@ -2022,13 +2191,64 @@ function MapsPageContent() {
   const centerOnDocument = (documentId: string) => {
     const node = reactFlow.getNode(documentId)
     if (!node) return
+    const safePosition = sanitizeGraphPosition(node.position)
+    if (!safePosition) return
     const width = typeof node.width === 'number' ? node.width : 220
     const height = typeof node.height === 'number' ? node.height : 220
-    reactFlow.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+    reactFlow.setCenter(safePosition.x + width / 2, safePosition.y + height / 2, {
       duration: 400,
       zoom: Math.max(reactFlow.getZoom(), 1),
     })
   }
+
+  useEffect(() => {
+    const recentlyRevealedDocumentId = recentlyRevealedDocumentIdRef.current
+    if (!recentlyRevealedDocumentId) return
+    if (!visibleDocuments.some((document) => document.id === recentlyRevealedDocumentId)) return
+    if (nodes.some((node) => node.type === 'document' && node.id === recentlyRevealedDocumentId)) return
+
+    const timer = window.setTimeout(() => {
+      if (reactFlow.getNode(recentlyRevealedDocumentId)) return
+
+      const fallbackNodes = buildDocumentGraphNodes(visibleDocuments, visibleRelations).map((node) => {
+        const savedLayout = effectiveLayoutMap.get(node.id)
+
+        return {
+          ...node,
+          draggable: !savedLayout?.pinned,
+          position: savedLayout ? { x: savedLayout.x, y: savedLayout.y } : node.position,
+          data: {
+            ...node.data,
+            pendingConnectionDirection:
+              node.id === pendingConnectionDocumentId ? pendingConnectionDirection : null,
+            onStartConnection: handleStartConnection,
+          },
+        }
+      })
+
+      setNodes(fallbackNodes)
+      setEdges(buildDocumentGraphEdges(visibleRelations, selectedDocumentId, selectedRelationId, hoveredRelationId))
+
+      window.requestAnimationFrame(() => {
+        reactFlow.fitView({ padding: 0.2, duration: 250 })
+      })
+    }, 160)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    effectiveLayoutMap,
+    hoveredRelationId,
+    nodes,
+    pendingConnectionDirection,
+    pendingConnectionDocumentId,
+    reactFlow,
+    selectedDocumentId,
+    selectedRelationId,
+    setEdges,
+    setNodes,
+    visibleDocuments,
+    visibleRelations,
+  ])
 
   const handlePinDocument = async (documentId: string, pinned: boolean) => {
     if (!activeGraphViewId) return
@@ -2354,13 +2574,16 @@ function MapsPageContent() {
                     <TooltipTrigger asChild>
                       <div className="min-w-[220px] flex-1">
                         <Select
-                          value={activeGraphViewId ?? undefined}
-                          onValueChange={(value) => setActiveGraphViewId(value)}
+                          value={activeGraphViewId ?? WORKING_MAP_SELECT_VALUE}
+                          onValueChange={(value) => setActiveGraphViewId(value === WORKING_MAP_SELECT_VALUE ? null : value)}
                         >
                           <SelectTrigger className="bg-background/90">
                             <SelectValue placeholder={t('mapsPage.workingMap')} />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value={WORKING_MAP_SELECT_VALUE}>
+                              {t('mapsPage.workingMap')}
+                            </SelectItem>
                             {activeLibraryGraphViews.map((view) => (
                               <SelectItem key={view.id} value={view.id}>
                                 {view.name}
@@ -2463,11 +2686,10 @@ function MapsPageContent() {
                   </Popover>
                   {myWorkDocuments.length > 0 ? (
                     <Select
-                      value={selectedMyWorkPickerValue}
+                      key={selectedMyWorkPickerResetKey}
                       onValueChange={(value) => {
-                        setSelectedMyWorkPickerValue(value)
                         void handleAddDocumentToMap(value)
-                        setSelectedMyWorkPickerValue('')
+                        setSelectedMyWorkPickerResetKey((currentKey) => currentKey + 1)
                       }}
                     >
                       <SelectTrigger className="w-[220px] shrink-0 bg-background/90">
@@ -2568,7 +2790,7 @@ function MapsPageContent() {
             </div>
           ) : null}
 
-          <div data-tour-id="maps-canvas">
+          <div data-tour-id="maps-canvas" className="h-full min-h-0 w-full">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -2682,8 +2904,8 @@ function MapsPageContent() {
               clearSelection()
               clearPendingConnection()
             }}
-            nodeTypes={stableNodeTypes}
-            edgeTypes={stableEdgeTypes}
+            nodeTypes={FLOW_NODE_TYPES}
+            edgeTypes={FLOW_EDGE_TYPES}
             connectionRadius={72}
             className="h-full bg-transparent"
             proOptions={{ hideAttribution: true }}
