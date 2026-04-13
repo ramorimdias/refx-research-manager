@@ -13,6 +13,75 @@ const canonical256 = path.join(iconsDir, "128x128@2x.png");
 const canonicalIcns = path.join(iconsDir, "icon.icns");
 const canonicalIco = path.join(iconsDir, "icon.ico");
 const canonicalPng = path.join(iconsDir, "icon.png");
+const WINDOWS_ICON_INSET_RATIO = 0.1;
+
+function runTauriIcon(inputIconPath, outputDir) {
+  const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const tauriIcon = spawnSync(pnpmCommand, ["exec", "tauri", "icon", inputIconPath, "-o", outputDir], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    shell: true,
+  });
+
+  if ((tauriIcon.status ?? 1) !== 0) {
+    process.exit(tauriIcon.status ?? 1);
+  }
+}
+
+function createWindowsIconSource(inputIconPath, outputIconPath) {
+  if (process.platform !== "win32") {
+    return inputIconPath;
+  }
+
+  const powershellCommand = [
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.Drawing",
+    `$inputPath = '${inputIconPath.replace(/'/g, "''")}'`,
+    `$outputPath = '${outputIconPath.replace(/'/g, "''")}'`,
+    `$insetRatio = ${WINDOWS_ICON_INSET_RATIO}`,
+    "$source = [System.Drawing.Image]::FromFile($inputPath)",
+    "try {",
+    "  $insetX = [Math]::Max(1, [int][Math]::Floor($source.Width * $insetRatio))",
+    "  $insetY = [Math]::Max(1, [int][Math]::Floor($source.Height * $insetRatio))",
+    "  $cropWidth = [Math]::Max(1, $source.Width - ($insetX * 2))",
+    "  $cropHeight = [Math]::Max(1, $source.Height - ($insetY * 2))",
+    "  $bitmap = New-Object System.Drawing.Bitmap $source.Width, $source.Height",
+    "  try {",
+    "    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)",
+    "    try {",
+    "      $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic",
+    "      $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality",
+    "      $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality",
+    "      $graphics.Clear([System.Drawing.Color]::Transparent)",
+    "      $destinationRect = New-Object System.Drawing.Rectangle 0, 0, $source.Width, $source.Height",
+    "      $sourceRect = New-Object System.Drawing.Rectangle $insetX, $insetY, $cropWidth, $cropHeight",
+    "      $graphics.DrawImage($source, $destinationRect, $sourceRect, [System.Drawing.GraphicsUnit]::Pixel)",
+    "      $bitmap.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)",
+    "    } finally {",
+    "      $graphics.Dispose()",
+    "    }",
+    "  } finally {",
+    "    $bitmap.Dispose()",
+    "  }",
+    "} finally {",
+    "  $source.Dispose()",
+    "}",
+  ].join("; ");
+  const powershell = process.env.COMSPEC
+    ? "powershell.exe"
+    : "powershell";
+  const result = spawnSync(
+    powershell,
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", powershellCommand],
+    { cwd: repoRoot, stdio: "inherit" },
+  );
+
+  if ((result.status ?? 1) !== 0) {
+    process.exit(result.status ?? 1);
+  }
+
+  return outputIconPath;
+}
 
 if (!fs.existsSync(sourceIcon)) {
   console.error(`Missing source icon: ${sourceIcon}`);
@@ -20,23 +89,19 @@ if (!fs.existsSync(sourceIcon)) {
 }
 
 const tempOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), "refx-tauri-icons-"));
-const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const tauriIcon = spawnSync(pnpmCommand, ["exec", "tauri", "icon", sourceIcon, "-o", tempOutputDir], {
-  cwd: repoRoot,
-  stdio: "inherit",
-  shell: true,
-});
+const tempWindowsOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), "refx-tauri-icons-win-"));
+const windowsSourceIcon = path.join(tempWindowsOutputDir, "app-icon.windows.png");
 
-if ((tauriIcon.status ?? 1) !== 0) {
-  process.exit(tauriIcon.status ?? 1);
-}
+runTauriIcon(sourceIcon, tempOutputDir);
+const windowsIconSource = createWindowsIconSource(sourceIcon, windowsSourceIcon);
+runTauriIcon(windowsIconSource, tempWindowsOutputDir);
 
 const generatedFiles = new Map([
   [path.join(tempOutputDir, "32x32.png"), canonical32],
   [path.join(tempOutputDir, "128x128.png"), canonical128],
   [path.join(tempOutputDir, "128x128@2x.png"), canonical256],
   [path.join(tempOutputDir, "icon.icns"), canonicalIcns],
-  [path.join(tempOutputDir, "icon.ico"), canonicalIco],
+  [path.join(tempWindowsOutputDir, "icon.ico"), canonicalIco],
   [path.join(tempOutputDir, "icon.png"), canonicalPng],
 ]);
 
@@ -84,5 +149,6 @@ for (const stalePath of [
 }
 
 fs.rmSync(tempOutputDir, { recursive: true, force: true });
+fs.rmSync(tempWindowsOutputDir, { recursive: true, force: true });
 
-console.log("Generated Tauri icons from a single source PNG and synced public assets");
+console.log("Generated Tauri icons from a single source PNG and applied a tighter Windows icon crop");
