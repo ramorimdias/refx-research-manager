@@ -236,13 +236,14 @@ export interface ParsedDocumentReference {
   referenceIndex: number
 }
 
-export type ReferenceType = 'article' | 'book' | 'inproceedings' | 'thesis' | 'report' | 'misc' | 'online'
+export type ReferenceType = 'article' | 'book' | 'inproceedings' | 'thesis' | 'report' | 'misc' | 'online' | 'manual'
 export type CitationStyle = 'apa' | 'mla' | 'chicago'
 
 export interface Reference {
   id: string
   documentId?: string
   type: ReferenceType
+  isManual?: boolean
   citationKey?: string
   title: string
   authors: string[]
@@ -250,6 +251,7 @@ export interface Reference {
   journal?: string
   volume?: string
   issue?: string
+  chapter?: string
   pages?: string
   publisher?: string
   booktitle?: string

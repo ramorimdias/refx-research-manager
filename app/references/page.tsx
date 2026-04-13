@@ -17,6 +17,7 @@ import {
 import { EmptyState } from '@/components/refx/common'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { CitationStyle, Document } from '@/lib/types'
+import type { CitationStyle, Document, ReferenceType } from '@/lib/types'
 import * as repo from '@/lib/repositories/local-db'
 import {
   findMatchingDocuments,
@@ -45,6 +46,7 @@ import {
   matchReferenceToDocument,
   mergeReferenceDraft,
   normalizeWhitespace,
+  parseAuthorsInput,
   seedReferenceFromDocument,
 } from '@/lib/services/work-reference-service'
 import { useLocale, useT } from '@/lib/localization'
@@ -53,29 +55,39 @@ import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-stor
 import { useLibraryStore } from '@/lib/stores/library-store'
 
 type ReferenceFormState = {
+  type: ReferenceType
   title: string
   authors: string
   year: string
   doi: string
+  volume: string
+  issue: string
+  chapter: string
+  pages: string
   publisher: string
   journal: string
   booktitle: string
   url: string
   abstract: string
-  type: string
 }
 
+type BibliographySortMode = 'user' | 'title' | 'author' | 'year'
+
 const DEFAULT_REFERENCE_FORM: ReferenceFormState = {
+  type: 'article',
   title: '',
   authors: '',
   year: '',
   doi: '',
+  volume: '',
+  issue: '',
+  chapter: '',
+  pages: '',
   publisher: '',
   journal: '',
   booktitle: '',
   url: '',
   abstract: '',
-  type: 'misc',
 }
 
 const CITATION_STYLES: Array<{ value: CitationStyle; label: string }> = [
@@ -83,6 +95,14 @@ const CITATION_STYLES: Array<{ value: CitationStyle; label: string }> = [
   { value: 'mla', label: 'MLA' },
   { value: 'chicago', label: 'Chicago' },
 ]
+
+function isManualReferenceType(type: ReferenceType) {
+  return type === 'manual'
+}
+
+function normalizeSortText(value?: string | null) {
+  return normalizeWhitespace(value).toLocaleLowerCase()
+}
 
 function buildDocumentResumeHref(document: Document) {
   if (document.documentType === 'pdf') {
@@ -129,6 +149,8 @@ export default function ReferencesPage() {
   const [isSubmittingReference, setIsSubmittingReference] = useState(false)
   const [isRecheckingMatches, setIsRecheckingMatches] = useState(false)
   const [draggingWorkReferenceId, setDraggingWorkReferenceId] = useState<string | null>(null)
+  const [bibliographySort, setBibliographySort] = useState<BibliographySortMode>('user')
+  const [showReferenceNumbers, setShowReferenceNumbers] = useState(true)
   const [copiedWorkReferenceId, setCopiedWorkReferenceId] = useState<string | null>(null)
   const [copiedAllReferences, setCopiedAllReferences] = useState(false)
   const [pendingDeleteWorkReferenceId, setPendingDeleteWorkReferenceId] = useState<string | null>(null)
@@ -214,6 +236,10 @@ export default function ReferencesPage() {
     }
   }, [selectedWorkId])
 
+  useEffect(() => {
+    setDraggingWorkReferenceId(null)
+  }, [bibliographySort])
+
   const selectedWork = useMemo(
     () => myWorks.find((document) => document.id === selectedWorkId) ?? null,
     [myWorks, selectedWorkId],
@@ -226,13 +252,15 @@ export default function ReferencesPage() {
 
   const liveSuggestions = useMemo(
     () =>
-      findMatchingDocuments(documents, {
-        title: referenceForm.title,
-        authors: referenceForm.authors,
-        year: Number.parseInt(referenceForm.year, 10) || undefined,
-        doi: referenceForm.doi,
-      }),
-    [documents, referenceForm.authors, referenceForm.doi, referenceForm.title, referenceForm.year],
+      isManualReferenceType(referenceForm.type)
+        ? []
+        : findMatchingDocuments(documents, {
+            title: referenceForm.title,
+            authors: referenceForm.authors,
+            year: Number.parseInt(referenceForm.year, 10) || undefined,
+            doi: referenceForm.doi,
+          }),
+    [documents, referenceForm.authors, referenceForm.doi, referenceForm.title, referenceForm.type, referenceForm.year],
   )
 
   const existingWorkDocumentIds = useMemo(
@@ -247,6 +275,45 @@ export default function ReferencesPage() {
       ),
     [workReferences],
   )
+  const displayedWorkReferences = useMemo(() => {
+    const nextReferences = [...workReferences]
+
+    switch (bibliographySort) {
+      case 'title':
+        nextReferences.sort((left, right) => {
+          const titleCompare = normalizeSortText(left.reference.title).localeCompare(normalizeSortText(right.reference.title), locale)
+          if (titleCompare !== 0) return titleCompare
+          return left.sortOrder - right.sortOrder
+        })
+        break
+      case 'author':
+        nextReferences.sort((left, right) => {
+          const leftAuthor = normalizeSortText(parseAuthorsInput(left.reference.authors)[0] ?? '')
+          const rightAuthor = normalizeSortText(parseAuthorsInput(right.reference.authors)[0] ?? '')
+          const authorCompare = leftAuthor.localeCompare(rightAuthor, locale)
+          if (authorCompare !== 0) return authorCompare
+          const titleCompare = normalizeSortText(left.reference.title).localeCompare(normalizeSortText(right.reference.title), locale)
+          if (titleCompare !== 0) return titleCompare
+          return left.sortOrder - right.sortOrder
+        })
+        break
+      case 'year':
+        nextReferences.sort((left, right) => {
+          const leftYear = left.reference.year ?? Number.MAX_SAFE_INTEGER
+          const rightYear = right.reference.year ?? Number.MAX_SAFE_INTEGER
+          if (leftYear !== rightYear) return leftYear - rightYear
+          const titleCompare = normalizeSortText(left.reference.title).localeCompare(normalizeSortText(right.reference.title), locale)
+          if (titleCompare !== 0) return titleCompare
+          return left.sortOrder - right.sortOrder
+        })
+        break
+      default:
+        break
+    }
+
+    return nextReferences
+  }, [bibliographySort, locale, workReferences])
+  const isUserDefinedBibliographyOrder = bibliographySort === 'user'
 
   const resetReferenceDialog = () => {
     setReferenceForm(DEFAULT_REFERENCE_FORM)
@@ -355,36 +422,51 @@ export default function ReferencesPage() {
       return
     }
 
+    const isManual = isManualReferenceType(referenceForm.type)
     const title = normalizeWhitespace(referenceForm.title)
     if (!title) {
-      setStatusMessage(t('referencesPage.referenceTitleRequired'))
+      setStatusMessage(
+        isManual
+          ? t('referencesPage.manualReferenceRequired')
+          : t('referencesPage.referenceTitleRequired'),
+      )
       return
     }
 
-    const seededDocument = preferredMatchDocumentId ? documentById.get(preferredMatchDocumentId) ?? null : null
+    const seededDocument = !isManual && preferredMatchDocumentId
+      ? documentById.get(preferredMatchDocumentId) ?? null
+      : null
     const baseDraft = seededDocument ? seedReferenceFromDocument(seededDocument) : {
-      type: referenceForm.type || 'misc',
+      type: isManual ? 'misc' : referenceForm.type || 'misc',
+      isManual,
       title,
     }
 
     const referenceDraft = mergeReferenceDraft(baseDraft, {
       title,
-      authors: referenceForm.authors || undefined,
-      year: Number.parseInt(referenceForm.year, 10) || undefined,
-      doi: referenceForm.doi || undefined,
-      publisher: referenceForm.publisher || undefined,
-      journal: referenceForm.journal || undefined,
-      booktitle: referenceForm.booktitle || undefined,
-      url: referenceForm.url || undefined,
-      abstract: referenceForm.abstract || undefined,
-      type: referenceForm.type || baseDraft.type || 'misc',
+      authors: isManual ? undefined : referenceForm.authors || undefined,
+      year: isManual ? undefined : Number.parseInt(referenceForm.year, 10) || undefined,
+      doi: isManual ? undefined : referenceForm.doi || undefined,
+      volume: isManual ? undefined : referenceForm.volume || undefined,
+      issue: isManual ? undefined : referenceForm.issue || undefined,
+      chapter: isManual ? undefined : referenceForm.chapter || undefined,
+      pages: isManual ? undefined : referenceForm.pages || undefined,
+      publisher: isManual ? undefined : referenceForm.publisher || undefined,
+      journal: isManual ? undefined : referenceForm.journal || undefined,
+      booktitle: isManual ? undefined : referenceForm.booktitle || undefined,
+      url: isManual ? undefined : referenceForm.url || undefined,
+      abstract: isManual ? undefined : referenceForm.abstract || undefined,
+      type: isManual ? 'misc' : referenceForm.type || baseDraft.type || 'misc',
+      isManual,
       documentId: seededDocument?.id ?? baseDraft.documentId,
     })
 
     setIsSubmittingReference(true)
     setStatusMessage(null)
     try {
-      const matched = preferredMatchDocumentId
+      const matched = isManual
+        ? {}
+        : preferredMatchDocumentId
         ? {
             matchedDocumentId: preferredMatchDocumentId,
             matchMethod: referenceDraft.doi ? 'doi_exact' : 'title_exact',
@@ -420,7 +502,7 @@ export default function ReferencesPage() {
 
   const handleCopyAllReferences = async () => {
     try {
-      const serialized = workReferences
+      const serialized = displayedWorkReferences
         .map((entry) => formatReference(entry.reference, selectedStyle))
         .filter((value) => value.trim().length > 0)
         .join('\n')
@@ -494,6 +576,7 @@ export default function ReferencesPage() {
     () => workReferences.find((entry) => entry.id === pendingDeleteWorkReferenceId) ?? null,
     [pendingDeleteWorkReferenceId, workReferences],
   )
+  const isManualReferenceForm = isManualReferenceType(referenceForm.type)
 
   const handleDeleteSelectedWork = async () => {
     if (!selectedWork) return
@@ -619,6 +702,24 @@ export default function ReferencesPage() {
               </Tooltip>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Select value={bibliographySort} onValueChange={(value) => setBibliographySort(value as BibliographySortMode)}>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue placeholder={t('referencesPage.sortBy')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">{t('referencesPage.sortUserDefined')}</SelectItem>
+                  <SelectItem value="title">{t('referencesPage.sortTitle')}</SelectItem>
+                  <SelectItem value="author">{t('referencesPage.sortAuthor')}</SelectItem>
+                  <SelectItem value="year">{t('referencesPage.sortReleaseDate')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <label className="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm">
+                <Checkbox
+                  checked={showReferenceNumbers}
+                  onCheckedChange={(checked) => setShowReferenceNumbers(Boolean(checked))}
+                />
+                <span>{t('referencesPage.showNumbers')}</span>
+              </label>
               <Button
                 type="button"
                 variant="outline"
@@ -678,7 +779,7 @@ export default function ReferencesPage() {
               />
             ) : (
               <div className="space-y-3">
-                {workReferences.map((workReference, index) => {
+                {displayedWorkReferences.map((workReference, index) => {
                   const matchedDocument = workReference.matchedDocumentId
                     ? documentById.get(workReference.matchedDocumentId) ?? null
                     : null
@@ -686,10 +787,19 @@ export default function ReferencesPage() {
                   return (
                     <div
                       key={workReference.id}
-                      draggable
-                      onDragStart={() => setDraggingWorkReferenceId(workReference.id)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => void handleDropWorkReference(workReference.id)}
+                      draggable={isUserDefinedBibliographyOrder}
+                      onDragStart={() => {
+                        if (!isUserDefinedBibliographyOrder) return
+                        setDraggingWorkReferenceId(workReference.id)
+                      }}
+                      onDragOver={(event) => {
+                        if (!isUserDefinedBibliographyOrder) return
+                        event.preventDefault()
+                      }}
+                      onDrop={() => {
+                        if (!isUserDefinedBibliographyOrder) return
+                        void handleDropWorkReference(workReference.id)
+                      }}
                       onClick={() => {
                         if (!matchedDocument) return
                         router.push(buildDocumentResumeHref(matchedDocument))
@@ -701,17 +811,29 @@ export default function ReferencesPage() {
                       )}
                     >
                       <div className="flex h-full items-center gap-3">
-                        <div className="flex h-full items-center cursor-grab text-muted-foreground">
+                        <div
+                          className={cn(
+                            'flex h-full items-center text-muted-foreground',
+                            isUserDefinedBibliographyOrder ? 'cursor-grab' : 'cursor-default opacity-50',
+                          )}
+                        >
                           <GripVertical className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1 space-y-1.5">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                                  [{index + 1}]
-                                </span>
+                                {showReferenceNumbers ? (
+                                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                                    [{index + 1}]
+                                  </span>
+                                ) : null}
                                 <div className="truncate text-sm font-semibold">{workReference.reference.title}</div>
+                                {workReference.reference.isManual ? (
+                                  <span className="shrink-0 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">
+                                    {t('referencesPage.manualReferenceBadge')}
+                                  </span>
+                                ) : null}
                                 {matchedDocument ? (
                                   <span className="shrink-0 inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700">
                                     {t('referencesPage.existsInLibraries')}
@@ -719,7 +841,9 @@ export default function ReferencesPage() {
                                 ) : null}
                               </div>
                               <div className="line-clamp-2 text-xs text-muted-foreground">
-                                {formatReference(workReference.reference, selectedStyle)}
+                                {workReference.reference.isManual
+                                  ? t('referencesPage.manualReferenceStyleWarning')
+                                  : formatReference(workReference.reference, selectedStyle)}
                               </div>
                             </div>
                             <div className="ml-auto flex shrink-0 items-center gap-2 self-center">
@@ -835,131 +959,241 @@ export default function ReferencesPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="reference-title">{t('metadataFields.title')}</Label>
+                <Label htmlFor="reference-type">{t('referencesPage.type')}</Label>
+                <Select
+                  value={referenceForm.type}
+                  onValueChange={(value) =>
+                    setReferenceForm((current) => ({
+                      ...current,
+                      type: value as ReferenceType,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="reference-type">
+                    <SelectValue placeholder={t('referencesPage.referenceType')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="article">{t('referencesPage.referenceTypeArticle')}</SelectItem>
+                    <SelectItem value="book">{t('referencesPage.referenceTypeBook')}</SelectItem>
+                    <SelectItem value="inproceedings">{t('referencesPage.referenceTypeConference')}</SelectItem>
+                    <SelectItem value="thesis">{t('referencesPage.referenceTypeThesis')}</SelectItem>
+                    <SelectItem value="report">{t('referencesPage.referenceTypeReport')}</SelectItem>
+                    <SelectItem value="online">{t('referencesPage.referenceTypeOnline')}</SelectItem>
+                    <SelectItem value="misc">{t('referencesPage.referenceTypeMisc')}</SelectItem>
+                    <SelectItem value="manual">{t('referencesPage.referenceTypeManual')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reference-title">
+                  {isManualReferenceForm ? t('referencesPage.manualReference') : t('metadataFields.title')}
+                </Label>
                 <Input
                   id="reference-title"
                   value={referenceForm.title}
                   onChange={(event) => setReferenceForm((current) => ({ ...current, title: event.target.value }))}
-                  placeholder={t('referencesPage.referenceTitlePlaceholder')}
+                  placeholder={
+                    isManualReferenceForm
+                      ? t('referencesPage.manualReferencePlaceholder')
+                      : t('referencesPage.referenceTitlePlaceholder')
+                  }
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="reference-authors">{t('metadataFields.authors')}</Label>
-                  <Input
-                    id="reference-authors"
-                    value={referenceForm.authors}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, authors: event.target.value }))}
-                    placeholder={t('referencesPage.authorsPlaceholder')}
-                  />
+              {isManualReferenceForm ? (
+                <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {t('referencesPage.manualReferenceHelp')}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reference-year">{t('metadataFields.year')}</Label>
-                  <Input
-                    id="reference-year"
-                    value={referenceForm.year}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, year: event.target.value }))}
-                    placeholder="2024"
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="reference-authors">{t('metadataFields.authors')}</Label>
+                      <Input
+                        id="reference-authors"
+                        value={referenceForm.authors}
+                        onChange={(event) => setReferenceForm((current) => ({ ...current, authors: event.target.value }))}
+                        placeholder={t('referencesPage.authorsPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reference-year">{t('metadataFields.year')}</Label>
+                      <Input
+                        id="reference-year"
+                        value={referenceForm.year}
+                        onChange={(event) => setReferenceForm((current) => ({ ...current, year: event.target.value }))}
+                        placeholder="2024"
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="reference-doi">{t('metadataFields.doi')}</Label>
-                  <Input
-                    id="reference-doi"
-                    value={referenceForm.doi}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, doi: event.target.value }))}
-                    placeholder="10.1234/example"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reference-type">{t('referencesPage.type')}</Label>
-                  <Select
-                    value={referenceForm.type}
-                    onValueChange={(value) => setReferenceForm((current) => ({ ...current, type: value }))}
-                  >
-                    <SelectTrigger id="reference-type">
-                      <SelectValue placeholder={t('referencesPage.referenceType')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="article">{t('referencesPage.referenceTypeArticle')}</SelectItem>
-                      <SelectItem value="book">{t('referencesPage.referenceTypeBook')}</SelectItem>
-                      <SelectItem value="inproceedings">{t('referencesPage.referenceTypeConference')}</SelectItem>
-                      <SelectItem value="thesis">{t('referencesPage.referenceTypeThesis')}</SelectItem>
-                      <SelectItem value="report">{t('referencesPage.referenceTypeReport')}</SelectItem>
-                      <SelectItem value="online">{t('referencesPage.referenceTypeOnline')}</SelectItem>
-                      <SelectItem value="misc">{t('referencesPage.referenceTypeMisc')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {referenceForm.type === 'article' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-journal">{t('referencesPage.journal')}</Label>
+                        <Input
+                          id="reference-journal"
+                          value={referenceForm.journal}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, journal: event.target.value }))}
+                          placeholder={t('referencesPage.journalPlaceholder')}
+                        />
+                      </div>
+                    ) : null}
+                    {referenceForm.type === 'book' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-publisher">{t('referencesPage.publisherSource')}</Label>
+                        <Input
+                          id="reference-publisher"
+                          value={referenceForm.publisher}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, publisher: event.target.value }))}
+                          placeholder={t('referencesPage.publisherPlaceholder')}
+                        />
+                      </div>
+                    ) : null}
+                    {referenceForm.type === 'inproceedings' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-booktitle">{t('referencesPage.booktitleCollection')}</Label>
+                        <Input
+                          id="reference-booktitle"
+                          value={referenceForm.booktitle}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, booktitle: event.target.value }))}
+                          placeholder={t('referencesPage.booktitlePlaceholder')}
+                        />
+                      </div>
+                    ) : null}
+                    {referenceForm.type === 'thesis' || referenceForm.type === 'report' || referenceForm.type === 'online' || referenceForm.type === 'misc' ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-publisher">{t('referencesPage.publisherSource')}</Label>
+                        <Input
+                          id="reference-publisher"
+                          value={referenceForm.publisher}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, publisher: event.target.value }))}
+                          placeholder={t('referencesPage.publisherPlaceholder')}
+                        />
+                      </div>
+                    ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="reference-publisher">{t('referencesPage.publisherSource')}</Label>
-                  <Input
-                    id="reference-publisher"
-                    value={referenceForm.publisher}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, publisher: event.target.value }))}
-                    placeholder={t('referencesPage.publisherPlaceholder')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reference-journal">{t('referencesPage.journal')}</Label>
-                  <Input
-                    id="reference-journal"
-                    value={referenceForm.journal}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, journal: event.target.value }))}
-                    placeholder={t('referencesPage.journalPlaceholder')}
-                  />
-                </div>
-              </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reference-doi">{t('metadataFields.doi')}</Label>
+                      <Input
+                        id="reference-doi"
+                        value={referenceForm.doi}
+                        onChange={(event) => setReferenceForm((current) => ({ ...current, doi: event.target.value }))}
+                        placeholder="10.1234/example"
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="reference-booktitle">{t('referencesPage.booktitleCollection')}</Label>
-                  <Input
-                    id="reference-booktitle"
-                    value={referenceForm.booktitle}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, booktitle: event.target.value }))}
-                    placeholder={t('referencesPage.booktitlePlaceholder')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="reference-url">{t('referencesPage.url')}</Label>
-                  <Input
-                    id="reference-url"
-                    value={referenceForm.url}
-                    onChange={(event) => setReferenceForm((current) => ({ ...current, url: event.target.value }))}
-                    placeholder={t('referencesPage.urlPlaceholder')}
-                  />
-                </div>
-              </div>
+                  {(referenceForm.type === 'article' || referenceForm.type === 'book' || referenceForm.type === 'inproceedings' || referenceForm.type === 'report') ? (
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      {referenceForm.type === 'article' ? (
+                        <>
+                          <div className="space-y-2">
+                            <Label htmlFor="reference-volume">{t('referencesPage.volume')}</Label>
+                            <Input
+                              id="reference-volume"
+                              value={referenceForm.volume}
+                              onChange={(event) => setReferenceForm((current) => ({ ...current, volume: event.target.value }))}
+                              placeholder={t('referencesPage.volumePlaceholder')}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="reference-issue">{t('referencesPage.issue')}</Label>
+                            <Input
+                              id="reference-issue"
+                              value={referenceForm.issue}
+                              onChange={(event) => setReferenceForm((current) => ({ ...current, issue: event.target.value }))}
+                              placeholder={t('referencesPage.issuePlaceholder')}
+                            />
+                          </div>
+                        </>
+                      ) : null}
+                      {referenceForm.type === 'book' ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="reference-chapter">{t('referencesPage.chapter')}</Label>
+                          <Input
+                            id="reference-chapter"
+                            value={referenceForm.chapter}
+                            onChange={(event) => setReferenceForm((current) => ({ ...current, chapter: event.target.value }))}
+                            placeholder={t('referencesPage.chapterPlaceholder')}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-pages">{t('referencesPage.pages')}</Label>
+                        <Input
+                          id="reference-pages"
+                          value={referenceForm.pages}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, pages: event.target.value }))}
+                          placeholder={t('referencesPage.pagesPlaceholder')}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
 
-              <div className="space-y-2">
-                <Label htmlFor="reference-abstract">{t('referencesPage.abstractNote')}</Label>
-                <Textarea
-                  id="reference-abstract"
-                  value={referenceForm.abstract}
-                  onChange={(event) => setReferenceForm((current) => ({ ...current, abstract: event.target.value }))}
-                  placeholder={t('referencesPage.abstractPlaceholder')}
-                  rows={4}
-                />
-              </div>
+                  {(referenceForm.type === 'inproceedings') ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-publisher">{t('referencesPage.publisherSource')}</Label>
+                        <Input
+                          id="reference-publisher"
+                          value={referenceForm.publisher}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, publisher: event.target.value }))}
+                          placeholder={t('referencesPage.publisherPlaceholder')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="reference-pages">{t('referencesPage.pages')}</Label>
+                        <Input
+                          id="reference-pages"
+                          value={referenceForm.pages}
+                          onChange={(event) => setReferenceForm((current) => ({ ...current, pages: event.target.value }))}
+                          placeholder={t('referencesPage.pagesPlaceholder')}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="reference-url">{t('referencesPage.url')}</Label>
+                    <Input
+                      id="reference-url"
+                      value={referenceForm.url}
+                      onChange={(event) => setReferenceForm((current) => ({ ...current, url: event.target.value }))}
+                      placeholder={t('referencesPage.urlPlaceholder')}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="reference-abstract">{t('referencesPage.abstractNote')}</Label>
+                    <Textarea
+                      id="reference-abstract"
+                      value={referenceForm.abstract}
+                      onChange={(event) => setReferenceForm((current) => ({ ...current, abstract: event.target.value }))}
+                      placeholder={t('referencesPage.abstractPlaceholder')}
+                      rows={4}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex max-h-[70vh] min-h-0 flex-col rounded-2xl bg-muted/50 p-5">
               <div>
                 <div className="text-base font-medium">{t('referencesPage.matchingSuggestions')}</div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  {t('referencesPage.matchingSuggestionsDescription')}
+                  {isManualReferenceForm
+                    ? t('referencesPage.manualReferenceHelp')
+                    : t('referencesPage.matchingSuggestionsDescription')}
                 </div>
               </div>
 
-              {liveSuggestions.length ? (
+              {isManualReferenceForm ? (
+                <div className="mt-4 rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                  {t('referencesPage.manualReferenceNoMatching')}
+                </div>
+              ) : liveSuggestions.length ? (
                 <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                   {liveSuggestions.map(({ document, score }) => {
                     const alreadyInWork = existingWorkDocumentIds.has(document.id)
@@ -1001,15 +1235,15 @@ export default function ReferencesPage() {
                 </div>
               )}
 
-              {preferredMatchDocumentId ? (
+              {!isManualReferenceForm && preferredMatchDocumentId ? (
                 <div className="mt-4 rounded-2xl bg-sky-100 px-4 py-3 text-sm text-sky-700">
                   {t('referencesPage.referenceWillBeLinked')}
                 </div>
-              ) : (
+              ) : !isManualReferenceForm ? (
                 <div className="mt-4 rounded-2xl bg-muted px-4 py-3 text-sm text-muted-foreground">
                   {t('referencesPage.freeformReferenceHelp')}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 

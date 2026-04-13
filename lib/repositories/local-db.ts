@@ -274,6 +274,7 @@ export type DbReference = {
   id: string
   documentId?: string
   type: string
+  isManual?: boolean
   citationKey?: string
   title: string
   authors?: string
@@ -281,6 +282,7 @@ export type DbReference = {
   journal?: string
   volume?: string
   issue?: string
+  chapter?: string
   pages?: string
   publisher?: string
   booktitle?: string
@@ -296,6 +298,7 @@ export type DbReference = {
 export type DbCreateReferenceInput = {
   documentId?: string
   type: string
+  isManual?: boolean
   citationKey?: string
   title: string
   authors?: string
@@ -303,6 +306,7 @@ export type DbCreateReferenceInput = {
   journal?: string
   volume?: string
   issue?: string
+  chapter?: string
   pages?: string
   publisher?: string
   booktitle?: string

@@ -61,6 +61,7 @@ export function seedReferenceFromDocument(document: Document): DbCreateReference
   return {
     documentId: document.id,
     type: document.documentType === 'physical_book' ? 'book' : 'article',
+    isManual: false,
     title: document.title,
     authors: serializeAuthors(document.authors),
     year: document.year,
@@ -80,6 +81,7 @@ export function mergeReferenceDraft(
     ...extra,
     title: normalizeWhitespace(extra.title ?? base.title),
     type: extra.type ?? base.type ?? 'misc',
+    isManual: extra.isManual ?? base.isManual ?? false,
   }
 }
 
@@ -211,19 +213,40 @@ function formatAuthors(authors: string[], style: CitationStyle) {
   return `${authors[0]} et al.`
 }
 
-export function formatReference(reference: Pick<DbReference, 'title' | 'authors' | 'year' | 'publisher' | 'journal' | 'booktitle' | 'doi' | 'url'>, style: CitationStyle) {
+export function formatReference(
+  reference: Pick<
+    DbReference,
+    'title' | 'authors' | 'year' | 'publisher' | 'journal' | 'booktitle' | 'doi' | 'url' | 'volume' | 'issue' | 'chapter' | 'pages' | 'isManual'
+  >,
+  style: CitationStyle,
+) {
+  if (reference.isManual) {
+    return normalizeWhitespace(reference.title)
+  }
+
   const authors = parseAuthorsInput(reference.authors)
   const authorText = formatAuthors(authors, style)
   const yearText = reference.year ? `${reference.year}` : 'n.d.'
   const container = normalizeWhitespace(reference.journal ?? reference.booktitle ?? reference.publisher)
+  const volumeText = normalizeWhitespace(reference.volume)
+  const issueText = normalizeWhitespace(reference.issue)
+  const volumeIssueText = volumeText && issueText
+    ? `${volumeText}(${issueText})`
+    : volumeText || issueText
+  const chapterText = normalizeWhitespace(reference.chapter)
+  const pagesText = normalizeWhitespace(reference.pages)
   const doiText = normalizeDoi(reference.doi)
   const urlText = normalizeWhitespace(reference.url)
+  const locatorText = [volumeIssueText, chapterText ? `chap. ${chapterText}` : '', pagesText ? `pp. ${pagesText}` : '']
+    .filter(Boolean)
+    .join(', ')
 
   if (style === 'mla') {
     return [
       authorText ? `${authorText}.` : '',
       reference.title ? `"${reference.title}."` : '',
       container ? `${container},` : '',
+      locatorText ? `${locatorText},` : '',
       reference.year ? `${reference.year}.` : '',
       doiText ? `doi:${doiText}.` : '',
       !doiText && urlText ? `${urlText}.` : '',
@@ -236,6 +259,7 @@ export function formatReference(reference: Pick<DbReference, 'title' | 'authors'
       reference.year ? `${reference.year}.` : '',
       reference.title ? `"${reference.title}."` : '',
       container ? `${container}.` : '',
+      locatorText ? `${locatorText}.` : '',
       doiText ? `https://doi.org/${doiText}.` : '',
       !doiText && urlText ? `${urlText}.` : '',
     ].filter(Boolean).join(' ').trim()
@@ -246,6 +270,7 @@ export function formatReference(reference: Pick<DbReference, 'title' | 'authors'
     `(${yearText}).`,
     reference.title ? `${reference.title}.` : '',
     container ? `${container}.` : '',
+    locatorText ? `${locatorText}.` : '',
     doiText ? `https://doi.org/${doiText}` : '',
     !doiText && urlText ? urlText : '',
   ].filter(Boolean).join(' ').trim()

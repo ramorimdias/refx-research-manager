@@ -100,12 +100,14 @@ CREATE TABLE IF NOT EXISTS references (
   journal TEXT,
   volume TEXT,
   issue TEXT,
+  chapter TEXT,
   pages TEXT,
   publisher TEXT,
   booktitle TEXT, -- For conference papers
   doi TEXT,
   url TEXT,
   abstract TEXT,
+  is_manual INTEGER NOT NULL DEFAULT 0,
   keywords TEXT, -- JSON array
   bibtex TEXT, -- Raw BibTeX entry
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
