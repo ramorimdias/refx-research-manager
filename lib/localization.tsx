@@ -178,6 +178,7 @@ const translations = {
       title: 'Update available',
       descriptionVersion: 'Refx {version} is ready to install.',
       descriptionFallback: 'A new version of Refx is available.',
+      installModeHint: 'The update installs quietly in the background. Refx will show progress here, then restart when Windows finishes the install.',
       published: 'Published {value}',
       releaseNotes: 'Release notes',
       noNotes: 'No release notes provided.',
@@ -188,6 +189,7 @@ const translations = {
       downloadingKb: 'Downloading update... {size} KB',
       downloadingProgress: 'Downloading update... {downloaded} / {total} KB',
       installingStatus: 'Installing update...',
+      finalizingQuiet: 'Finishing installation quietly in the background...',
       restarting: 'Restarting...',
     },
     tour: {
@@ -1003,6 +1005,7 @@ const translations = {
       title: 'Atualização disponível',
       descriptionVersion: 'Refx {version} está pronto para instalar.',
       descriptionFallback: 'Uma nova versão do Refx está disponível.',
+      installModeHint: 'A atualização será instalada silenciosamente em segundo plano. O Refx mostrará o progresso aqui e será reiniciado quando o Windows concluir a instalação.',
       published: 'Publicado {value}',
       releaseNotes: 'Notas da versão',
       noNotes: 'Nenhuma nota de versão fornecida.',
@@ -1013,6 +1016,7 @@ const translations = {
       downloadingKb: 'Baixando atualização... {size} KB',
       downloadingProgress: 'Baixando atualização... {downloaded} / {total} KB',
       installingStatus: 'Instalando atualização...',
+      finalizingQuiet: 'Concluindo a instalação silenciosa em segundo plano...',
       restarting: 'Reiniciando...',
     },
     tour: {
@@ -1788,6 +1792,7 @@ const translations = {
       title: 'Mise à jour disponible',
       descriptionVersion: 'Refx {version} est prêt à être installé.',
       descriptionFallback: 'Une nouvelle version de Refx est disponible.',
+      installModeHint: "La mise à jour s'installe silencieusement en arrière-plan. Refx affichera la progression ici, puis redémarrera quand Windows aura terminé l'installation.",
       published: 'Publié {value}',
       releaseNotes: 'Notes de version',
       noNotes: 'Aucune note de version fournie.',
@@ -1798,6 +1803,7 @@ const translations = {
       downloadingKb: 'Téléchargement de la mise à jour... {size} KB',
       downloadingProgress: 'Téléchargement de la mise à jour... {downloaded} / {total} KB',
       installingStatus: 'Installation de la mise à jour...',
+      finalizingQuiet: "Finalisation silencieuse de l'installation en arrière-plan...",
       restarting: 'Redémarrage...',
     },
     tour: {

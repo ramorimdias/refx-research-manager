@@ -136,6 +136,7 @@ export async function downloadAndInstallAppUpdate(
         break
       case 'Finished':
         onProgress?.('updateDialog.installingStatus')
+        onProgress?.('updateDialog.finalizingQuiet')
         break
       default:
         break

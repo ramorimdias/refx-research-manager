@@ -69,7 +69,7 @@
         "https://github.com/ramorimdias/refx-research-manager/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }

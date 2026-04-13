@@ -48,6 +48,10 @@ export function AppUpdateDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            {translate(locale, 'updateDialog.installModeHint')}
+          </p>
+
           {update?.publishedAt ? (
             <p className="text-sm text-muted-foreground">{translate(locale, 'updateDialog.published', { value: new Date(update.publishedAt).toLocaleString(locale) })}</p>
           ) : null}
