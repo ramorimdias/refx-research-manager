@@ -20,6 +20,7 @@ import type {
   PersistentSearchState,
 } from '@/lib/types'
 import { hasUsableMetadataTitle } from '@/lib/services/document-metadata-service'
+import { hydrateRemoteVaultSyncState } from '@/lib/remote-storage-state'
 
 export type AppNote = repo.DbNote
 export type AppAnnotation = repo.DbAnnotation
@@ -175,11 +176,12 @@ export function toUiGraphViewNodeLayout(layout: repo.DbGraphViewNodeLayout): Gra
 
 export async function fetchDesktopData(options: { pullRemote?: boolean, acquireLease?: boolean } = {}) {
   await bootstrapDesktop()
+  await hydrateRemoteVaultSyncState()
   let remoteVaultStatus = await repo.getRemoteVaultStatus({ acquireLease: options.acquireLease ?? false }).catch(() => null)
   if (options.pullRemote && remoteVaultStatus?.enabled && !remoteVaultStatus.isOffline) {
     try {
       const pulled = await repo.pullRemoteVault()
-      remoteVaultStatus = pulled.status
+      remoteVaultStatus = pulled.status ?? remoteVaultStatus
     } catch (error) {
       console.warn('Remote vault startup pull failed:', error)
     }

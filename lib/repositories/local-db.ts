@@ -3,8 +3,10 @@
 import { invoke } from '@/lib/tauri/client'
 import {
   assertRemoteWriteAllowed,
-  beginRemoteVaultSyncPhase,
-  scheduleRemoteVaultPush,
+  flushRemoteVaultSync,
+  getRemoteVaultSyncQueueSnapshot,
+  markRemoteVaultDirty,
+  runRemoteVaultPull,
   setRemoteVaultStatus,
   type RemoteVaultStatus,
 } from '@/lib/remote-storage-state'
@@ -38,6 +40,8 @@ export type DbDocument = {
   citationKey?: string
   sourcePath?: string
   importedFilePath?: string
+  fileSize?: number
+  fileHash?: string
   extractedTextPath?: string
   searchText?: string
   textHash?: string
@@ -88,6 +92,8 @@ export type DbCreateDocumentInput = {
   citationKey?: string
   sourcePath?: string
   importedFilePath?: string
+  fileSize?: number
+  fileHash?: string
   extractedTextPath?: string
   searchText?: string
   textHash?: string
@@ -497,10 +503,34 @@ export type DbRemoteVaultActionResult = {
   copiedByteCount: number
 }
 
-async function invokeWrite<T>(command: string, args?: Record<string, unknown>) {
+type InvokeWriteOptions = {
+  priority?: 'high' | 'medium' | 'low'
+  domains?: {
+    snapshotTablesDirty?: boolean
+    blobPdfDirty?: boolean
+    blobTextDirty?: boolean
+    blobThumbnailDirty?: boolean
+    readerStateDirty?: boolean
+  }
+}
+
+function applyWriteSyncIntent(options?: InvokeWriteOptions) {
+  const priority = options?.priority ?? 'high'
+  const domains = options?.domains ?? { snapshotTablesDirty: true }
+  if (!Object.values(domains).some(Boolean)) {
+    return
+  }
+  markRemoteVaultDirty({ priority, domains })
+}
+
+async function invokeWrite<T>(
+  command: string,
+  args?: Record<string, unknown>,
+  options?: InvokeWriteOptions,
+) {
   assertRemoteWriteAllowed()
   const result = await invoke<T>(command, args)
-  scheduleRemoteVaultPush()
+  applyWriteSyncIntent(options)
   return result
 }
 
@@ -540,11 +570,71 @@ export async function getDocumentById(id: string) {
 }
 
 export async function createDocument(input: DbCreateDocumentInput) {
-  return invokeWrite<DbDocument>('create_document', { input })
+  return invokeWrite<DbDocument>('create_document', { input }, {
+    priority: 'high',
+    domains: {
+      snapshotTablesDirty: true,
+      blobPdfDirty: Boolean(input.importedFilePath || input.sourcePath),
+      blobThumbnailDirty: Boolean(input.coverImagePath),
+      blobTextDirty: Boolean(input.extractedTextPath),
+    },
+  })
 }
 
 export async function updateDocumentMetadata(id: string, input: DbUpdateDocumentMetadataInput) {
-  return invokeWrite<DbDocument | null>('update_document_metadata', { id, input })
+  const changedKeys = Object.entries(input)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => key)
+  const isReadProgressOnly = (
+    changedKeys.length > 0
+    && changedKeys.every((key) => key === 'lastOpenedAt' || key === 'lastReadPage')
+  )
+
+  const isMediumPriority = changedKeys.some((key) => [
+    'searchText',
+    'textHash',
+    'textExtractedAt',
+    'textExtractionStatus',
+    'hasExtractedText',
+    'hasOcr',
+    'hasOcrText',
+    'ocrStatus',
+    'metadataStatus',
+    'metadataProvenance',
+    'metadataUserEditedFields',
+    'indexingStatus',
+    'tagSuggestions',
+    'rejectedTagSuggestions',
+    'tagSuggestionTextHash',
+    'tagSuggestionStatus',
+    'classificationResult',
+    'classificationTextHash',
+    'classificationStatus',
+    'processingError',
+    'processingUpdatedAt',
+    'lastProcessedAt',
+  ].includes(key))
+
+  const isLocalMaterializationOnly = (
+    changedKeys.length > 0
+    && changedKeys.every((key) => key === 'importedFilePath' || key === 'sourcePath' || key === 'extractedTextPath' || key === 'coverImagePath')
+  )
+
+  return invokeWrite<DbDocument | null>(
+    'update_document_metadata',
+    { id, input },
+    isLocalMaterializationOnly
+      ? { priority: 'low', domains: {} }
+      : {
+          priority: isReadProgressOnly ? 'low' : isMediumPriority ? 'medium' : 'high',
+          domains: {
+            snapshotTablesDirty: !isReadProgressOnly,
+            readerStateDirty: isReadProgressOnly,
+            blobTextDirty: changedKeys.includes('extractedTextPath'),
+            blobThumbnailDirty: changedKeys.includes('coverImagePath'),
+          },
+        },
+  )
 }
 
 export async function deleteDocument(id: string) {
@@ -572,7 +662,12 @@ export async function loadDocumentPdfPayload(documentId: string) {
 }
 
 export async function importBookCover(sourcePath: string) {
-  return invokeWrite<string>('import_book_cover', { sourcePath })
+  return invokeWrite<string>('import_book_cover', { sourcePath }, {
+    priority: 'medium',
+    domains: {
+      blobThumbnailDirty: true,
+    },
+  })
 }
 
 export async function startBookCoverUploadSession() {
@@ -810,14 +905,9 @@ export async function runScheduledBackupIfDue(scope: DbBackupScope, intervalDays
 }
 
 export async function createRemoteVaultBackup(automatic?: boolean) {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pushing')
-  try {
-    return await invoke<DbRemoteVaultBackupMetadata>('create_remote_vault_backup', {
-      input: { automatic },
-    })
-  } finally {
-    endSyncPhase()
-  }
+  return await invoke<DbRemoteVaultBackupMetadata>('create_remote_vault_backup', {
+    input: { automatic },
+  })
 }
 
 export async function listRemoteVaultBackups() {
@@ -829,23 +919,13 @@ export async function deleteRemoteVaultBackup(path: string) {
 }
 
 export async function restoreRemoteVaultBackup(path: string) {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pushing')
-  try {
-    return rememberRemoteVaultStatus(await invoke<DbRestoreRemoteVaultBackupResult>('restore_remote_vault_backup', { path }))
-  } finally {
-    endSyncPhase()
-  }
+  return rememberRemoteVaultStatus(await invoke<DbRestoreRemoteVaultBackupResult>('restore_remote_vault_backup', { path }))
 }
 
 export async function runScheduledRemoteVaultBackupIfDue(intervalDays: number, keepCount: number) {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pushing')
-  try {
-    return await invoke<DbRemoteVaultBackupMetadata | null>('run_scheduled_remote_vault_backup_if_due', {
-      input: { intervalDays, keepCount },
-    })
-  } finally {
-    endSyncPhase()
-  }
+  return await invoke<DbRemoteVaultBackupMetadata | null>('run_scheduled_remote_vault_backup_if_due', {
+    input: { intervalDays, keepCount },
+  })
 }
 
 export async function configureRemoteVault(path: string, cacheLimitMb?: number) {
@@ -857,14 +937,9 @@ export async function configureRemoteVault(path: string, cacheLimitMb?: number) 
 }
 
 export async function migrateToRemoteVault(path: string) {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pushing')
-  try {
-    return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('migrate_to_remote_vault', {
-      input: { path },
-    }))
-  } finally {
-    endSyncPhase()
-  }
+  return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('migrate_to_remote_vault', {
+    input: { path },
+  }))
 }
 
 export async function getRemoteVaultStatus(options?: { acquireLease?: boolean }) {
@@ -876,38 +951,29 @@ export async function getRemoteVaultStatus(options?: { acquireLease?: boolean })
 }
 
 export async function pullRemoteVault() {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pulling')
-  try {
-    return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('pull_remote_vault'))
-  } finally {
-    endSyncPhase()
-  }
+  return rememberRemoteVaultStatus(await runRemoteVaultPull({ kind: 'manual' }))
 }
 
 export async function pushRemoteVault() {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pushing')
-  try {
-    return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('push_remote_vault'))
-  } finally {
-    endSyncPhase()
-  }
+  return rememberRemoteVaultStatus(
+    (await flushRemoteVaultSync({ kind: 'manual', force: true })) as DbRemoteVaultActionResult,
+  )
 }
 
 export async function releaseRemoteVaultLease() {
+  const syncState = getRemoteVaultSyncQueueSnapshot()
+  if (syncState.highestPriority === 'high' || syncState.highestPriority === 'medium') {
+    await flushRemoteVaultSync({ kind: 'manual' })
+  }
   const status = await invoke<DbRemoteVaultStatus>('release_remote_vault_lease')
   setRemoteVaultStatus(status)
   return status
 }
 
 export async function migrateRemoteVaultToLocal(clearRemoteCache = true) {
-  const endSyncPhase = beginRemoteVaultSyncPhase('pulling')
-  try {
-    return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('migrate_remote_vault_to_local', {
-      input: { clearRemoteCache },
-    }))
-  } finally {
-    endSyncPhase()
-  }
+  return rememberRemoteVaultStatus(await invoke<DbRemoteVaultActionResult>('migrate_remote_vault_to_local', {
+    input: { clearRemoteCache },
+  }))
 }
 
 export async function cacheRemoteDocumentFile(documentId: string) {

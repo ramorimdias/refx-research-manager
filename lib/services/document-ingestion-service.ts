@@ -41,6 +41,8 @@ type ResolvedDocumentIngestionOptions =
 export type ImportPdfDocumentInput = {
   libraryId: string
   sourcePath: string
+  fileHash?: string
+  fileSize?: number
 }
 
 export type DocumentIngestionResult = {
@@ -763,6 +765,8 @@ export async function ingestImportedPdfDocument(input: ImportPdfDocumentInput, o
 
     const created = await repo.createDocument({
       id: documentId,
+      fileHash: input.fileHash,
+      fileSize: input.fileSize,
       importedFilePath,
       libraryId: input.libraryId,
       metadataStatus: 'missing',

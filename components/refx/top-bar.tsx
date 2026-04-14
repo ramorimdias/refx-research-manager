@@ -14,27 +14,39 @@ import { getRemoteVaultDisplayMessage } from '@/lib/remote-vault-copy'
 import {
   getRemoteVaultStatusSnapshot,
   getRemoteVaultSyncPhaseSnapshot,
+  getRemoteVaultSyncQueueSnapshot,
   subscribeRemoteVaultStatus,
   subscribeRemoteVaultSyncPhase,
+  subscribeRemoteVaultSyncQueue,
   type RemoteVaultStatus,
   type RemoteVaultSyncPhase,
+  type RemoteVaultSyncQueueState,
 } from '@/lib/remote-storage-state'
 
-function getRemoteVaultBadge(status: RemoteVaultStatus, syncPhase: RemoteVaultSyncPhase, t: ReturnType<typeof useT>) {
-  if (syncPhase === 'pulling') {
+function getRemoteVaultBadge(
+  status: RemoteVaultStatus,
+  syncPhase: RemoteVaultSyncPhase,
+  syncState: RemoteVaultSyncQueueState,
+  t: ReturnType<typeof useT>,
+) {
+  const showExplicitActivity = syncState.activeKind === 'manual' || syncState.longRunning
+
+  if (showExplicitActivity && syncPhase === 'pulling') {
     return {
       Icon: DownloadCloud,
       loading: true,
+      pending: false,
       label: t('topBar.remoteVaultReceiving'),
       tooltip: t('topBar.remoteVaultReceivingTooltip'),
       className: 'border-sky-300/80 bg-sky-50 text-sky-800 dark:border-sky-500/40 dark:bg-sky-950/50 dark:text-sky-200',
     }
   }
 
-  if (syncPhase === 'pushing') {
+  if (showExplicitActivity && syncPhase === 'pushing') {
     return {
       Icon: UploadCloud,
       loading: true,
+      pending: false,
       label: t('topBar.remoteVaultSending'),
       tooltip: t('topBar.remoteVaultSendingTooltip'),
       className: 'border-sky-300/80 bg-sky-50 text-sky-800 dark:border-sky-500/40 dark:bg-sky-950/50 dark:text-sky-200',
@@ -45,6 +57,7 @@ function getRemoteVaultBadge(status: RemoteVaultStatus, syncPhase: RemoteVaultSy
     return {
       Icon: Unplug,
       loading: false,
+      pending: false,
       label: t('topBar.remoteVaultOffline'),
       tooltip: getRemoteVaultDisplayMessage(t, status),
       className: 'border-red-300/80 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-950/50 dark:text-red-200',
@@ -55,6 +68,7 @@ function getRemoteVaultBadge(status: RemoteVaultStatus, syncPhase: RemoteVaultSy
     return {
       Icon: PencilLine,
       loading: false,
+      pending: syncState.hasPendingSync,
       label: t('topBar.remoteVaultWriter'),
       tooltip: getRemoteVaultDisplayMessage(t, status),
       className: 'border-emerald-300/80 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/50 dark:text-emerald-200',
@@ -65,6 +79,7 @@ function getRemoteVaultBadge(status: RemoteVaultStatus, syncPhase: RemoteVaultSy
     return {
       Icon: Eye,
       loading: false,
+      pending: syncState.hasPendingSync,
       label: t('topBar.remoteVaultReadOnly'),
       tooltip: getRemoteVaultDisplayMessage(t, status),
       className: 'border-slate-300/80 bg-slate-50 text-slate-800 dark:border-slate-500/40 dark:bg-slate-900/70 dark:text-slate-200',
@@ -74,6 +89,7 @@ function getRemoteVaultBadge(status: RemoteVaultStatus, syncPhase: RemoteVaultSy
   return {
     Icon: Cloud,
     loading: false,
+    pending: syncState.hasPendingSync,
     label: t('topBar.remoteVaultConnected'),
     tooltip: getRemoteVaultDisplayMessage(t, status),
     className: 'border-border bg-muted/60 text-muted-foreground',
@@ -92,6 +108,7 @@ export function TopBar() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [remoteVaultStatus, setRemoteVaultStatus] = useState(getRemoteVaultStatusSnapshot)
   const [remoteVaultSyncPhase, setRemoteVaultSyncPhase] = useState(getRemoteVaultSyncPhaseSnapshot)
+  const [remoteVaultSyncState, setRemoteVaultSyncState] = useState(getRemoteVaultSyncQueueSnapshot)
   const globalSearchQuery = useUiStore((state) => state.globalSearchQuery)
   const setGlobalSearchQuery = useUiStore((state) => state.setGlobalSearchQuery)
   const setPersistentSearch = useUiStore((state) => state.setPersistentSearch)
@@ -104,9 +121,10 @@ export function TopBar() {
 
   useEffect(() => subscribeRemoteVaultStatus(setRemoteVaultStatus), [])
   useEffect(() => subscribeRemoteVaultSyncPhase(setRemoteVaultSyncPhase), [])
+  useEffect(() => subscribeRemoteVaultSyncQueue(setRemoteVaultSyncState), [])
 
   const remoteVaultBadge = remoteVaultStatus.enabled
-    ? getRemoteVaultBadge(remoteVaultStatus, remoteVaultSyncPhase, t)
+    ? getRemoteVaultBadge(remoteVaultStatus, remoteVaultSyncPhase, remoteVaultSyncState, t)
     : null
 
   return (
@@ -155,6 +173,12 @@ export function TopBar() {
                   <span
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-[-3px] rounded-full border-2 border-sky-200/70 border-t-sky-500 animate-spin dark:border-sky-900/80 dark:border-t-sky-400"
+                  />
+                ) : null}
+                {!remoteVaultBadge.loading && remoteVaultBadge.pending ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-0 top-0 h-2.5 w-2.5 rounded-full border border-background bg-sky-500"
                   />
                 ) : null}
                 <span

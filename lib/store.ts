@@ -2,7 +2,11 @@
 
 import { create } from 'zustand'
 import { isTauri } from '@/lib/tauri/client'
-import { importPdfs, type ImportProgressUpdate } from '@/lib/services/desktop-service'
+import {
+  importPdfs,
+  type ImportDocumentsResult,
+  type ImportProgressUpdate,
+} from '@/lib/services/desktop-service'
 import {
   deriveMetadataStatus,
   markMetadataFieldProvenanceAsUser,
@@ -122,7 +126,10 @@ interface AppState {
   toggleRightPanel: () => void
   toggleSidebar: () => void
   toggleCommandPalette: (force?: boolean) => void
-  importDocuments: (paths?: string[], onProgress?: (update: ImportProgressUpdate) => void) => Promise<number>
+  importDocuments: (
+    paths?: string[],
+    onProgress?: (update: ImportProgressUpdate) => void,
+  ) => Promise<ImportDocumentsResult>
   createDocumentRecord: (input: {
     libraryId: string
     title: string
@@ -362,19 +369,21 @@ appActions.importDocuments = async (paths, onProgress) => {
     const runtime = useRuntimeStore.getState()
     const library = useLibraryStore.getState()
     const targetLibraryId = library.activeLibraryId ?? library.libraries[0]?.id ?? null
-    if (!runtime.isDesktopApp || !targetLibraryId) return 0
+    if (!runtime.isDesktopApp || !targetLibraryId) {
+      return { imported: [], skipped: [] }
+    }
 
-    const imported = await importPdfs(targetLibraryId, paths, async (update) => {
+    const result = await importPdfs(targetLibraryId, paths, async (update) => {
       onProgress?.(update)
       if (update.status === 'completed') {
         await appActions.refreshData()
       }
     })
     await appActions.refreshData()
-    return imported.length
+    return result
   } catch (error) {
     showStoreActionError('Could not import documents', error)
-    return 0
+    return { imported: [], skipped: [] }
   }
 }
 

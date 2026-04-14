@@ -173,6 +173,8 @@ pub fn run() {
             remote_vault::configure_remote_vault,
             remote_vault::migrate_to_remote_vault,
             remote_vault::get_remote_vault_status,
+            remote_vault::get_remote_vault_sync_state,
+            remote_vault::set_remote_vault_sync_state,
             remote_vault::pull_remote_vault,
             remote_vault::push_remote_vault,
             remote_vault::release_remote_vault_lease,

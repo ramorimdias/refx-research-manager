@@ -23,6 +23,7 @@ import {
   CopyX,
 } from 'lucide-react'
 import * as QRCode from 'qrcode'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -80,7 +81,10 @@ import type { Document, SortField, ViewMode } from '@/lib/types'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import * as repo from '@/lib/repositories/local-db'
-import type { ImportProgressUpdate } from '@/lib/services/desktop-service'
+import type {
+  ImportProgressUpdate,
+  ImportSkippedDocument,
+} from '@/lib/services/desktop-service'
 import { convertFileSrc, open as openFileDialog, stat } from '@/lib/tauri/client'
 import { useLocale, useT } from '@/lib/localization'
 import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-store'
@@ -551,14 +555,76 @@ export default function LibrariesPage() {
     }
   }, [isDesktopApp, activeLibraryId, isImporting])
 
+  const formatImportSkipReason = (skippedDocument: ImportSkippedDocument) => {
+    const documentName = skippedDocument.fileName || fileNameFromPath(skippedDocument.sourcePath)
+    switch (skippedDocument.reason) {
+      case 'duplicate_in_selection':
+        return t('libraries.importSkipDuplicateInSelection', { file: documentName })
+      case 'same_path_existing':
+        return t('libraries.importSkipSamePath', {
+          file: documentName,
+          title: skippedDocument.existingDocumentTitle || documentName,
+        })
+      case 'same_hash_existing':
+        return t('libraries.importSkipSameHash', {
+          file: documentName,
+          title: skippedDocument.existingDocumentTitle || documentName,
+        })
+      case 'same_name_size_existing':
+        return t('libraries.importSkipSameNameSize', {
+          file: documentName,
+          title: skippedDocument.existingDocumentTitle || documentName,
+        })
+      default:
+        return documentName
+    }
+  }
+
+  const showImportSummaryToast = (summary: { imported: number; skipped: ImportSkippedDocument[] }) => {
+    if (summary.imported === 0 && summary.skipped.length === 0) return
+
+    const title =
+      summary.imported > 0 && summary.skipped.length > 0
+        ? t('libraries.importSummaryWithSkipped', {
+            imported: summary.imported,
+            skipped: summary.skipped.length,
+          })
+        : summary.imported > 0
+          ? t('libraries.importSummaryImportedOnly', {
+              imported: summary.imported,
+            })
+          : t('libraries.importSummarySkippedOnly', {
+            skipped: summary.skipped.length,
+          })
+
+    const description = summary.skipped.length
+      ? [
+          ...summary.skipped.slice(0, 4).map((item) => `- ${formatImportSkipReason(item)}`),
+          summary.skipped.length > 4
+            ? t('libraries.importSummaryMoreSkipped', {
+                count: summary.skipped.length - 4,
+              })
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : t('libraries.importSummaryImportedOnly', { imported: summary.imported })
+
+    toast(title, { description })
+  }
+
   const handleImport = async (paths?: string[]) => {
     if (!isDesktopApp || isImporting) return
     setIsImporting(true)
     setPendingImportCount(paths?.length ?? null)
     setImportProgress(null)
     try {
-      await importDocuments(paths, (update) => {
+      const result = await importDocuments(paths, (update) => {
         setImportProgress(update)
+      })
+      showImportSummaryToast({
+        imported: result.imported.length,
+        skipped: result.skipped,
       })
     } finally {
       setIsImporting(false)

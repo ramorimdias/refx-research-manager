@@ -64,6 +64,8 @@ pub struct Document {
     pub citation_key: Option<String>,
     pub source_path: Option<String>,
     pub imported_file_path: Option<String>,
+    pub file_size: Option<i64>,
+    pub file_hash: Option<String>,
     pub extracted_text_path: Option<String>,
     pub search_text: Option<String>,
     pub text_hash: Option<String>,
@@ -294,6 +296,8 @@ pub struct CreateDocumentInput {
     pub citation_key: Option<String>,
     pub source_path: Option<String>,
     pub imported_file_path: Option<String>,
+    pub file_size: Option<i64>,
+    pub file_hash: Option<String>,
     pub extracted_text_path: Option<String>,
     pub search_text: Option<String>,
     pub text_hash: Option<String>,
@@ -1264,6 +1268,8 @@ CREATE TABLE IF NOT EXISTS documents (
   citation_key TEXT,
   source_path TEXT,
   imported_file_path TEXT,
+  file_size INTEGER,
+  file_hash TEXT,
   extracted_text_path TEXT,
   search_text TEXT,
   text_hash TEXT,
@@ -1487,6 +1493,8 @@ CREATE INDEX IF NOT EXISTS idx_graph_view_node_layouts_graph_view_id ON graph_vi
     )?;
 
     ensure_column(&conn, "documents", "search_text", "TEXT")?;
+    ensure_column(&conn, "documents", "file_size", "INTEGER")?;
+    ensure_column(&conn, "documents", "file_hash", "TEXT")?;
     ensure_column(&conn, "documents", "extracted_text_path", "TEXT")?;
     ensure_column(&conn, "documents", "text_hash", "TEXT")?;
     ensure_column(&conn, "documents", "text_extracted_at", "TEXT")?;
@@ -2120,7 +2128,7 @@ pub fn list_documents_by_library(
     library_id: String,
 ) -> Result<Vec<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents WHERE library_id = ?1 ORDER BY updated_at DESC"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, file_size, file_hash, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents WHERE library_id = ?1 ORDER BY updated_at DESC"#)?;
     let rows = stmt.query_map(params![library_id], map_document_row)?;
     let mut documents = Vec::new();
     for row in rows {
@@ -2134,7 +2142,7 @@ pub fn list_documents_by_library(
 #[tauri::command]
 pub fn list_all_documents(app: AppHandle) -> Result<Vec<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents ORDER BY updated_at DESC"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, file_size, file_hash, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents ORDER BY updated_at DESC"#)?;
     let rows = stmt.query_map([], map_document_row)?;
     let mut documents = Vec::new();
     for row in rows {
@@ -2148,7 +2156,7 @@ pub fn list_all_documents(app: AppHandle) -> Result<Vec<Document>, AppError> {
 #[tauri::command]
 pub fn get_document_by_id(app: AppHandle, id: String) -> Result<Option<Document>, AppError> {
     let conn = open_db(&app)?;
-    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents WHERE id = ?1"#)?;
+    let mut stmt = conn.prepare(r#"SELECT id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, file_size, file_hash, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, last_opened_at, last_read_page, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at FROM documents WHERE id = ?1"#)?;
     let doc = stmt.query_row(params![id], map_document_row).optional()?;
     match doc {
         Some(mut document) => {
@@ -2175,40 +2183,42 @@ fn map_document_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
         citation_key: row.get(10)?,
         source_path: row.get(11)?,
         imported_file_path: row.get(12)?,
-        extracted_text_path: row.get(13)?,
-        search_text: row.get(14)?,
-        text_hash: row.get(15)?,
-        text_extracted_at: row.get(16)?,
-        text_extraction_status: row.get(17)?,
-        page_count: row.get(18)?,
-        has_extracted_text: row.get::<_, i64>(19)? == 1,
-        has_ocr: row.get::<_, i64>(20)? == 1,
-        has_ocr_text: row.get::<_, i64>(21)? == 1,
-        ocr_status: row.get(22)?,
-        metadata_status: row.get(23)?,
-        metadata_provenance: row.get(24)?,
-        metadata_user_edited_fields: row.get(25)?,
-        indexing_status: row.get(26)?,
-        tag_suggestions: row.get(27)?,
-        rejected_tag_suggestions: row.get(28)?,
-        tag_suggestion_text_hash: row.get(29)?,
-        tag_suggestion_status: row.get(30)?,
-        classification_result: row.get(31)?,
-        classification_text_hash: row.get(32)?,
-        classification_status: row.get(33)?,
-        processing_error: row.get(34)?,
-        processing_updated_at: row.get(35)?,
-        last_processed_at: row.get(36)?,
-        reading_stage: row.get(37)?,
-        rating: row.get(38)?,
-        favorite: row.get::<_, i64>(39)? == 1,
-        last_opened_at: row.get(40)?,
-        last_read_page: row.get(41)?,
-        commentary_text: row.get(42)?,
-        commentary_updated_at: row.get(43)?,
-        cover_image_path: row.get(44)?,
-        created_at: row.get(45)?,
-        updated_at: row.get(46)?,
+        file_size: row.get(13)?,
+        file_hash: row.get(14)?,
+        extracted_text_path: row.get(15)?,
+        search_text: row.get(16)?,
+        text_hash: row.get(17)?,
+        text_extracted_at: row.get(18)?,
+        text_extraction_status: row.get(19)?,
+        page_count: row.get(20)?,
+        has_extracted_text: row.get::<_, i64>(21)? == 1,
+        has_ocr: row.get::<_, i64>(22)? == 1,
+        has_ocr_text: row.get::<_, i64>(23)? == 1,
+        ocr_status: row.get(24)?,
+        metadata_status: row.get(25)?,
+        metadata_provenance: row.get(26)?,
+        metadata_user_edited_fields: row.get(27)?,
+        indexing_status: row.get(28)?,
+        tag_suggestions: row.get(29)?,
+        rejected_tag_suggestions: row.get(30)?,
+        tag_suggestion_text_hash: row.get(31)?,
+        tag_suggestion_status: row.get(32)?,
+        classification_result: row.get(33)?,
+        classification_text_hash: row.get(34)?,
+        classification_status: row.get(35)?,
+        processing_error: row.get(36)?,
+        processing_updated_at: row.get(37)?,
+        last_processed_at: row.get(38)?,
+        reading_stage: row.get(39)?,
+        rating: row.get(40)?,
+        favorite: row.get::<_, i64>(41)? == 1,
+        last_opened_at: row.get(42)?,
+        last_read_page: row.get(43)?,
+        commentary_text: row.get(44)?,
+        commentary_updated_at: row.get(45)?,
+        cover_image_path: row.get(46)?,
+        created_at: row.get(47)?,
+        updated_at: row.get(48)?,
     })
 }
 
@@ -2854,8 +2864,8 @@ pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Doc
     let tag_suggestion_status = input.tag_suggestion_status.unwrap_or("pending".into());
     let classification_status = input.classification_status.unwrap_or("pending".into());
     conn.execute(
-        r#"INSERT INTO documents (id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, 'unread', 0, 0, ?38, ?39, ?40, ?41, ?41)"#,
+        r#"INSERT INTO documents (id, library_id, document_type, title, authors, year, abstract, doi, isbn, publisher, citation_key, source_path, imported_file_path, file_size, file_hash, extracted_text_path, search_text, text_hash, text_extracted_at, text_extraction_status, page_count, has_extracted_text, has_ocr, has_ocr_text, ocr_status, metadata_status, metadata_provenance, metadata_user_edited_fields, indexing_status, tag_suggestions, rejected_tag_suggestions, tag_suggestion_text_hash, tag_suggestion_status, classification_result, classification_text_hash, classification_status, processing_error, processing_updated_at, last_processed_at, reading_stage, rating, favorite, commentary_text, commentary_updated_at, cover_image_path, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, 'unread', 0, 0, ?40, ?41, ?42, ?43, ?43)"#,
         params![
             id,
             input.library_id,
@@ -2870,6 +2880,8 @@ pub fn create_document(app: AppHandle, input: CreateDocumentInput) -> Result<Doc
             input.citation_key,
             input.source_path,
             input.imported_file_path,
+            input.file_size,
+            input.file_hash,
             input.extracted_text_path,
             input.search_text,
             input.text_hash,

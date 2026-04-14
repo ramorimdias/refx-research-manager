@@ -92,6 +92,30 @@ pub struct GetRemoteVaultStatusInput {
     pub acquire_lease: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteVaultSyncDirtyState {
+    pub snapshot_tables_dirty: bool,
+    pub blob_pdf_dirty: bool,
+    pub blob_text_dirty: bool,
+    pub blob_thumbnail_dirty: bool,
+    pub reader_state_dirty: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedRemoteVaultSyncState {
+    pub dirty: Option<RemoteVaultSyncDirtyState>,
+    pub highest_priority: Option<String>,
+    pub has_pending_sync: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushRemoteVaultInput {
+    pub dirty_state: Option<RemoteVaultSyncDirtyState>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteVaultActionResult {
@@ -302,6 +326,19 @@ fn set_setting(conn: &Connection, key: &str, value: String) -> Result<(), AppErr
 
 fn set_setting_json<T: Serialize>(conn: &Connection, key: &str, value: T) -> Result<(), AppError> {
     set_setting(conn, key, json_setting(value)?)
+}
+
+fn read_setting_json<T: for<'de> Deserialize<'de>>(conn: &Connection, key: &str) -> Result<Option<T>, AppError> {
+    let Some(raw) = read_setting(conn, key)? else {
+        return Ok(None);
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+
+    serde_json::from_str::<T>(&raw)
+        .map(Some)
+        .map_err(|error| AppError::Validation(format!("Could not parse setting {key}: {error}")))
 }
 
 fn ensure_remote_device_id(conn: &Connection) -> Result<String, AppError> {
@@ -644,6 +681,21 @@ pub fn get_remote_vault_status(
 }
 
 #[tauri::command]
+pub fn get_remote_vault_sync_state(app: AppHandle) -> Result<Option<PersistedRemoteVaultSyncState>, AppError> {
+    let conn = open_db(&app)?;
+    read_setting_json(&conn, "remoteVaultSyncState")
+}
+
+#[tauri::command]
+pub fn set_remote_vault_sync_state(
+    app: AppHandle,
+    input: PersistedRemoteVaultSyncState,
+) -> Result<(), AppError> {
+    let conn = open_db(&app)?;
+    set_setting_json(&conn, "remoteVaultSyncState", input)
+}
+
+#[tauri::command]
 pub fn migrate_to_remote_vault(
     app: AppHandle,
     input: MigrateToRemoteVaultInput,
@@ -687,7 +739,7 @@ pub fn migrate_to_remote_vault(
             cache_limit_mb: None,
         },
     )?;
-    let pushed = push_remote_vault(app)?;
+    let pushed = push_remote_vault(app, None)?;
     Ok(RemoteVaultActionResult {
         status: pushed.status,
         message: format!(
@@ -733,10 +785,22 @@ fn require_remote_writer(
 }
 
 #[tauri::command]
-pub fn push_remote_vault(app: AppHandle) -> Result<RemoteVaultActionResult, AppError> {
+pub fn push_remote_vault(
+    app: AppHandle,
+    input: Option<PushRemoteVaultInput>,
+) -> Result<RemoteVaultActionResult, AppError> {
     let conn = open_db(&app)?;
     let (config, existing_manifest) = require_remote_writer(&conn)?;
     let revision = existing_manifest.revision + 1;
+    let dirty_state = input
+        .and_then(|value| value.dirty_state)
+        .unwrap_or(RemoteVaultSyncDirtyState {
+            snapshot_tables_dirty: true,
+            blob_pdf_dirty: true,
+            blob_text_dirty: true,
+            blob_thumbnail_dirty: true,
+            reader_state_dirty: false,
+        });
     let (snapshot, stats) = build_snapshot(
         &app,
         &conn,
@@ -745,6 +809,7 @@ pub fn push_remote_vault(app: AppHandle) -> Result<RemoteVaultActionResult, AppE
         &config.device_id,
         revision,
         &existing_manifest.files,
+        &dirty_state,
     )?;
 
     let payload = serde_json::to_string_pretty(&snapshot)
@@ -973,7 +1038,7 @@ pub fn create_remote_vault_backup(
     app: AppHandle,
     input: RemoteVaultBackupInput,
 ) -> Result<RemoteVaultBackupMetadata, AppError> {
-    push_remote_vault(app.clone())?;
+    push_remote_vault(app.clone(), None)?;
     let conn = open_db(&app)?;
     let Some(config) = read_remote_config(&conn)? else {
         return Err(AppError::Validation(
@@ -1247,13 +1312,26 @@ fn build_snapshot(
     device_id: &str,
     revision: i64,
     previous_files: &[RemoteVaultBlob],
+    dirty_state: &RemoteVaultSyncDirtyState,
 ) -> Result<(RemoteVaultSnapshot, BlobCopyStats), AppError> {
-    let mut tables = HashMap::new();
-    for table in REMOTE_SYNC_TABLES {
-        tables.insert(table.to_string(), read_table(conn, table)?);
-    }
+    let should_refresh_tables = dirty_state.snapshot_tables_dirty || dirty_state.reader_state_dirty;
+    let mut tables = if should_refresh_tables {
+        let mut tables = HashMap::new();
+        for table in REMOTE_SYNC_TABLES {
+            tables.insert(table.to_string(), read_table(conn, table)?);
+        }
+        tables
+    } else if let Ok(previous_snapshot) = read_snapshot(vault_root) {
+        previous_snapshot.tables
+    } else {
+        let mut tables = HashMap::new();
+        for table in REMOTE_SYNC_TABLES {
+            tables.insert(table.to_string(), read_table(conn, table)?);
+        }
+        tables
+    };
 
-    let (files, stats) = collect_document_blobs(vault_root, &tables, previous_files)?;
+    let (files, stats) = collect_document_blobs(vault_root, &tables, previous_files, dirty_state)?;
     strip_local_document_paths(&mut tables);
     let updated_at = now_iso();
     let _ = app;
@@ -1431,6 +1509,7 @@ fn collect_document_blobs(
     vault_root: &Path,
     tables: &HashMap<String, Vec<Map<String, Value>>>,
     previous_files: &[RemoteVaultBlob],
+    dirty_state: &RemoteVaultSyncDirtyState,
 ) -> Result<(Vec<RemoteVaultBlob>, BlobCopyStats), AppError> {
     let mut files = Vec::new();
     let mut copied_file_count = 0;
@@ -1458,6 +1537,7 @@ fn collect_document_blobs(
             &document_id,
             &format!("blobs/pdfs/{library_id}/{document_id}.pdf"),
             pdf_candidates.into_iter().flatten().map(PathBuf::from).collect(),
+            dirty_state.blob_pdf_dirty || dirty_state.snapshot_tables_dirty,
         )? {
             copied_file_count += if copied { 1 } else { 0 };
             copied_byte_count += if copied { blob.size } else { 0 };
@@ -1474,6 +1554,7 @@ fn collect_document_blobs(
                 &document_id,
                 &format!("blobs/document-text/{document_id}.{extension}"),
                 vec![source],
+                dirty_state.blob_text_dirty || dirty_state.snapshot_tables_dirty,
             )? {
                 copied_file_count += if copied { 1 } else { 0 };
                 copied_byte_count += if copied { blob.size } else { 0 };
@@ -1491,6 +1572,7 @@ fn collect_document_blobs(
                 &document_id,
                 &format!("blobs/thumbnails/{document_id}.{extension}"),
                 vec![source],
+                dirty_state.blob_thumbnail_dirty || dirty_state.snapshot_tables_dirty,
             )? {
                 copied_file_count += if copied { 1 } else { 0 };
                 copied_byte_count += if copied { blob.size } else { 0 };
@@ -1515,7 +1597,12 @@ fn collect_blob_for_document(
     document_id: &str,
     relative_path: &str,
     candidates: Vec<PathBuf>,
+    should_refresh_blob: bool,
 ) -> Result<Option<(RemoteVaultBlob, bool)>, AppError> {
+    if !should_refresh_blob {
+        return Ok(previous_blob.cloned().map(|blob| (blob, false)));
+    }
+
     let target = vault_root.join(relative_path);
     let previous_source = previous_blob
         .map(|blob| vault_root.join(&blob.relative_path))
@@ -1534,6 +1621,22 @@ fn collect_blob_for_document(
     }
 
     let (source_sha256, source_size) = hash_file(&source)?;
+    let normalized_relative_path = relative_path.replace('\\', "/");
+    if let Some(previous_blob) = previous_blob {
+        let previous_target = vault_root.join(&previous_blob.relative_path);
+        if previous_blob.relative_path == normalized_relative_path
+            && previous_blob.sha256 == source_sha256
+            && previous_blob.size == source_size
+            && previous_target.exists()
+            && previous_target.is_file()
+        {
+            let (existing_target_sha256, existing_target_size) = hash_file(&previous_target)?;
+            if existing_target_sha256 == source_sha256 && existing_target_size == source_size {
+                return Ok(Some((previous_blob.clone(), false)));
+            }
+        }
+    }
+
     let mut copied = false;
     if source != target {
         fs::copy(&source, &target)?;
@@ -1552,7 +1655,7 @@ fn collect_blob_for_document(
         RemoteVaultBlob {
             kind: kind.to_string(),
             document_id: document_id.to_string(),
-            relative_path: relative_path.replace('\\', "/"),
+            relative_path: normalized_relative_path,
             sha256,
             size,
             updated_at: now_iso(),
@@ -1697,8 +1800,8 @@ pub fn cache_remote_document_file_for_document(
 
     let local_path_string = local_path.to_string_lossy().to_string();
     conn.execute(
-        "UPDATE documents SET imported_file_path = ?1, source_path = NULL, updated_at = ?2 WHERE id = ?3",
-        params![local_path_string, now_iso(), document_id],
+        "UPDATE documents SET imported_file_path = ?1, source_path = NULL WHERE id = ?2",
+        params![local_path_string, document_id],
     )?;
     enforce_remote_cache_limit(app, config.cache_limit_mb)?;
     Ok(Some(local_path_string))
