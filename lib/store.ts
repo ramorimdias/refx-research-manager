@@ -835,22 +835,26 @@ appActions.fetchOnlineMetadataForDocument = async (documentId) => {
 }
 
 appActions.applyFetchedMetadataCandidate = async (documentId, metadata, mode = 'replace_unlocked') => {
-  const document = await repo.getDocumentById(documentId)
-  if (!document || !useRuntimeStore.getState().isDesktopApp) return
+  try {
+    const document = await repo.getDocumentById(documentId)
+    if (!document || !useRuntimeStore.getState().isDesktopApp) return
 
-  const saved = await repo.updateDocumentMetadata(
-    documentId,
-    mergeExtractedMetadataIntoDocument(document, metadata, mode),
-  )
+    const saved = await repo.updateDocumentMetadata(
+      documentId,
+      mergeExtractedMetadataIntoDocument(document, metadata, mode),
+    )
 
-  if (saved) {
-    useDocumentStore.setState((state) => ({
-      documents: updateLocalDocument(
-        state.documents,
-        documentId,
-        toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === documentId)),
-      ),
-    }))
+    if (saved) {
+      useDocumentStore.setState((state) => ({
+        documents: updateLocalDocument(
+          state.documents,
+          documentId,
+          toUiDocumentWithExistingCounts(saved, state.documents.find((entry) => entry.id === documentId)),
+        ),
+      }))
+    }
+  } catch (error) {
+    showStoreActionError('Could not apply metadata candidate', error)
   }
 }
 

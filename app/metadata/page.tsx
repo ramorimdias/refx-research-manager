@@ -78,7 +78,7 @@ export default function MetadataWorkspacePage() {
   const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
   const documents = useDocumentStore((state) => state.documents)
   const { updateDocument, applyFetchedMetadataCandidate } = useDocumentActions()
-  const { isDesktopApp } = useRuntimeState()
+  const { isDesktopApp, remoteVaultStatus } = useRuntimeState()
 
   const [selectedLibraryId, setSelectedLibraryId] = useState('')
   const [mode, setMode] = useState<MetadataQueueMode>('fetch_possible')
@@ -245,6 +245,10 @@ export default function MetadataWorkspacePage() {
   }
 
   const currentLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? null
+  const canWriteMetadata = !remoteVaultStatus?.enabled || (!remoteVaultStatus.isOffline && remoteVaultStatus.mode === 'remoteWriter')
+  const metadataWriteLockMessage = remoteVaultStatus?.enabled && !canWriteMetadata
+    ? `${remoteVaultStatus.message} You can still search metadata, but saving or applying changes requires write access.`
+    : ''
 
   return (
     <div className="p-6">
@@ -371,7 +375,11 @@ export default function MetadataWorkspacePage() {
 
                 <div className="flex flex-wrap gap-2">
                   {hasUnsavedChanges ? (
-                    <Button onClick={() => void handleSave()} disabled={isSaving}>
+                    <Button
+                      onClick={() => void handleSave()}
+                      disabled={isSaving || !canWriteMetadata}
+                      title={!canWriteMetadata ? metadataWriteLockMessage : undefined}
+                    >
                       <Save className="mr-2 h-4 w-4" />
                       {isSaving ? t('metadataPage.saving') : t('metadataPage.save')}
                     </Button>
@@ -382,6 +390,11 @@ export default function MetadataWorkspacePage() {
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
+                {metadataWriteLockMessage ? (
+                  <div className="md:col-span-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    {metadataWriteLockMessage}
+                  </div>
+                ) : null}
                 <div className="md:col-span-2">
                   <Label htmlFor="metadata-title">{t('metadataFields.title')}</Label>
                   <Input id="metadata-title" className="mt-1.5" value={title} onChange={(event) => setTitle(event.target.value)} />
@@ -511,7 +524,8 @@ export default function MetadataWorkspacePage() {
                             size="sm"
                             variant="outline"
                             onClick={() => void handleApplyCandidate('fill_missing', candidate)}
-                            disabled={isApplyingCandidate}
+                            disabled={isApplyingCandidate || !canWriteMetadata}
+                            title={!canWriteMetadata ? metadataWriteLockMessage : undefined}
                           >
                             {t('metadataPage.fillMissing')}
                           </Button>
@@ -519,7 +533,8 @@ export default function MetadataWorkspacePage() {
                             type="button"
                             size="sm"
                             onClick={() => void handleApplyCandidate('replace_unlocked', candidate)}
-                            disabled={isApplyingCandidate}
+                            disabled={isApplyingCandidate || !canWriteMetadata}
+                            title={!canWriteMetadata ? metadataWriteLockMessage : undefined}
                           >
                             {t('metadataPage.applyCandidate')}
                           </Button>

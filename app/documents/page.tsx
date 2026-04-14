@@ -549,7 +549,7 @@ function RealDocumentDetailPage({
   const documents = useDocumentStore((state) => state.documents)
   const libraries = useLibraryStore((state) => state.libraries)
   const relations = useRelationStore((state) => state.relations)
-  const { initialized, isDesktopApp, refreshData } = useRuntimeState()
+  const { initialized, isDesktopApp, refreshData, remoteVaultStatus } = useRuntimeState()
   const {
     addDocumentTag,
     removeDocumentTag,
@@ -955,6 +955,11 @@ function RealDocumentDetailPage({
         return 'outline'
     }
   }, [document]) as ComponentProps<typeof Badge>['variant']
+
+  const canWriteDocumentMetadata = !remoteVaultStatus?.enabled || (!remoteVaultStatus.isOffline && remoteVaultStatus.mode === 'remoteWriter')
+  const documentMetadataWriteLockMessage = remoteVaultStatus?.enabled && !canWriteDocumentMetadata
+    ? `${remoteVaultStatus.message} You can still search metadata candidates, but applying or saving metadata requires write access.`
+    : ''
 
   if (!document) {
     if (!initialized) return <div className="p-6">Loading document...</div>
@@ -1678,7 +1683,11 @@ function RealDocumentDetailPage({
               </Link>
             </Button>
             {hasUnsavedChanges ? (
-              <Button onClick={() => void handleSave()} disabled={isSaving}>
+              <Button
+                onClick={() => void handleSave()}
+                disabled={isSaving || !canWriteDocumentMetadata}
+                title={!canWriteDocumentMetadata ? documentMetadataWriteLockMessage : undefined}
+              >
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
@@ -1726,6 +1735,11 @@ function RealDocumentDetailPage({
                     </TooltipContent>
                   </Tooltip>
                 </div>
+                {documentMetadataWriteLockMessage ? (
+                  <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    {documentMetadataWriteLockMessage}
+                  </div>
+                ) : null}
                 <div className="mb-4 rounded-lg border border-border">
                   <Collapsible open={bibtexExpanded} onOpenChange={setBibtexExpanded}>
                     <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
@@ -2303,6 +2317,11 @@ function RealDocumentDetailPage({
 
           <div className="h-[58vh] min-h-0 overflow-y-auto pr-1">
             <div className="space-y-4">
+              {documentMetadataWriteLockMessage ? (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {documentMetadataWriteLockMessage}
+                </div>
+              ) : null}
               <div className="rounded-lg border border-border p-4">
                 <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="space-y-2">
@@ -2446,7 +2465,8 @@ function RealDocumentDetailPage({
                         size="sm"
                         variant="outline"
                         onClick={() => void handleApplyMetadataCandidate('fill_missing', candidate)}
-                        disabled={isApplyingMetadataCandidate}
+                        disabled={isApplyingMetadataCandidate || !canWriteDocumentMetadata}
+                        title={!canWriteDocumentMetadata ? documentMetadataWriteLockMessage : undefined}
                       >
                         {isApplyingMetadataCandidate && selectedMetadataCandidateId === candidate.id ? 'Applying…' : 'Fill Missing Fields'}
                       </Button>
@@ -2454,7 +2474,8 @@ function RealDocumentDetailPage({
                         type="button"
                         size="sm"
                         onClick={() => void handleApplyMetadataCandidate('replace_unlocked', candidate)}
-                        disabled={isApplyingMetadataCandidate}
+                        disabled={isApplyingMetadataCandidate || !canWriteDocumentMetadata}
+                        title={!canWriteDocumentMetadata ? documentMetadataWriteLockMessage : undefined}
                       >
                         {isApplyingMetadataCandidate && selectedMetadataCandidateId === candidate.id ? 'Applying…' : 'Apply Candidate'}
                       </Button>

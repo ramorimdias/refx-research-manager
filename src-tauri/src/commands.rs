@@ -1103,11 +1103,11 @@ fn validate_sql_identifier(s: &str) -> Result<(), AppError> {
 fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<(), AppError> {
     validate_sql_identifier(table)?;
     validate_sql_identifier(column)?;
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     let columns: Vec<String> = rows.filter_map(Result::ok).collect();
     if !columns.iter().any(|existing| existing == column) {
-        conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"), [])?;
+        conn.execute(&format!("ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}"), [])?;
     }
     Ok(())
 }
@@ -1115,7 +1115,7 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, AppError> {
     validate_sql_identifier(table)?;
     validate_sql_identifier(column)?;
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     let columns: Vec<String> = rows.filter_map(Result::ok).collect();
     Ok(columns.iter().any(|existing| existing == column))
