@@ -373,10 +373,56 @@ appActions.importDocuments = async (paths, onProgress) => {
       return { imported: [], skipped: [] }
     }
 
+    let refreshInFlight: Promise<void> | null = null
+    let refreshQueued = false
+    const refreshRelevantStages = new Set([
+      'import_pdf',
+      'local_metadata_extraction',
+      'text_extraction',
+      'ocr_fallback',
+      'online_metadata_enrichment',
+    ])
+
+    const queueRefresh = async () => {
+      if (refreshInFlight) {
+        refreshQueued = true
+        return refreshInFlight
+      }
+
+      refreshInFlight = appActions.refreshData()
+        .catch((error) => {
+          console.error('Import refresh failed:', error)
+        })
+        .finally(async () => {
+          refreshInFlight = null
+          if (refreshQueued) {
+            refreshQueued = false
+            await queueRefresh()
+          }
+        })
+
+      return refreshInFlight
+    }
+
+    const scheduleBackgroundRefresh = () => {
+      void (async () => {
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 750))
+          await queueRefresh()
+        }
+      })()
+    }
+
     const result = await importPdfs(targetLibraryId, paths, async (update) => {
       onProgress?.(update)
-      if (update.status === 'completed') {
-        await appActions.refreshData()
+      if (
+        (!update.stage && update.status === 'completed')
+        || (update.stage && update.status === 'completed' && refreshRelevantStages.has(update.stage))
+      ) {
+        await queueRefresh()
+        if (!update.stage && update.status === 'completed') {
+          scheduleBackgroundRefresh()
+        }
       }
     })
     await appActions.refreshData()

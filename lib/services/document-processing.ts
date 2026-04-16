@@ -57,6 +57,29 @@ let pdfJsPromise: Promise<PdfJsModule> | null = null
 const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.js' as string
 const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
 
+function resolvePdfJsCandidate(importedModule: unknown) {
+  const candidate = (
+    importedModule
+    && typeof importedModule === 'object'
+    && 'getDocument' in importedModule
+    && 'GlobalWorkerOptions' in importedModule
+  )
+    ? importedModule
+    : (
+      importedModule
+      && typeof importedModule === 'object'
+      && 'default' in importedModule
+      && importedModule.default
+      && typeof importedModule.default === 'object'
+      && 'getDocument' in importedModule.default
+      && 'GlobalWorkerOptions' in importedModule.default
+    )
+      ? importedModule.default
+      : null
+
+  return candidate && typeof candidate === 'object' ? candidate as PdfJsModule : null
+}
+
 function normalizeText(input: string) {
   return input.replace(/\s+/g, ' ').trim()
 }
@@ -334,31 +357,30 @@ function findMatchesInWordList(words: PdfWord[], query: string, maxResults = 100
 export async function loadPdfJsModule() {
   if (!pdfJsPromise) {
     pdfJsPromise = (async () => {
-      const importedModule = typeof window !== 'undefined'
-        ? await import(/* webpackIgnore: true */ BROWSER_PDFJS_MODULE_PATH)
-        : await import('pdfjs-dist/build/pdf.mjs')
+      let candidate: PdfJsModule | null = null
+      let packageImportError: unknown = null
 
-      const candidate = (
-        importedModule
-        && typeof importedModule === 'object'
-        && 'getDocument' in importedModule
-        && 'GlobalWorkerOptions' in importedModule
-      )
-        ? importedModule
-        : (
-          importedModule
-          && typeof importedModule === 'object'
-          && 'default' in importedModule
-          && importedModule.default
-          && typeof importedModule.default === 'object'
-          && 'getDocument' in importedModule.default
-          && 'GlobalWorkerOptions' in importedModule.default
-        )
-          ? importedModule.default
-          : null
+      try {
+        candidate = resolvePdfJsCandidate(await import('pdfjs-dist/build/pdf.mjs'))
+      } catch (error) {
+        packageImportError = error
+      }
+
+      if (!candidate && typeof window !== 'undefined') {
+        try {
+          candidate = resolvePdfJsCandidate(await import(/* webpackIgnore: true */ BROWSER_PDFJS_MODULE_PATH))
+        } catch (error) {
+          if (packageImportError) {
+            console.warn('Falling back to public PDF.js asset after bundled import failed:', packageImportError)
+          }
+          throw error
+        }
+      }
 
       if (!candidate || typeof candidate !== 'object') {
-        throw new Error('PDF.js module could not be initialized.')
+        throw packageImportError instanceof Error
+          ? packageImportError
+          : new Error('PDF.js module could not be initialized.')
       }
 
       const pdfjs = candidate as PdfJsModule

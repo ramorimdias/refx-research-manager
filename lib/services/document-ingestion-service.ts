@@ -7,10 +7,11 @@ import { buildDocumentMetadataSeed, enrichDocumentMetadataOnline } from '@/lib/s
 import { rebuildCitationRelationsForDocument } from '@/lib/services/document-citation-relation-service'
 import { classifyDocumentSemantics } from '@/lib/services/document-classification-service'
 import { detectAndStoreDocumentKeywords } from '@/lib/services/document-keyword-service'
-import { extractLocalPdfMetadata, mergeExtractedMetadataIntoDocument, type LocalPdfMetadata } from '@/lib/services/document-metadata-service'
+import { extractLocalPdfMetadata, extractNormalizedDoi, mergeExtractedMetadataIntoDocument, type LocalPdfMetadata } from '@/lib/services/document-metadata-service'
 import { runDocumentOcr } from '@/lib/services/document-ocr-service'
 import { generateDocumentTagSuggestions } from '@/lib/services/document-tag-suggestion-service'
 import { extractDocumentText, indexDocument } from '@/lib/services/document-search-service'
+import { getDocumentPlainText } from '@/lib/services/document-text-service'
 import { dbDocumentToUi } from '@/lib/utils/document-mapper'
 import type { Document, DocumentProcessingStage, DocumentProcessingStageState, SemanticClassificationMode } from '@/lib/types'
 import { normalizeErrorMessage } from '@/lib/utils/error'
@@ -312,10 +313,26 @@ async function runTextExtractionStage(
   try {
     await updateStageStart(context.documentId, stage)
     const extracted = await extractDocumentText(context.documentId)
+    const plainText = extracted.text.trim().length > 0
+      ? extracted.text
+      : await getDocumentPlainText({
+          id: context.documentId,
+          extractedTextPath: extracted.extractedTextPath,
+          searchText: extracted.text,
+        })
+
+    const extractedDoi = !document.doi ? extractNormalizedDoi(plainText) : undefined
+    if (extractedDoi) {
+      await repo.updateDocumentMetadata(context.documentId, {
+        doi: extractedDoi,
+        processingUpdatedAt: nowIso(),
+      })
+    }
+
     await refreshContextDocument(context)
     const detail = extracted.isOcrCandidate
-      ? `Persisted ${extracted.pageCount} page(s) of sparse text and marked the document as an OCR candidate.`
-      : `Persisted ${extracted.pageCount} page(s) of extracted text.`
+      ? `Persisted ${extracted.pageCount} page(s) of sparse text${extractedDoi ? ' and recovered a DOI from extracted text' : ''}, then marked the document as an OCR candidate.`
+      : `Persisted ${extracted.pageCount} page(s) of extracted text${extractedDoi ? ' and recovered a DOI from extracted text' : ''}.`
     return stageCompleted(stage, startedAt, detail)
   } catch (error) {
     const stageError = await updateStageFailure(context.documentId, stage, error)
