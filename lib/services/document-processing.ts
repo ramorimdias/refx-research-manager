@@ -56,6 +56,7 @@ type PdfJsModule = {
 let pdfJsPromise: Promise<PdfJsModule> | null = null
 const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.js' as string
 const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
+const PDFJS_BUNDLED_MODULE_PATH = 'pdfjs-dist/legacy/build/pdf.mjs'
 
 function resolvePdfJsCandidate(importedModule: unknown) {
   const candidate = (
@@ -361,7 +362,7 @@ export async function loadPdfJsModule() {
       let packageImportError: unknown = null
 
       try {
-        candidate = resolvePdfJsCandidate(await import('pdfjs-dist/build/pdf.mjs'))
+        candidate = resolvePdfJsCandidate(await import(PDFJS_BUNDLED_MODULE_PATH))
       } catch (error) {
         packageImportError = error
       }
