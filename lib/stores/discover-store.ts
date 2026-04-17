@@ -113,6 +113,27 @@ function collectKnownWorks(sourceWork: DiscoverWork | null, activeJourney: Disco
   ]
 }
 
+function collectJourneyStarredIds(activeJourney: DiscoverJourney | null) {
+  if (!activeJourney) return new Set<string>()
+
+  const starredIds = new Set<string>()
+  for (const step of activeJourney.steps) {
+    if (step.sourceWork.isStarred) starredIds.add(step.sourceWork.id)
+    for (const item of step.items) {
+      if (item.isStarred) starredIds.add(item.id)
+    }
+  }
+
+  return starredIds
+}
+
+function applyJourneyStarState(work: DiscoverWork, activeJourney: DiscoverJourney | null) {
+  return {
+    ...work,
+    isStarred: collectJourneyStarredIds(activeJourney).has(work.id),
+  }
+}
+
 function syncSavedJourneysWithActiveJourney(savedJourneys: DiscoverJourney[], activeJourney: DiscoverJourney | null) {
   if (!activeJourney) return savedJourneys
   if (!savedJourneys.some((journey) => journey.id === activeJourney.id)) return savedJourneys
@@ -279,7 +300,7 @@ export const useDiscoverStore = create<DiscoverStoreState>((set, get) => ({
       const cacheKey = getDiscoverStepCacheKey(sourceWork, mode)
       const cached = get().cachedSteps.get(cacheKey)
       const items = (cached ?? await fetchDiscoverStep(sourceWork, mode, documents, relations, settings))
-        .map((item) => applyTagState(item, get().workTags))
+        .map((item) => applyJourneyStarState(applyTagState(item, get().workTags), get().activeJourney))
 
       const nextCachedSteps = new Map(get().cachedSteps)
       nextCachedSteps.set(cacheKey, items)
@@ -288,7 +309,7 @@ export const useDiscoverStore = create<DiscoverStoreState>((set, get) => ({
         name: `${mode === 'references' ? 'References' : 'Citations'} of ${sourceWork.firstAuthorLabel}`,
         steps: [{
           id: crypto.randomUUID(),
-          sourceWork: applyTagState(sourceWork, get().workTags),
+          sourceWork: applyJourneyStarState(applyTagState(sourceWork, get().workTags), get().activeJourney),
           mode,
           items,
           filters: {},
@@ -300,7 +321,7 @@ export const useDiscoverStore = create<DiscoverStoreState>((set, get) => ({
       }
 
       set({
-        sourceWork: applyTagState(sourceWork, get().workTags),
+        sourceWork: applyJourneyStarState(applyTagState(sourceWork, get().workTags), get().activeJourney),
         activeJourney: nextJourney,
         activeStepIndex: 0,
         selectedWorkId: sourceWork.id,
@@ -336,11 +357,14 @@ export const useDiscoverStore = create<DiscoverStoreState>((set, get) => ({
       const cacheKey = getDiscoverStepCacheKey(selectedWork, mode)
       const cached = get().cachedSteps.get(cacheKey)
       const items = (cached ?? await fetchDiscoverStep(selectedWork, mode, documents, relations, settings))
-        .map((item) => applyTagState(item, get().workTags))
+        .map((item) => applyJourneyStarState(applyTagState(item, get().workTags), currentJourney))
 
       const nextCachedSteps = new Map(get().cachedSteps)
       nextCachedSteps.set(cacheKey, items)
       const nextJourney = cloneJourney(currentJourney)
+      if (state.activeStepIndex >= 0 && state.activeStepIndex < nextJourney.steps.length - 1) {
+        nextJourney.steps = nextJourney.steps.slice(0, state.activeStepIndex + 1)
+      }
       const existingStepIndex = nextJourney.steps.findIndex((step) => step.cacheKey === cacheKey)
 
       if (existingStepIndex >= 0) {
@@ -357,7 +381,7 @@ export const useDiscoverStore = create<DiscoverStoreState>((set, get) => ({
 
       nextJourney.steps.push({
         id: crypto.randomUUID(),
-        sourceWork: applyTagState(selectedWork, get().workTags),
+        sourceWork: applyJourneyStarState(applyTagState(selectedWork, get().workTags), currentJourney),
         mode,
         items,
         filters: {},

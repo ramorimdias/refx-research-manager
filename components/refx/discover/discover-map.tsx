@@ -34,7 +34,7 @@ type Zone = {
   height: number
 }
 
-function packItemsInZone(items: DiscoverWork[], zone: Zone) {
+function packItemsInZone(items: DiscoverWork[], zone: Zone): PositionedWork[] {
   if (items.length === 0) return []
 
   const availableCols = Math.max(1, Math.floor(Math.max(zone.width - NODE_SIZE, 0) / GRID_X_GAP) + 1)
@@ -60,7 +60,7 @@ function packItemsInZone(items: DiscoverWork[], zone: Zone) {
   })
 }
 
-function packStarredItems(items: DiscoverWork[], canvasWidth: number, canvasHeight: number) {
+function packStarredItems(items: DiscoverWork[], canvasWidth: number, canvasHeight: number): PositionedWork[] {
   if (items.length === 0) return []
 
   const usableWidth = Math.max(canvasWidth - CANVAS_SAFE_MARGIN * 2, NODE_SIZE)
@@ -166,7 +166,7 @@ function DiscoverBubble({
     >
       <div
         className={cn(
-          'flex h-[56px] w-[56px] items-center justify-center rounded-full border border-slate-700 bg-background shadow-sm transition',
+          'flex h-[56px] w-[56px] items-center justify-center rounded-full border border-slate-700 bg-background shadow-sm transition-all duration-500 ease-out',
           isSource && 'border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.16)]',
           isSelected && !isSource && 'border-transparent shadow-[0_0_0_10px_rgba(251,191,36,0.16)]',
           isSelected && !isSource && relationMode === 'references' && 'bg-[radial-gradient(circle_at_center,rgba(191,219,254,0.92)_0%,rgba(219,234,254,0.82)_45%,rgba(255,255,255,0.98)_100%)]',
@@ -207,7 +207,7 @@ function DiscoverBubble({
       {showLabel ? (
         <div
           className={cn(
-            'pointer-events-none absolute text-xs transition',
+            'pointer-events-none absolute text-xs transition-all duration-500 ease-out',
             labelSide === 'right' && 'left-full top-1/2 ml-3 w-[240px] -translate-y-1/2 text-left',
             labelSide === 'left' && 'right-full top-1/2 mr-3 w-[240px] -translate-y-1/2 text-right',
             labelSide === 'below-left' && 'left-0 top-full mt-2 w-[220px] text-left',
@@ -292,7 +292,7 @@ export function DiscoverMap({
     }
   }, [])
 
-  const positioned = useMemo(() => {
+  const positioned = useMemo<PositionedWork[]>(() => {
     const canvasWidth = canvasSize.width
     const canvasHeight = canvasSize.height
     const uniqueItems = dedupeDiscoverItems(items, mode === 'starred' ? '__starred__' : sourceWork.id)
@@ -307,6 +307,7 @@ export function DiscoverMap({
       return packStarredItems(sortedItems, canvasWidth, canvasHeight).map((item) => ({
         ...item,
         relationMode: mode,
+        isSource: false,
       }))
     }
 
@@ -339,10 +340,10 @@ export function DiscoverMap({
         })
         : sortedItems.map((work, index) => {
           const position = radialPosition(index, sortedItems.length, canvasWidth, canvasHeight)
-          return { work, x: position.x, y: position.y, relationMode: mode }
+          return { work, x: position.x, y: position.y, relationMode: mode, isSource: false }
         })
 
-    return [source, ...related.map((item) => ({ ...item, relationMode: mode }))]
+    return [source, ...related.map((item) => ({ ...item, relationMode: mode, isSource: item.isSource ?? false }))]
   }, [canvasSize.height, canvasSize.width, items, mode, sourceWork])
 
   const edges = useMemo(() => {
@@ -434,7 +435,7 @@ export function DiscoverMap({
             strokeWidth="1.8"
             markerEnd="url(#discover-arrow)"
             className={cn(
-              'text-slate-200 transition-opacity',
+              'text-slate-200 transition-opacity duration-500 ease-out',
               hoverActive && hoverFocus.dimmedEdgeIds.has(edge.id) ? 'opacity-0' : hoverFocus.dimmedEdgeIds.has(edge.id) ? 'opacity-20' : 'opacity-90',
             )}
           />

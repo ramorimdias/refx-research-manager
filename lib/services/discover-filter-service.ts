@@ -1,6 +1,7 @@
 'use client'
 
 import type { DiscoverFilterState, DiscoverWork } from '@/lib/types'
+import { translate, type AppLocale } from '@/lib/localization'
 
 export function filterDiscoverItems(
   items: DiscoverWork[],
@@ -13,15 +14,22 @@ export function filterDiscoverItems(
   })
 }
 
-export function formatDiscoverFilterSummary(filters: DiscoverFilterState) {
+export function formatDiscoverFilterSummary(filters: DiscoverFilterState, locale: AppLocale = 'en') {
   if (filters.yearMin != null && filters.yearMax != null) {
-    return `Showing works published between ${filters.yearMin} and ${filters.yearMax}.`
+    return translate(locale, 'discoverPage.filterSummaryBetween', {
+      yearMin: filters.yearMin,
+      yearMax: filters.yearMax,
+    })
   }
   if (filters.yearMin != null) {
-    return `Showing works published from ${filters.yearMin} onward.`
+    return translate(locale, 'discoverPage.filterSummaryFrom', {
+      yearMin: filters.yearMin,
+    })
   }
   if (filters.yearMax != null) {
-    return `Showing works published up to ${filters.yearMax}.`
+    return translate(locale, 'discoverPage.filterSummaryTo', {
+      yearMax: filters.yearMax,
+    })
   }
-  return 'Showing works from all years.'
+  return translate(locale, 'discoverPage.filterSummaryAllYears')
 }

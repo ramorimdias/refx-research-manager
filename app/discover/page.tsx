@@ -18,6 +18,8 @@ import { useT } from '@/lib/localization'
 import { cn } from '@/lib/utils'
 
 type DiscoverViewMode = 'home' | 'seed' | 'workspace'
+const CURRENT_UNSAVED_JOURNEY_ID = '__current_unsaved_journey__'
+const HOME_JOURNEY_PREVIEW_STEP_LIMIT = 5
 
 function DiscoverPageContent() {
   const t = useT()
@@ -102,6 +104,32 @@ function DiscoverPageContent() {
   )
   const showFilterHint = Boolean(currentStep && currentStep.items.length > 50)
   const isSavedJourney = Boolean(activeJourney && savedJourneys.some((journey) => journey.id === activeJourney.id))
+  const homeJourneyEntries = useMemo(() => {
+    const saved = [...savedJourneys].sort((left, right) => (
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    ))
+
+    if (activeJourney && !isSavedJourney) {
+      return [
+        {
+          id: CURRENT_UNSAVED_JOURNEY_ID,
+          journey: activeJourney,
+          isUnsavedCurrent: true,
+        },
+        ...saved.map((journey) => ({
+          id: journey.id,
+          journey,
+          isUnsavedCurrent: false,
+        })),
+      ]
+    }
+
+    return saved.map((journey) => ({
+      id: journey.id,
+      journey,
+      isUnsavedCurrent: false,
+    }))
+  }, [activeJourney, isSavedJourney, savedJourneys])
 
   const focusCurrentStepFilters = () => {
     if (!currentStep) return
@@ -122,9 +150,9 @@ function DiscoverPageContent() {
               currentStep.mode === 'references' ? 'text-sky-600' : 'text-rose-600',
             )}
           >
-            {currentStep.mode === 'references' ? 'References' : 'Citations'}
+            {currentStep.mode === 'references' ? t('discoverPage.referencesLabel') : t('discoverPage.citationsLabel')}
           </span>
-          <span className="text-muted-foreground"> of </span>
+          <span className="text-muted-foreground"> {t('discoverPage.of')} </span>
           <span className="font-bold text-amber-500">
             {currentStep.sourceWork.firstAuthorLabel}
             {currentStep.sourceWork.year ? `, ${currentStep.sourceWork.year}` : ''}
@@ -148,7 +176,7 @@ function DiscoverPageContent() {
   const handleSaveJourney = () => {
     const fallbackLabel = sourceWork?.firstAuthorLabel
       ?? activeJourney?.steps[0]?.sourceWork.firstAuthorLabel
-      ?? 'Discovery'
+      ?? t('discoverPage.defaultJourneyName')
     const savedName = journeyName || `${fallbackLabel} journey`
     saveCurrentJourney(savedName)
     setSaveFeedbackVisible(true)
@@ -160,12 +188,17 @@ function DiscoverPageContent() {
     }, 1800)
     toast.success(t('discoverPage.saveJourney'), {
       description: isSavedJourney
-        ? `"${savedName}" updated.`
-        : `"${savedName}" saved to your journeys.`,
+        ? t('discoverPage.journeyUpdatedDescription', { name: savedName })
+        : t('discoverPage.journeySavedDescription', { name: savedName }),
     })
   }
 
   const handleDeleteJourney = (journeyId: string) => {
+    if (journeyId === CURRENT_UNSAVED_JOURNEY_ID) {
+      resetDiscoverSession()
+      setJourneyPendingDeleteId(null)
+      return
+    }
     deleteSavedJourney(journeyId)
     setJourneyPendingDeleteId((current) => (current === journeyId ? null : current))
   }
@@ -178,80 +211,105 @@ function DiscoverPageContent() {
           <p className="text-sm text-muted-foreground">{t('discoverPage.subtitle')}</p>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1fr)_360px]">
-          <Card className="min-h-0 rounded-[28px] p-6">
-            <div className="flex h-full flex-col gap-5">
+        <Card className="min-h-0 flex-1 rounded-[32px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.96)_100%)] p-6 shadow-sm">
+          <div className="flex h-full min-h-0 flex-col gap-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <Telescope className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold">{t('discoverPage.continueCurrentJourney')}</div>
-                  <div className="text-sm text-muted-foreground">{t('discoverPage.continueCurrentJourneyDescription')}</div>
+                  <div className="text-lg font-semibold">{t('discoverPage.savedJourneys')}</div>
+                  <div className="text-sm text-muted-foreground">{t('discoverPage.savedJourneysDescription')}</div>
                 </div>
               </div>
-
-              {activeJourney ? (
-                <div className="rounded-2xl border bg-background/70 p-4">
-                  <div className="font-medium">{activeJourney.name}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {t('discoverPage.stepCount', { count: activeJourney.steps.length })}
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                  {t('discoverPage.noCurrentJourney')}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => setViewMode(activeJourney ? 'workspace' : 'seed')}
-                  disabled={!activeJourney && !sourceWork}
-                >
-                  {t('discoverPage.continue')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    resetDiscoverSession()
-                    setJourneyName('')
-                    setViewMode('seed')
-                  }}
-                >
-                  {t('discoverPage.startNewJourney')}
-                </Button>
-              </div>
+              <Button
+                onClick={() => {
+                  resetDiscoverSession()
+                  setJourneyName('')
+                  setViewMode('seed')
+                }}
+              >
+                {t('discoverPage.startNewJourney')}
+              </Button>
             </div>
-          </Card>
 
-          <Card className="min-h-0 rounded-[28px] p-6">
-            <div className="flex h-full min-h-0 flex-col space-y-4 overflow-hidden">
-              <div>
-                <div className="text-lg font-semibold">{t('discoverPage.savedJourneys')}</div>
-                <div className="text-sm text-muted-foreground">{t('discoverPage.savedJourneysDescription')}</div>
-              </div>
-              <div className="min-h-0 space-y-2 overflow-y-auto">
-                {savedJourneys.length > 0 ? savedJourneys.map((journey) => (
+            <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+              {homeJourneyEntries.length > 0 ? homeJourneyEntries.map(({ id, journey, isUnsavedCurrent }) => {
+                const isPendingDelete = journeyPendingDeleteId === id
+                const isActiveEntry = activeJourney?.id === journey.id || (isUnsavedCurrent && activeJourney && !isSavedJourney)
+                const lastStep = journey.steps[journey.steps.length - 1] ?? null
+                return (
                   <div
-                    key={journey.id}
-                    className="rounded-2xl border px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5"
+                    key={id}
+                    className={cn(
+                      'rounded-[28px] border px-5 py-4 transition',
+                      isActiveEntry
+                        ? 'border-primary/30 bg-primary/5 shadow-sm'
+                        : 'border-border bg-background/90 hover:border-primary/30 hover:bg-primary/5',
+                    )}
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-4">
                       <button
                         type="button"
                         onClick={() => {
+                          if (isUnsavedCurrent) {
+                            setViewMode('workspace')
+                            return
+                          }
                           loadSavedJourney(journey.id)
                           setViewMode('workspace')
                         }}
                         className="min-w-0 flex-1 text-left"
                       >
-                        <div className="font-medium">{journey.name}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {t('discoverPage.stepCount', { count: journey.steps.length })}
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{journey.name}</div>
+                          {isUnsavedCurrent ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                              {t('discoverPage.unsaved')}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex items-center gap-3 overflow-hidden pb-1">
+                          {journey.steps
+                            .slice(Math.max(0, journey.steps.length - HOME_JOURNEY_PREVIEW_STEP_LIMIT))
+                            .map((step, previewIndex, visibleSteps) => {
+                              const index = journey.steps.length - visibleSteps.length + previewIndex
+                              const isLastVisibleStep = previewIndex === visibleSteps.length - 1
+                              return (
+                                <div key={step.id} className="flex items-center gap-3">
+                                  {previewIndex === 0 && index > 0 ? (
+                                    <>
+                                      <span className="text-xs font-medium text-muted-foreground">...</span>
+                                      <div className="h-px w-6 bg-border" />
+                                    </>
+                                  ) : null}
+                                  {previewIndex > 0 ? <div className="h-px w-10 bg-border" /> : null}
+                                  <span
+                                    className={cn(
+                                      'flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full border px-3 text-sm font-semibold',
+                                      index === journey.steps.length - 1
+                                        ? 'border-primary bg-primary text-primary-foreground'
+                                        : 'border-border bg-background text-muted-foreground',
+                                    )}
+                                  >
+                                    {index + 1}
+                                  </span>
+                                  {isLastVisibleStep && lastStep ? (
+                                    <span className="min-w-0 truncate text-sm text-muted-foreground">
+                                      <span className={cn('font-semibold', lastStep.mode === 'references' ? 'text-sky-600' : 'text-rose-600')}>
+                                        {lastStep.mode === 'references' ? t('discoverPage.referencesLabel') : t('discoverPage.citationsLabel')}
+                                      </span>
+                                      <span>{` ${t('discoverPage.of')} ${lastStep.sourceWork.firstAuthorLabel}`}</span>
+                                      {lastStep.sourceWork.year ? <span>{`, ${lastStep.sourceWork.year}`}</span> : null}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              )
+                            })}
                         </div>
                       </button>
-                      {journeyPendingDeleteId === journey.id ? (
+                      {isPendingDelete ? (
                         <div className="flex shrink-0 items-center gap-2">
                           <Button
                             type="button"
@@ -265,7 +323,7 @@ function DiscoverPageContent() {
                             type="button"
                             size="sm"
                             className="bg-red-600 text-white hover:bg-red-700"
-                            onClick={() => handleDeleteJourney(journey.id)}
+                            onClick={() => handleDeleteJourney(id)}
                           >
                             {t('mapsPage.delete')}
                           </Button>
@@ -276,22 +334,22 @@ function DiscoverPageContent() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 shrink-0 text-muted-foreground hover:text-red-600"
-                          onClick={() => setJourneyPendingDeleteId(journey.id)}
+                          onClick={() => setJourneyPendingDeleteId(id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
                   </div>
-                )) : (
-                  <div className="rounded-2xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                    {t('discoverPage.noSavedJourneys')}
-                  </div>
-                )}
-              </div>
+                )
+              }) : (
+                <div className="rounded-[28px] border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+                  {t('discoverPage.noSavedJourneys')}
+                </div>
+              )}
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
 
         {isLoading ? (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/55 backdrop-blur-sm">
@@ -395,7 +453,11 @@ function DiscoverPageContent() {
               saveFeedbackVisible && 'bg-emerald-600 text-white hover:bg-emerald-600',
             )}
           >
-            {saveFeedbackVisible ? 'Saved' : isSavedJourney ? 'Change name' : t('discoverPage.saveJourney')}
+            {saveFeedbackVisible
+              ? t('discoverPage.saved')
+              : isSavedJourney
+                ? t('discoverPage.changeName')
+                : t('discoverPage.saveJourney')}
           </Button>
         </div>
       </div>

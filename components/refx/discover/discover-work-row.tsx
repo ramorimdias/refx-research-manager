@@ -3,11 +3,13 @@
 import { Star } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/localization'
 import type { DiscoverWork } from '@/lib/types'
 import { useDiscoverActions, useDiscoverStore } from '@/lib/stores/discover-store'
 import { cn } from '@/lib/utils'
 
 export function DiscoverWorkRow({ work }: { work: DiscoverWork }) {
+  const t = useT()
   const selectedWorkId = useDiscoverStore((state) => state.selectedWorkId)
   const hoveredWorkId = useDiscoverStore((state) => state.hoveredWorkId)
   const { setSelectedWork, setHoveredWork, toggleStar } = useDiscoverActions()
@@ -18,12 +20,12 @@ export function DiscoverWorkRow({ work }: { work: DiscoverWork }) {
       onMouseEnter={() => setHoveredWork(work.id)}
       onMouseLeave={() => setHoveredWork(null)}
       className={cn(
-        'rounded-2xl border px-3 py-2.5 transition',
+        'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 transition',
         selectedWorkId === work.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30',
         hoveredWorkId === work.id && 'border-sky-400 bg-sky-50/70',
       )}
     >
-      <div className="flex min-w-0 items-start gap-2">
+      <div className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden">
         <button
           type="button"
           onClick={() => setSelectedWork(work.id)}
@@ -39,8 +41,8 @@ export function DiscoverWorkRow({ work }: { work: DiscoverWork }) {
           <Star className={cn('h-4 w-4', work.isStarred ? 'fill-current text-amber-500' : 'text-muted-foreground')} />
         </Button>
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
-        {work.inLibrary ? <Badge variant="secondary">In library</Badge> : null}
+      <div className="mt-1.5 flex max-w-full flex-wrap gap-1.5 overflow-hidden">
+        {work.inLibrary ? <Badge variant="secondary">{t('discoverPage.inLibrary')}</Badge> : null}
       </div>
     </div>
   )

@@ -25,7 +25,9 @@ export function DiscoverRightPane({
 }) {
   const t = useT()
   const [isAbstractOpen, setIsAbstractOpen] = useState(false)
+  const [pendingAdvanceMode, setPendingAdvanceMode] = useState<DiscoverMode | null>(null)
   const activeJourney = useDiscoverStore((state) => state.activeJourney)
+  const activeStepIndex = useDiscoverStore((state) => state.activeStepIndex)
   const cachedSteps = useDiscoverStore((state) => state.cachedSteps)
   const {
     advanceJourneyFromSelected,
@@ -40,6 +42,7 @@ export function DiscoverRightPane({
   useEffect(() => {
     if (!work) return
     setIsAbstractOpen(false)
+    setPendingAdvanceMode(null)
     void hydrateSelectedWorkMetadata()
     void prefetchWorkSteps(work.id)
   }, [hydrateSelectedWorkMetadata, prefetchWorkSteps, work?.id])
@@ -65,6 +68,28 @@ export function DiscoverRightPane({
     : t('discoverPage.citations', { count: citationsCount })
   const noReferences = referencesCount === 0
   const noCitations = citationsCount === 0
+  const willBranchJourney = Boolean(
+    activeJourney
+    && activeStepIndex >= 0
+    && activeStepIndex < activeJourney.steps.length - 1,
+  )
+
+  const continueAdvance = (mode: DiscoverMode) => {
+    if (!activeJourney) {
+      void startJourneyFromSource(work, mode)
+      return
+    }
+    void advanceJourneyFromSelected(mode)
+  }
+
+  const handleAdvance = (mode: DiscoverMode) => {
+    if (willBranchJourney) {
+      setPendingAdvanceMode(mode)
+      return
+    }
+
+    continueAdvance(mode)
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-[28px] border bg-card/95">
@@ -72,7 +97,6 @@ export function DiscoverRightPane({
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             {work.inLibrary ? <Badge variant="secondary">{t('discoverPage.inLibrary')}</Badge> : null}
-            {work.relationKind ? <Badge variant="outline">{work.relationKind.replace(/_/g, ' ')}</Badge> : null}
           </div>
           <div className="space-y-2">
             <div className="text-xl font-semibold leading-tight">{work.title}</div>
@@ -144,14 +168,47 @@ export function DiscoverRightPane({
         </div>
 
         <div className="flex flex-col gap-2">
+          {pendingAdvanceMode ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
+              <div className="text-sm font-medium text-amber-900">
+                {t('discoverPage.branchWarning')}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPendingAdvanceMode(null)}
+                >
+                  {t('referencesPage.cancel')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-amber-600 text-white hover:bg-amber-700"
+                  onClick={() => {
+                    const mode = pendingAdvanceMode
+                    setPendingAdvanceMode(null)
+                    if (mode) continueAdvance(mode)
+                  }}
+                >
+                  {t('discoverPage.continue')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {(!showStepFilters || currentMode !== 'references') ? (
             <Button
               className="justify-start gap-2 bg-sky-600 text-white hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500"
               disabled={noReferences}
-              onClick={() => void (activeJourney ? advanceJourneyFromSelected('references') : startJourneyFromSource(work, 'references'))}
+              onClick={() => handleAdvance('references')}
             >
               <Telescope className="h-4 w-4" />
-              <span>{noReferences ? 'No references found' : `Discover references (${referencesCount ?? '...'})`}</span>
+              <span>
+                {noReferences
+                  ? t('discoverPage.noReferencesFound')
+                  : t('discoverPage.discoverReferences', { count: referencesCount ?? '...' })}
+              </span>
             </Button>
           ) : null}
           {(!showStepFilters || currentMode !== 'citations') ? (
@@ -159,10 +216,14 @@ export function DiscoverRightPane({
               variant="outline"
               className="justify-start gap-2 border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50 disabled:border-slate-200 disabled:text-slate-500"
               disabled={noCitations}
-              onClick={() => void (activeJourney ? advanceJourneyFromSelected('citations') : startJourneyFromSource(work, 'citations'))}
+              onClick={() => handleAdvance('citations')}
             >
               <Telescope className="h-4 w-4" />
-              <span>{noCitations ? 'No citations found' : `Discover citations (${citationsCount ?? '...'})`}</span>
+              <span>
+                {noCitations
+                  ? t('discoverPage.noCitationsFound')
+                  : t('discoverPage.discoverCitations', { count: citationsCount ?? '...' })}
+              </span>
             </Button>
           ) : null}
         </div>
