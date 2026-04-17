@@ -119,6 +119,7 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
     connectionDirection,
     isHovered,
     isDimmed,
+    isDropping,
     isSelected,
     onStartConnection,
     pendingConnectionDirection,
@@ -155,15 +156,27 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
         'relative z-10 h-full w-full overflow-visible transition-all',
         pendingConnectionDirection && 'ring-4 ring-teal-100',
         isHovered && !isSelected && 'scale-[1.03]',
+        isDropping && 'animate-[refx-map-drop-bounce_720ms_cubic-bezier(0.22,0.8,0.22,1)]',
         isDimmed && 'opacity-20',
       )}
     >
+      {isDropping ? (
+        <style jsx>{`
+          @keyframes refx-map-drop-bounce {
+            0% { transform: translateY(-26px) scale(1.12); }
+            34% { transform: translateY(0) scale(0.88); }
+            62% { transform: translateY(-8px) scale(1.035); }
+            82% { transform: translateY(0) scale(0.975); }
+            100% { transform: translateY(0) scale(1); }
+          }
+        `}</style>
+      ) : null}
       <div className="flex h-full w-full items-center justify-center">
         <div className={cn('flex h-[56px] w-[56px] items-center justify-center rounded-full border bg-background transition', bubbleBorder, bubbleGlow)}>
           {showMyWorkIcon || showStar ? (
             <div className="flex items-center justify-center">
               {showMyWorkIcon ? (
-                <BookOpen className="h-4 w-4 text-amber-700" strokeWidth={2.1} />
+                <BookOpen className="h-7 w-7 text-amber-700" strokeWidth={2.1} />
               ) : null}
               {showStar ? (
                 <Star
@@ -237,22 +250,21 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
       />
 
       {isSelected ? (
-        <div className="group/link-actions absolute -top-9 left-1/2 z-30 -translate-x-1/2">
-          <div className="flex flex-col items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-amber-400 bg-amber-300 text-black shadow-sm transition group-hover/link-actions:border-amber-500 group-hover/link-actions:bg-amber-400">
-                  <Plus className="h-4 w-4" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={8}>{t('mapsPage.addOrConnect')}</TooltipContent>
-            </Tooltip>
+        <div
+          className="group/link-actions absolute left-1/2 top-0 z-30"
+          style={{
+            transform: `translate(-50%, -36px) scale(${1 / Math.max(zoom, 0.001)})`,
+            transformOrigin: 'top center',
+          }}
+        >
+          <div className="relative flex flex-col items-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-amber-400 bg-amber-300 text-black shadow-sm transition group-hover/link-actions:border-amber-500 group-hover/link-actions:bg-amber-400">
+              <Plus className="h-4 w-4" />
+            </div>
             <div
               className={cn(
-                'flex items-center gap-3 transition',
-                pendingConnectionDirection
-                  ? 'pointer-events-auto opacity-100'
-                  : 'pointer-events-none opacity-0 group-hover/link-actions:pointer-events-auto group-hover/link-actions:opacity-100',
+                'absolute bottom-full mb-3 flex items-center gap-3 transition',
+                'pointer-events-auto opacity-100',
               )}
             >
               <Tooltip>
@@ -322,6 +334,7 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
 
 function ReferenceGraphNode({ data, selected }: NodeProps<ReferenceGraphNodeData>) {
   const zoom = useStore((state) => state.transform[2])
+  const baseLabel = data.workReference.reference.title || data.label || 'Reference'
   return (
     <div
       className={cn(
@@ -348,7 +361,7 @@ function ReferenceGraphNode({ data, selected }: NodeProps<ReferenceGraphNodeData
             textShadow: '0 1px 6px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.9)',
           }}
         >
-          Reference
+          {baseLabel}
         </div>
         {data.isHovered ? (
           <div

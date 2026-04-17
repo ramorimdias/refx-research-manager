@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileCheck, Star } from 'lucide-react'
+import { BookOpen, FileCheck, Star } from 'lucide-react'
 import { computeHoverFocus } from '@/lib/services/map-hover-focus-service'
 import { useDiscoverActions } from '@/lib/stores/discover-store'
 import type { DiscoverMode, DiscoverWork } from '@/lib/types'
@@ -152,6 +152,7 @@ function DiscoverBubble({
   const showExpandedLabel = isHovered
   const showLabel = !hoverActive || isHovered || isSelected || isSource
   const baseLabel = `${work.firstAuthorLabel}${work.year ? `, ${work.year}` : ''}`
+  const showSourceIcon = isSource
   const showLibraryIcon = !isSource && work.inLibrary
   const showFavoriteIcon = !isSource && work.isStarred
 
@@ -179,8 +180,15 @@ function DiscoverBubble({
           isDimmed && 'opacity-20',
         )}
       >
-        {isSource && relationMode !== 'starred' ? (
-          <span className="text-base font-semibold text-slate-700">{linkedCount ?? 0}</span>
+        {showSourceIcon ? (
+          <div className="relative flex items-center justify-center">
+            <BookOpen className="h-5 w-5 text-amber-700" strokeWidth={2.1} />
+            {relationMode !== 'starred' ? (
+              <span className="absolute -bottom-3 rounded-full border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 shadow-sm">
+                {linkedCount ?? 0}
+              </span>
+            ) : null}
+          </div>
         ) : showLibraryIcon || showFavoriteIcon ? (
           <div className="flex items-center justify-center">
             {showLibraryIcon ? (

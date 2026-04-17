@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlowProvider } from 'reactflow'
-import { Loader2, Telescope, Trash2 } from 'lucide-react'
+import { Loader2, Rocket, Telescope, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DiscoverEmptyState } from '@/components/refx/discover/discover-empty-state'
 import { DiscoverTimeline } from '@/components/refx/discover/discover-timeline'
@@ -263,6 +263,14 @@ function DiscoverPageContent() {
                         className="min-w-0 flex-1 text-left"
                       >
                         <div className="flex items-center gap-2">
+                          <div className={cn(
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+                            isUnsavedCurrent
+                              ? 'border-amber-200 bg-amber-50 text-amber-700'
+                              : 'border-sky-200 bg-sky-50 text-sky-700',
+                          )}>
+                            {isUnsavedCurrent ? <Telescope className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
+                          </div>
                           <div className="font-medium">{journey.name}</div>
                           {isUnsavedCurrent ? (
                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">

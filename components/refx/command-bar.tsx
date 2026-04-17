@@ -53,7 +53,7 @@ export function CommandBar() {
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+      if (typeof event.key === 'string' && event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         toggleCommandPalette()
       }

@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import {
   Background,
   BackgroundVariant,
@@ -39,6 +39,7 @@ import {
   GitBranch,
   Loader2,
   Plus,
+  RefreshCw,
   Save,
   Trash2,
   WandSparkles,
@@ -104,7 +105,7 @@ import {
 } from '@/lib/services/document-relation-service'
 import { computeHoverFocus } from '@/lib/services/map-hover-focus-service'
 import { formatReference } from '@/lib/services/work-reference-service'
-import type { GraphView, GraphViewNodeLayout } from '@/lib/types'
+import type { Document, GraphView, GraphViewNodeLayout } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useT } from '@/lib/localization'
 import {
@@ -168,6 +169,43 @@ const DEFAULT_GRAPH_PREFERENCES: GraphPreferences = {
 const DEFAULT_GRAPH_VIEW_DRAFT: GraphViewDraft = {
   name: '',
   description: '',
+}
+
+function getWorkReferenceTargetDocumentId(workReference: repo.DbWorkReference) {
+  return workReference.matchedDocumentId ?? workReference.reference.documentId ?? null
+}
+
+function collectReferenceTargetDocumentIds(
+  references: repo.DbWorkReference[],
+  libraryDocuments: Document[],
+) {
+  const libraryDocumentIdSet = new Set(libraryDocuments.map((document) => document.id))
+  return Array.from(new Set(
+    references
+      .map((reference) => getWorkReferenceTargetDocumentId(reference))
+      .filter((targetId): targetId is string => (
+        typeof targetId === 'string' && libraryDocumentIdSet.has(targetId)
+      )),
+  ))
+}
+
+function collectAutoExpandedReferenceDocumentIds(
+  documentIds: string[],
+  libraryDocuments: Document[],
+  workReferencesByDocumentId: Record<string, repo.DbWorkReference[]>,
+) {
+  const myWorkIds = new Set(
+    libraryDocuments
+      .filter((document) => document.documentType === 'my_work')
+      .map((document) => document.id),
+  )
+
+  return Array.from(new Set(
+    documentIds.flatMap((documentId) => {
+      if (!myWorkIds.has(documentId)) return []
+      return collectReferenceTargetDocumentIds(workReferencesByDocumentId[documentId] ?? [], libraryDocuments)
+    }),
+  ))
 }
 
 type WorkingMapLayouts = Record<string, Record<string, { x: number; y: number }>>
@@ -540,12 +578,15 @@ function preserveNodePositions(
   nextNodes: Node<AnyGraphNodeData>[],
   currentNodes: Node<AnyGraphNodeData>[],
   lockedPositions?: Map<string, { x: number; y: number }>,
+  currentPriorityIds?: Set<string>,
 ) {
   const positions = new Map(currentNodes.map((node) => [node.id, node.position]))
 
   return nextNodes.map((node) => ({
     ...node,
-    position: lockedPositions?.get(node.id) ?? positions.get(node.id) ?? node.position,
+    position: currentPriorityIds?.has(node.id)
+      ? positions.get(node.id) ?? lockedPositions?.get(node.id) ?? node.position
+      : lockedPositions?.get(node.id) ?? positions.get(node.id) ?? node.position,
   }))
 }
 
@@ -669,6 +710,7 @@ function writeLastActiveMaps(value: Record<string, string>) {
 
 function MapsPageContent() {
   const t = useT()
+  const pathname = usePathname()
   const params = useSearchParams()
   const focusDocumentId = params.get('focus')
   const reactFlow = useReactFlow<AnyGraphNodeData>()
@@ -725,14 +767,21 @@ function MapsPageContent() {
   const [graphViewDraft, setGraphViewDraft] = useState<GraphViewDraft>(DEFAULT_GRAPH_VIEW_DRAFT)
   const [selectedMyWorkPickerResetKey, setSelectedMyWorkPickerResetKey] = useState(0)
   const [workReferencesByDocumentId, setWorkReferencesByDocumentId] = useState<Record<string, repo.DbWorkReference[]>>({})
+  const [workReferencesReloadTick, setWorkReferencesReloadTick] = useState(0)
+  const [isRefreshingWorkReferences, setIsRefreshingWorkReferences] = useState(false)
+  const [droppingDocumentIds, setDroppingDocumentIds] = useState<string[]>([])
   const [workingLayoutPositions, setWorkingLayoutPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [pendingDocumentPlacements, setPendingDocumentPlacements] = useState<Record<string, { x: number; y: number }>>({})
   const dragConnectionSourceIdRef = useRef<string | null>(null)
   const dragConnectionHandleIdRef = useRef<string | null>(null)
   const dragConnectionCompletedRef = useRef(false)
+  const draggingNodeIdsRef = useRef<Set<string>>(new Set())
   const lastAutoFitKeyRef = useRef<string | null>(null)
   const pendingPlacementCommitIdsRef = useRef<Set<string>>(new Set())
   const recentlyRevealedDocumentIdRef = useRef<string | null>(null)
+  const shouldCenterOnRevealRef = useRef(false)
+  const pendingAutoLayoutDocumentIdsRef = useRef<string[]>([])
+  const dropBounceTimeoutsRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     setGraphPreferences(readStoredGraphPreferences())
@@ -748,6 +797,10 @@ function MapsPageContent() {
     const observer = new MutationObserver(updateTheme)
     observer.observe(root, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => {
+    Object.values(dropBounceTimeoutsRef.current).forEach((timeoutId) => window.clearTimeout(timeoutId))
   }, [])
 
   useEffect(() => {
@@ -926,23 +979,24 @@ function MapsPageContent() {
       scopedIds.has(document.id)
       && !hiddenDocumentIdSet.has(document.id)
     ))
-    const documentsWithBibliography = libraryDocuments.filter((document) =>
+    const documentsWithBibliography = libraryDocuments.filter((document) => (
       document.documentType === 'my_work'
       && scopedIds.has(document.id)
-      && (workReferencesByDocumentId[document.id]?.length ?? 0) > 0,
-    )
+      && (workReferencesByDocumentId[document.id]?.length ?? 0) > 0
+      && !hiddenDocumentIdSet.has(document.id)
+    ))
 
     const matchedReferenceDocuments = documentsWithBibliography
       .flatMap((document) => workReferencesByDocumentId[document.id] ?? [])
-      .map((reference) => (
-        reference.matchedDocumentId
-          ? libraryDocuments.find((document) => document.id === reference.matchedDocumentId) ?? null
+      .map((reference) => {
+        const targetDocumentId = getWorkReferenceTargetDocumentId(reference)
+        return targetDocumentId
+          ? libraryDocuments.find((document) => document.id === targetDocumentId) ?? null
           : null
-      ))
+      })
       .filter((document): document is NonNullable<typeof document> => Boolean(document))
       .filter((document, index, documents) => (
         !hiddenDocumentIdSet.has(document.id)
-        && isWithinYearRange(document)
         && documents.findIndex((candidate) => candidate.id === document.id) === index
       ))
 
@@ -999,6 +1053,11 @@ function MapsPageContent() {
     () => libraryDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
     [libraryDocuments, visibleDocuments],
   )
+  const addableMyWorkDocuments = useMemo(
+    () =>
+      myWorkDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
+    [myWorkDocuments, visibleDocuments],
+  )
   const filteredAddableDocuments = useMemo(() => {
     const query = addDocumentQuery.trim().toLowerCase()
     if (!query) return addableDocuments
@@ -1018,35 +1077,121 @@ function MapsPageContent() {
     [libraryDocuments, selectedDocumentId],
   )
 
+  const triggerDropBounce = (documentId: string) => {
+    setDroppingDocumentIds((currentIds) => Array.from(new Set([...currentIds, documentId])))
+    const existingTimeout = dropBounceTimeoutsRef.current[documentId]
+    if (existingTimeout != null) {
+      window.clearTimeout(existingTimeout)
+    }
+    dropBounceTimeoutsRef.current[documentId] = window.setTimeout(() => {
+      setDroppingDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
+      delete dropBounceTimeoutsRef.current[documentId]
+    }, 700)
+  }
+
+  const refreshWorkReferences = async () => {
+    const workDocumentsInLibrary = libraryDocuments.filter((document) => document.documentType === 'my_work')
+    if (workDocumentsInLibrary.length === 0) {
+      setWorkReferencesByDocumentId({})
+      return
+    }
+
+    setIsRefreshingWorkReferences(true)
+    try {
+      const results = await Promise.all(
+        workDocumentsInLibrary.map(async (document) => [document.id, await repo.listWorkReferences(document.id)] as const),
+      )
+      setWorkReferencesByDocumentId(Object.fromEntries(results))
+    } catch {
+      setWorkReferencesByDocumentId({})
+    } finally {
+      setIsRefreshingWorkReferences(false)
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false
-
     const loadWorkReferences = async () => {
-      const workDocumentsInLibrary = libraryDocuments.filter((document) => document.documentType === 'my_work')
-      if (workDocumentsInLibrary.length === 0) {
-        setWorkReferencesByDocumentId({})
-        return
-      }
-
-      try {
-        const results = await Promise.all(
-          workDocumentsInLibrary.map(async (document) => [document.id, await repo.listWorkReferences(document.id)] as const),
-        )
-        if (!cancelled) {
-          setWorkReferencesByDocumentId(Object.fromEntries(results))
-        }
-      } catch {
-        if (!cancelled) {
-          setWorkReferencesByDocumentId({})
-        }
-      }
+      await refreshWorkReferences()
     }
 
     void loadWorkReferences()
-    return () => {
-      cancelled = true
+  }, [libraryDocuments, workReferencesReloadTick])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+
+    const reloadReferences = () => {
+      setWorkReferencesReloadTick((current) => current + 1)
     }
-  }, [libraryDocuments])
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        reloadReferences()
+      }
+    }
+
+    window.addEventListener('focus', reloadReferences)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', reloadReferences)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (pathname !== '/maps') return
+    setWorkReferencesReloadTick((current) => current + 1)
+  }, [pathname])
+
+  useEffect(() => {
+    if (libraryDocuments.length === 0) return
+
+    const baseDocumentIds = activeGraphView?.documentIds ?? manualVisibleDocumentIds
+    if (baseDocumentIds.length === 0) return
+
+    const autoExpandedIds = collectAutoExpandedReferenceDocumentIds(
+      baseDocumentIds,
+      libraryDocuments,
+      workReferencesByDocumentId,
+    )
+    if (autoExpandedIds.length === 0) return
+
+    const nextDocumentIds = Array.from(new Set([...baseDocumentIds, ...autoExpandedIds]))
+    const hasChanges = !areStringArraysEqual(baseDocumentIds, nextDocumentIds)
+    if (!hasChanges) return
+    const newlyAddedIds = nextDocumentIds.filter((id) => !baseDocumentIds.includes(id))
+
+    setManualVisibleDocumentIds(nextDocumentIds)
+    setHiddenDocumentIds((currentIds) => currentIds.filter((id) => !autoExpandedIds.includes(id)))
+    if (newlyAddedIds.length > 0) {
+      pendingAutoLayoutDocumentIdsRef.current = newlyAddedIds
+    }
+
+    if (!activeGraphView) return
+
+    useGraphStore.setState((state) => ({
+      graphViews: state.graphViews.map((view) => (
+        view.id === activeGraphView.id
+          ? { ...view, documentIds: nextDocumentIds }
+          : view
+      )),
+      graphViewLayouts: state.graphViewLayouts.map((layout) => (
+        layout.graphViewId === activeGraphView.id && autoExpandedIds.includes(layout.documentId)
+          ? { ...layout, hidden: false }
+          : layout
+      )),
+    }))
+
+    void updateGraphView(activeGraphView.id, {
+      documentIds: nextDocumentIds,
+    })
+  }, [
+    activeGraphView,
+    libraryDocuments,
+    manualVisibleDocumentIds,
+    workReferencesByDocumentId,
+  ])
 
   const selectedWorkReferences = useMemo(
     () => (selectedDocument?.documentType === 'my_work' ? workReferencesByDocumentId[selectedDocument.id] ?? [] : []),
@@ -1159,6 +1304,9 @@ function MapsPageContent() {
       ...pendingLayoutMap.entries(),
     ])
   }, [activeGraphViewId, graphViewLayoutMap, pendingDocumentPlacements, workingLayoutPositions])
+  const hasPersistedMapLayout = activeGraphViewId
+    ? graphViewLayoutMap.size > 0
+    : Object.keys(workingLayoutPositions).length > 0
 
   const sourceDocument = useMemo(
     () =>
@@ -1222,11 +1370,12 @@ function MapsPageContent() {
       }
 
       const referenceMatchedDocuments = selectedWorkReferences
-        .map((reference) => (
-          reference.matchedDocumentId
-            ? libraryDocuments.find((document) => document.id === reference.matchedDocumentId) ?? null
+        .map((reference) => {
+          const targetDocumentId = getWorkReferenceTargetDocumentId(reference)
+          return targetDocumentId
+            ? documents.find((document) => document.id === targetDocumentId) ?? null
             : null
-        ))
+        })
         .filter((document, index, documents): document is NonNullable<typeof document> => (
           Boolean(document) && documents.findIndex((candidate) => candidate?.id === document?.id) === index
         ))
@@ -1235,7 +1384,14 @@ function MapsPageContent() {
         documents.findIndex((candidate) => candidate.id === document.id) === index
       ))
     },
-    [libraryDocuments, libraryRelations, selectedDocument, selectedWorkReferences],
+    [documents, libraryDocuments, libraryRelations, selectedDocument, selectedWorkReferences],
+  )
+  const selectedDocumentVisibleOutgoingReferences = useMemo(
+    () =>
+      selectedDocument?.documentType === 'my_work'
+        ? selectedWorkReferences.filter((reference) => !getWorkReferenceTargetDocumentId(reference))
+        : [],
+    [selectedDocument?.documentType, selectedWorkReferences],
   )
   const currentViewDocumentIdSet = useMemo(
     () => new Set(visibleDocuments.map((document) => document.id)),
@@ -1256,6 +1412,22 @@ function MapsPageContent() {
   const selectedDocumentOtherOutgoingDocuments = useMemo(
     () => selectedDocumentOutgoingDocuments.filter((document) => !currentViewDocumentIdSet.has(document.id)),
     [currentViewDocumentIdSet, selectedDocumentOutgoingDocuments],
+  )
+  const panelOutgoingDocuments = useMemo(
+    () => (
+      selectedDocument?.documentType === 'my_work'
+        ? selectedDocumentOutgoingDocuments
+        : selectedDocumentVisibleOutgoingDocuments
+    ),
+    [selectedDocument?.documentType, selectedDocumentOutgoingDocuments, selectedDocumentVisibleOutgoingDocuments],
+  )
+  const panelOtherOutgoingDocuments = useMemo(
+    () => (
+      selectedDocument?.documentType === 'my_work'
+        ? []
+        : selectedDocumentOtherOutgoingDocuments
+    ),
+    [selectedDocument?.documentType, selectedDocumentOtherOutgoingDocuments],
   )
   const selectedDocumentIncomingIds = useMemo(
     () => new Set(selectedDocumentIncomingDocuments.map((document) => document.id)),
@@ -1303,12 +1475,14 @@ function MapsPageContent() {
     setSelectedWorkReferenceId(null)
     setSelectedRelationId(null)
 
+    if (hasPersistedMapLayout) return
+
     const frame = window.requestAnimationFrame(() => {
       reactFlow.fitView({ padding: 0.2, duration: 250 })
     })
 
     return () => window.cancelAnimationFrame(frame)
-  }, [activeLibrary?.id, activeGraphViewId, reactFlow])
+  }, [activeLibrary?.id, activeGraphViewId, hasPersistedMapLayout, reactFlow])
 
   useEffect(() => {
     if (selectedDocumentId && !libraryDocumentIds.has(selectedDocumentId)) {
@@ -1343,6 +1517,7 @@ function MapsPageContent() {
 
     if (lastAutoFitKeyRef.current === fitKey) return
     lastAutoFitKeyRef.current = fitKey
+    if (hasPersistedMapLayout) return
 
     const frame = window.requestAnimationFrame(() => {
       reactFlow.fitView({ padding: 0.2, duration: 250 })
@@ -1353,6 +1528,7 @@ function MapsPageContent() {
     activeGraphViewId,
     activeLibrary?.id,
     edges.length,
+    hasPersistedMapLayout,
     reactFlow,
     visibleCanvasNodeKey,
   ])
@@ -1403,6 +1579,7 @@ function MapsPageContent() {
 
         return [document.id, {
           ...nodeAppearance,
+          isDropping: droppingDocumentIds.includes(document.id),
           fillColor: document.documentType === 'my_work' ? '#fef08a' : nodeAppearance.fillColor,
           borderColor: document.documentType === 'my_work' ? '#eab308' : nodeAppearance.borderColor,
           inboundCitationCount: metrics?.inboundCitationCount ?? 0,
@@ -1433,7 +1610,7 @@ function MapsPageContent() {
 
       return {
         ...node,
-        draggable: !savedLayout?.pinned,
+        draggable: true,
         position: savedLayout ? { x: savedLayout.x, y: savedLayout.y } : node.position,
         data: {
           ...node.data,
@@ -1448,7 +1625,7 @@ function MapsPageContent() {
       const workNode = nextDocumentNodes.find((node) => node.id === group.workDocumentId) ?? null
 
       return group.references
-        .filter((reference) => !reference.matchedDocumentId)
+        .filter((reference) => !getWorkReferenceTargetDocumentId(reference))
         .map((reference, index) => ({
           id: `work-reference-node-${reference.id}`,
           type: 'reference',
@@ -1477,10 +1654,11 @@ function MapsPageContent() {
 
     const syntheticReferenceEdges = visibleWorkReferenceGroups.flatMap((group) =>
       group.references.map((reference) => {
-        const targetId = reference.matchedDocumentId
-          ? reference.matchedDocumentId
+        const targetDocumentId = getWorkReferenceTargetDocumentId(reference)
+        const targetId = targetDocumentId
+          ? targetDocumentId
           : `work-reference-node-${reference.id}`
-        const isUnmatched = !reference.matchedDocumentId
+        const isUnmatched = !targetDocumentId
 
         return {
           id: `work-reference-edge-${reference.id}`,
@@ -1495,15 +1673,15 @@ function MapsPageContent() {
             connectionDirection: 'outgoing',
           },
           style: {
-            stroke: isUnmatched ? '#64748b' : '#2563eb',
-            strokeWidth: isUnmatched ? 2.4 : 3.4,
+            stroke: '#64748b',
+            strokeWidth: 2.2,
             opacity: 0.96,
           },
           markerStart: {
             type: MarkerType.ArrowClosed,
-            width: isUnmatched ? 20 : 22,
-            height: isUnmatched ? 20 : 22,
-            color: isUnmatched ? '#64748b' : '#2563eb',
+            width: 18,
+            height: 18,
+            color: '#64748b',
           },
           markerEnd: undefined,
           label: isUnmatched ? 'reference' : 'matched reference',
@@ -1559,7 +1737,9 @@ function MapsPageContent() {
         Array.from(effectiveLayoutMap.values()).map((layout) => [layout.documentId, { x: layout.x, y: layout.y }]),
       )
 
-    setNodes((currentNodes) => preserveNodePositions(focusedNodes, currentNodes, lockedPositions))
+    setNodes((currentNodes) => (
+      preserveNodePositions(focusedNodes, currentNodes, lockedPositions, draggingNodeIdsRef.current)
+    ))
     setEdges(focusedEdges)
   }, [
     activeDocumentId,
@@ -1578,6 +1758,7 @@ function MapsPageContent() {
     selectedDocumentOutgoingIds,
     selectedRelationId,
     selectedWorkReferenceId,
+    droppingDocumentIds,
     workReferencesByDocumentId,
     setEdges,
     setNodes,
@@ -1659,6 +1840,8 @@ function MapsPageContent() {
     if (!revealedNode) return
 
     recentlyRevealedDocumentIdRef.current = null
+    if (!shouldCenterOnRevealRef.current) return
+    shouldCenterOnRevealRef.current = false
     centerOnDocument(recentlyRevealedDocumentId)
   }, [nodes, reactFlow])
 
@@ -1833,6 +2016,7 @@ function MapsPageContent() {
   const handleNodesChange: OnNodesChange = (changes) => onNodesChange(changes)
   const handleEdgesChange: OnEdgesChange = (changes) => onEdgesChange(changes)
   const handleNodeDragStart: NodeMouseHandler = (_, node) => {
+    draggingNodeIdsRef.current.add(node.id)
     if (node.type === 'reference') {
       setSelectedDocumentId(null)
       setSelectedWorkReferenceId(node.id.replace('work-reference-node-', ''))
@@ -1848,6 +2032,7 @@ function MapsPageContent() {
     setActiveDocument(node.id)
   }
   const handleNodeDragStop: NodeDragHandler = async (_, node) => {
+    draggingNodeIdsRef.current.delete(node.id)
     if (node.type === 'reference') {
       if (!activeLibraryId) return
 
@@ -1904,7 +2089,25 @@ function MapsPageContent() {
 
   const handleAddDocumentToMap = async (documentId: string) => {
     if (!documentId || documentId === '__none__') return
-    await revealDocumentOnMap(documentId, { select: true })
+    const sourceDocument = libraryDocuments.find((document) => document.id === documentId) ?? null
+    const freshWorkReferences = sourceDocument?.documentType === 'my_work'
+      ? await repo.listWorkReferences(documentId)
+      : null
+
+    if (freshWorkReferences) {
+      setWorkReferencesByDocumentId((current) => ({
+        ...current,
+        [documentId]: freshWorkReferences,
+      }))
+    }
+
+    await revealDocumentOnMap(documentId, {
+      select: true,
+      animateDrop: true,
+      extraVisibleDocumentIds: freshWorkReferences
+        ? collectReferenceTargetDocumentIds(freshWorkReferences, libraryDocuments)
+        : undefined,
+    })
 
     if (pendingConnectionDocumentId && pendingConnectionDirection && pendingConnectionDocumentId !== documentId) {
       const sourceDocumentId =
@@ -1970,19 +2173,68 @@ function MapsPageContent() {
       ?? null
     const anchorNode = anchorId ? reactFlow.getNode(anchorId) : null
     const anchorPosition = sanitizeGraphPosition(anchorNode?.position, { x: 720, y: 420 }) ?? { x: 720, y: 420 }
-    const placementIndex = currentViewDocumentIds.length + Object.keys(pendingDocumentPlacements).length
-    const angle = (placementIndex % 8) * (Math.PI / 4)
-    const radius = 320 + Math.floor(placementIndex / 8) * 56
+    const occupiedPositions = [
+      ...nodes
+        .filter((node) => node.id !== documentId)
+        .map((node) => sanitizeGraphPosition(node.position))
+        .filter((position): position is { x: number; y: number } => Boolean(position)),
+      ...Object.entries(pendingDocumentPlacements)
+        .filter(([nodeId]) => nodeId !== documentId)
+        .map(([, position]) => sanitizeGraphPosition(position))
+        .filter((position): position is { x: number; y: number } => Boolean(position)),
+    ]
+    const minimumGap = 140
+
+    for (let ring = 0; ring < 8; ring += 1) {
+      const radius = 260 + ring * 84
+      const steps = Math.max(8, 10 + ring * 2)
+      for (let step = 0; step < steps; step += 1) {
+        const angle = (step / steps) * Math.PI * 2
+        const candidate = {
+          x: anchorPosition.x + Math.cos(angle) * radius,
+          y: anchorPosition.y + Math.sin(angle) * radius,
+        }
+        const overlaps = occupiedPositions.some((position) => (
+          Math.hypot(position.x - candidate.x, position.y - candidate.y) < minimumGap
+        ))
+        if (!overlaps) {
+          return candidate
+        }
+      }
+    }
 
     return {
-      x: anchorPosition.x + Math.cos(angle) * radius,
-      y: anchorPosition.y + Math.sin(angle) * radius,
+      x: anchorPosition.x + 280,
+      y: anchorPosition.y + 40,
     }
   }
 
-  const revealDocumentOnMap = async (documentId: string, options?: { select?: boolean }) => {
+  const revealDocumentOnMap = async (
+    documentId: string,
+    options?: { select?: boolean; extraVisibleDocumentIds?: string[]; animateDrop?: boolean },
+  ) => {
     recentlyRevealedDocumentIdRef.current = documentId
-    const nextDocumentIds = Array.from(new Set([...(activeGraphView?.documentIds ?? manualVisibleDocumentIds), documentId]))
+    shouldCenterOnRevealRef.current = !options?.animateDrop
+    const sourceDocument = libraryDocuments.find((document) => document.id === documentId) ?? null
+    const bibliographyDocumentIds = sourceDocument?.documentType === 'my_work'
+      ? (workReferencesByDocumentId[documentId] ?? [])
+        .map((reference) => getWorkReferenceTargetDocumentId(reference))
+        .filter((targetId): targetId is string => (
+          Boolean(targetId)
+          && libraryDocuments.some((document) => document.id === targetId)
+        ))
+      : []
+    const expandedDocumentIds = Array.from(
+      new Set([
+        documentId,
+        ...bibliographyDocumentIds,
+        ...(options?.extraVisibleDocumentIds ?? []),
+      ]),
+    )
+    const nextDocumentIds = Array.from(new Set([
+      ...(activeGraphView?.documentIds ?? manualVisibleDocumentIds),
+      ...expandedDocumentIds,
+    ]))
     const nextSelectedDocumentId = options?.select
       ? documentId
       : activeGraphView?.selectedDocumentId
@@ -1993,7 +2245,7 @@ function MapsPageContent() {
       ? (activeGraphView.selectedDocumentId ?? null) !== (nextSelectedDocumentId ?? null)
       : false
     setManualVisibleDocumentIds(nextDocumentIds)
-    setHiddenDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
+    setHiddenDocumentIds((currentIds) => currentIds.filter((id) => !expandedDocumentIds.includes(id)))
 
     if (options?.select) {
       setSelectedRelationId(null)
@@ -2009,7 +2261,7 @@ function MapsPageContent() {
             : view
         )),
         graphViewLayouts: state.graphViewLayouts.map((layout) => (
-          layout.graphViewId === activeGraphView.id && layout.documentId === documentId
+          layout.graphViewId === activeGraphView.id && expandedDocumentIds.includes(layout.documentId)
             ? { ...layout, hidden: false }
             : layout
         )),
@@ -2022,7 +2274,9 @@ function MapsPageContent() {
 
     const existingNode = reactFlow.getNode(documentId)
     if (existingNode) {
-      centerOnDocument(documentId)
+      if (options?.animateDrop) {
+        triggerDropBounce(documentId)
+      }
       if (activeGraphView) {
         await upsertGraphViewNodeLayout({
           graphViewId: activeGraphView.id,
@@ -2080,11 +2334,9 @@ function MapsPageContent() {
       ...currentPlacements,
       [documentId]: currentPlacements[documentId] ?? fallbackPosition,
     }))
-
-    reactFlow.setCenter(fallbackPosition.x + 110, fallbackPosition.y + 110, {
-      duration: 280,
-      zoom: Math.max(reactFlow.getZoom(), 1),
-    })
+    if (options?.animateDrop) {
+      window.setTimeout(() => triggerDropBounce(documentId), 40)
+    }
   }
 
   const handleAddLinkedDocumentToMap = async (documentId: string) => {
@@ -2261,7 +2513,7 @@ function MapsPageContent() {
 
         return {
           ...node,
-          draggable: !savedLayout?.pinned,
+          draggable: true,
           position: savedLayout ? { x: savedLayout.x, y: savedLayout.y } : node.position,
           data: {
             ...node.data,
@@ -2283,21 +2535,28 @@ function MapsPageContent() {
         fallbackEdges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
       )
 
-      setNodes(
-        fallbackNodes.map((node) => {
-          const isDimmed = hoverFocus.dimmedNodeIds.has(node.id)
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              isDimmed,
-            },
-            style: {
-              ...node.style,
-              opacity: isDimmed ? 0.2 : 1,
-            },
-          }
-        }),
+      setNodes((currentNodes) =>
+        preserveNodePositions(
+          fallbackNodes.map((node) => {
+            const isDimmed = hoverFocus.dimmedNodeIds.has(node.id)
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                isDimmed,
+              },
+              style: {
+                ...node.style,
+                opacity: isDimmed ? 0.2 : 1,
+              },
+            }
+          }),
+          currentNodes,
+          new Map(
+            Array.from(effectiveLayoutMap.values()).map((layout) => [layout.documentId, { x: layout.x, y: layout.y }]),
+          ),
+          draggingNodeIdsRef.current,
+        ),
       )
       setEdges(
         fallbackEdges.map((edge) => {
@@ -2360,16 +2619,36 @@ function MapsPageContent() {
   }
 
   const handleRemoveDocumentFromCurrentView = async (documentId: string) => {
+    setManualVisibleDocumentIds((currentIds) => currentIds.filter((id) => id !== documentId))
     setHiddenDocumentIds((currentIds) => Array.from(new Set([...currentIds, documentId])))
-    if (!activeGraphView) return
-    await upsertGraphViewNodeLayout({
-      graphViewId: activeGraphView.id,
-      documentId,
-      x: reactFlow.getNode(documentId)?.position.x ?? 0,
-      y: reactFlow.getNode(documentId)?.position.y ?? 0,
-      hidden: true,
-      pinned: graphViewLayoutMap.get(documentId)?.pinned ?? false,
-    })
+    if (activeGraphView) {
+      const nextDocumentIds = activeGraphView.documentIds.filter((id) => id !== documentId)
+      const nextSelectedDocumentId = activeGraphView.selectedDocumentId === documentId
+        ? undefined
+        : activeGraphView.selectedDocumentId
+
+      useGraphStore.setState((state) => ({
+        graphViews: state.graphViews.map((view) => (
+          view.id === activeGraphView.id
+            ? { ...view, documentIds: nextDocumentIds, selectedDocumentId: nextSelectedDocumentId }
+            : view
+        )),
+      }))
+
+      await updateGraphView(activeGraphView.id, {
+        documentIds: nextDocumentIds,
+        selectedDocumentId: nextSelectedDocumentId,
+      })
+      await upsertGraphViewNodeLayout({
+        graphViewId: activeGraphView.id,
+        documentId,
+        x: reactFlow.getNode(documentId)?.position.x ?? 0,
+        y: reactFlow.getNode(documentId)?.position.y ?? 0,
+        hidden: true,
+        pinned: graphViewLayoutMap.get(documentId)?.pinned ?? false,
+      })
+    }
+
     if (selectedDocumentId === documentId) {
       setSelectedDocumentId(null)
     }
@@ -2527,6 +2806,20 @@ function MapsPageContent() {
     window.setTimeout(() => setIsReheatingLayout(false), 250)
   }
 
+  useEffect(() => {
+    const pendingIds = pendingAutoLayoutDocumentIdsRef.current
+    if (pendingIds.length === 0) return
+    if (isReheatingLayout) return
+
+    const allReady = pendingIds.every((documentId) =>
+      nodes.some((node) => node.type === 'document' && node.id === documentId),
+    )
+    if (!allReady) return
+
+    pendingAutoLayoutDocumentIdsRef.current = []
+    void handleReheatLayout()
+  }, [handleReheatLayout, isReheatingLayout, nodes])
+
   if (libraryDocuments.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -2627,6 +2920,22 @@ function MapsPageContent() {
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={8}>
                     {t('mapsPage.rebuildLayoutHelp')}
+                    </TooltipContent>
+                  </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void refreshWorkReferences()}
+                      disabled={isRefreshingWorkReferences}
+                    >
+                      <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshingWorkReferences && 'animate-spin')} />
+                      {t('mapsPage.refreshReferences')}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8}>
+                    {t('mapsPage.refreshReferencesHelp')}
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -2774,28 +3083,42 @@ function MapsPageContent() {
                       </div>
                     </PopoverContent>
                   </Popover>
-                  <div data-tour-id="maps-add-work">
+                  <div data-tour-id="maps-add-work" className="min-w-0 shrink-0">
                     {myWorkDocuments.length > 0 ? (
-                      <Select
-                        key={selectedMyWorkPickerResetKey}
-                        onValueChange={(value) => {
-                          void handleAddDocumentToMap(value)
-                          setSelectedMyWorkPickerResetKey((currentKey) => currentKey + 1)
-                        }}
-                      >
-                        <SelectTrigger className="w-[220px] shrink-0 bg-background/90">
-                          <SelectValue placeholder={t('mapsPage.selectWork')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {myWorkDocuments.map((document) => (
-                            <SelectItem key={document.id} value={document.id}>
-                              {document.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="w-[220px]">
+                        <Select
+                          key={selectedMyWorkPickerResetKey}
+                          onValueChange={(value) => {
+                            void handleAddDocumentToMap(value)
+                            setSelectedMyWorkPickerResetKey((currentKey) => currentKey + 1)
+                          }}
+                          disabled={addableMyWorkDocuments.length === 0}
+                        >
+                          <SelectTrigger className="w-full border-amber-200 bg-amber-50/90 text-amber-950 hover:bg-amber-100/90 disabled:cursor-not-allowed disabled:opacity-60">
+                            <SelectValue
+                              placeholder={
+                                addableMyWorkDocuments.length > 0
+                                  ? t('mapsPage.selectWork')
+                                  : t('mapsPage.myWorkAlreadyOnMap')
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {addableMyWorkDocuments.map((document) => (
+                              <SelectItem key={document.id} value={document.id}>
+                                {document.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {addableMyWorkDocuments.length === 0 ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {t('mapsPage.myWorkAlreadyOnMap')}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : (
-                      <p className="min-w-0 flex-1 text-xs text-muted-foreground whitespace-normal break-words">
+                      <p className="max-w-[220px] text-xs text-muted-foreground whitespace-normal break-words">
                         {t('mapsPage.noWorksRegisteredPrefix')}{' '}
                         <Link href="/references" className="font-medium text-foreground underline underline-offset-4">
                           {t('referencesPage.title')}
@@ -3086,9 +3409,10 @@ function MapsPageContent() {
                 sourceDocument={sourceDocument}
                 targetDocument={targetDocument}
                 relatedIncomingDocuments={selectedDocumentVisibleIncomingDocuments}
-                relatedOutgoingDocuments={selectedDocumentVisibleOutgoingDocuments}
+                relatedOutgoingDocuments={panelOutgoingDocuments}
+                relatedOutgoingReferences={selectedDocumentVisibleOutgoingReferences}
                 otherIncomingDocuments={selectedDocumentOtherIncomingDocuments}
-                otherOutgoingDocuments={selectedDocumentOtherOutgoingDocuments}
+                otherOutgoingDocuments={panelOtherOutgoingDocuments}
                 onDeleteRelation={handleDeleteRelation}
                 onInvertRelation={handleInvertRelation}
                 onAddLinkedDocumentToMap={handleAddLinkedDocumentToMap}

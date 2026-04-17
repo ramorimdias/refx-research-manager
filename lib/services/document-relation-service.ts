@@ -18,6 +18,7 @@ export type DocumentGraphNodeData = {
   isSearchMatch?: boolean
   isSelected?: boolean
   isDimmed?: boolean
+  isDropping?: boolean
   isConnectedToSelectedDocument?: boolean
   connectionDirection?: 'incoming' | 'outgoing' | null
 }
@@ -97,26 +98,7 @@ export function buildDocumentGraphEdges(
         : 'incoming'
     const isSelected = relation.id === selectedRelationId
     const isHovered = relation.id === hoveredRelationId
-    const semanticColor = relation.linkType === 'supports'
-      ? '#15803d'
-      : relation.linkType === 'contradicts'
-        ? '#b91c1c'
-        : relation.linkType === 'same_topic'
-          ? '#2563eb'
-          : relation.linkType === 'related'
-            ? '#7c3aed'
-            : '#0f766e'
-    const baseColor = isRejected
-      ? '#cbd5e1'
-      : isProposed
-        ? '#d97706'
-        : isCitation
-          ? '#7c3aed'
-          : isSemanticManual
-            ? semanticColor
-          : isAuto
-            ? '#94a3b8'
-            : '#0f766e'
+    const baseColor = isRejected ? '#cbd5e1' : '#64748b'
     const selectedColor = '#f59e0b'
     const strokeColor = isSelected ? selectedColor : baseColor
 
@@ -130,8 +112,8 @@ export function buildDocumentGraphEdges(
       animated: false,
       markerStart: {
         type: MarkerType.ArrowClosed,
-        width: isSelected ? 24 : 18,
-        height: isSelected ? 24 : 18,
+        width: 18,
+        height: 18,
         color: strokeColor,
       },
       markerEnd: undefined,
@@ -140,32 +122,14 @@ export function buildDocumentGraphEdges(
         : relation.label,
       style: {
         stroke: strokeColor,
-        strokeWidth: isSelected
-          ? 4
-          : isProposed
-            ? 2.6
-            : isCitation
-              ? 2.2
-              : isAuto
-                ? 1.6
-                : 2.4,
+        strokeWidth: 2.2,
         strokeDasharray: isProposed
           ? '4 4'
-          : isCitation
-            ? '10 5'
-            : relation.linkType === 'contradicts'
-              ? '3 3'
-              : isAuto
-                ? '6 4'
-                : undefined,
+          : relation.linkType === 'contradicts'
+            ? '3 3'
+            : undefined,
         filter: isSelected
-          ? `drop-shadow(0 0 10px ${
-            isProposed
-              ? 'rgba(217, 119, 6, 0.32)'
-              : isCitation
-                ? 'rgba(109, 40, 217, 0.32)'
-                : 'rgba(15, 118, 110, 0.35)'
-          })`
+          ? 'drop-shadow(0 0 10px rgba(245, 158, 11, 0.35))'
           : undefined,
         opacity: 1,
       },

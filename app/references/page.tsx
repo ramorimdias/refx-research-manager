@@ -9,6 +9,7 @@ import {
   Copy,
   GripVertical,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Sparkles,
@@ -149,6 +150,7 @@ export default function ReferencesPage() {
   const [isEditingSelectedWork, setIsEditingSelectedWork] = useState(false)
   const [isAddingReference, setIsAddingReference] = useState(false)
   const [referenceForm, setReferenceForm] = useState<ReferenceFormState>(DEFAULT_REFERENCE_FORM)
+  const [editingWorkReferenceId, setEditingWorkReferenceId] = useState<string | null>(null)
   const [preferredMatchDocumentId, setPreferredMatchDocumentId] = useState<string | null>(null)
   const [selectedStyle, setSelectedStyle] = useState<CitationStyle>('apa')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -330,6 +332,29 @@ export default function ReferencesPage() {
   const resetReferenceDialog = () => {
     setReferenceForm(DEFAULT_REFERENCE_FORM)
     setPreferredMatchDocumentId(null)
+    setEditingWorkReferenceId(null)
+  }
+
+  const openEditFreeformReference = (workReference: repo.DbWorkReference) => {
+    setEditingWorkReferenceId(workReference.id)
+    setPreferredMatchDocumentId(null)
+    setReferenceForm({
+      type: 'manual',
+      title: workReference.reference.title ?? '',
+      authors: workReference.reference.authors ?? '',
+      year: workReference.reference.year ? String(workReference.reference.year) : '',
+      doi: workReference.reference.doi ?? '',
+      volume: workReference.reference.volume ?? '',
+      issue: workReference.reference.issue ?? '',
+      chapter: workReference.reference.chapter ?? '',
+      pages: workReference.reference.pages ?? '',
+      publisher: workReference.reference.publisher ?? '',
+      journal: workReference.reference.journal ?? '',
+      booktitle: workReference.reference.booktitle ?? '',
+      url: workReference.reference.url ?? '',
+      abstract: workReference.reference.abstract ?? '',
+    })
+    setIsAddingReference(true)
   }
 
   const saveReferenceToSelectedWork = async (
@@ -509,6 +534,38 @@ export default function ReferencesPage() {
     setIsSubmittingReference(true)
     setStatusMessage(null)
     try {
+      if (editingWorkReferenceId) {
+        const workReferenceToEdit = workReferences.find((entry) => entry.id === editingWorkReferenceId) ?? null
+        if (!workReferenceToEdit) {
+          throw new Error(t('referencesPage.couldNotLoadWorkReferences'))
+        }
+
+        await repo.updateReference(workReferenceToEdit.reference.id, {
+          title,
+          type: 'misc',
+          isManual: true,
+          authors: undefined,
+          year: undefined,
+          doi: undefined,
+          volume: undefined,
+          issue: undefined,
+          chapter: undefined,
+          pages: undefined,
+          publisher: undefined,
+          journal: undefined,
+          booktitle: undefined,
+          url: undefined,
+          abstract: undefined,
+          documentId: undefined,
+        })
+        const nextReferences = await repo.listWorkReferences(selectedWork.id)
+        setWorkReferences(nextReferences)
+        setIsAddingReference(false)
+        resetReferenceDialog()
+        setStatusMessage(t('referencesPage.referenceUpdated'))
+        return
+      }
+
       const matched = isManual
         ? {}
         : preferredMatchDocumentId
@@ -956,6 +1013,20 @@ export default function ReferencesPage() {
                                   <Copy className="h-4 w-4" />
                                 )}
                               </Button>
+                              {workReference.reference.isManual ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openEditFreeformReference(workReference)
+                                  }}
+                                  aria-label={t('referencesPage.editReference')}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -1059,7 +1130,9 @@ export default function ReferencesPage() {
       >
         <DialogContent className="w-[72vw] max-w-[1080px] sm:max-w-[1080px]">
           <DialogHeader>
-            <DialogTitle>{t('referencesPage.addReference')}</DialogTitle>
+            <DialogTitle>
+              {editingWorkReferenceId ? t('referencesPage.editReference') : t('referencesPage.addReference')}
+            </DialogTitle>
             <DialogDescription>
               {t('referencesPage.addReferenceDescription')}
             </DialogDescription>
@@ -1367,8 +1440,8 @@ export default function ReferencesPage() {
               {t('referencesPage.cancel')}
             </Button>
             <Button type="button" onClick={() => void handleAddReference()} disabled={isSubmittingReference}>
-              {isSubmittingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {t('referencesPage.addReference')}
+              {isSubmittingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : editingWorkReferenceId ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {editingWorkReferenceId ? t('referencesPage.saveReferenceChanges') : t('referencesPage.addReference')}
             </Button>
           </DialogFooter>
         </DialogContent>

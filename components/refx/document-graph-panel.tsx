@@ -22,6 +22,7 @@ type DocumentGraphPanelProps = {
   targetDocument: Document | null
   relatedIncomingDocuments: Document[]
   relatedOutgoingDocuments: Document[]
+  relatedOutgoingReferences?: repo.DbWorkReference[]
   otherIncomingDocuments: Document[]
   otherOutgoingDocuments: Document[]
   onDeleteRelation: (relationId: string) => Promise<void> | void
@@ -35,50 +36,62 @@ type DocumentGraphPanelProps = {
 function LinkedDocumentRow({
   document,
   tone,
-  action,
   actionLabel,
   actionIcon,
   onAction,
+  compactAction = false,
 }: {
   document: Document
   tone: 'incoming' | 'outgoing'
-  action: 'add' | 'hide'
   actionLabel: string
   actionIcon: React.ReactNode
   onAction?: (documentId: string) => Promise<void> | void
+  compactAction?: boolean
 }) {
   const t = useT()
 
   return (
     <div className="flex min-w-0 items-start gap-2 overflow-hidden rounded-xl border border-current/15 bg-white/90 p-2 text-inherit">
-      <Link
-        href={getDocumentOpenHref(document)}
-        className="min-w-0 flex-1 rounded-lg px-1 py-0.5 transition hover:bg-black/5"
-      >
+      <div className="min-w-0 flex-1 rounded-lg px-1 py-0.5">
         <p className="break-words text-sm font-medium text-slate-900">{document.title}</p>
-        <div className="mt-1 flex items-start justify-between gap-2">
-          <p className="min-w-0 flex-1 break-words text-xs text-slate-500">
-            {document.authors[0] ?? t('searchPage.unknownAuthor')}
-            {document.year ? ` - ${document.year}` : ''}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={tone === 'outgoing'
-              ? 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-sky-200 px-2.5 py-1.5 text-right leading-4 text-sky-800 hover:bg-sky-50'
-              : 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-rose-200 px-2.5 py-1.5 text-right leading-4 border-rose-200 text-rose-800 hover:bg-rose-50'}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              void onAction?.(document.id)
-            }}
-          >
-            {actionIcon}
-            <span className="whitespace-nowrap">{actionLabel}</span>
-          </Button>
-        </div>
-      </Link>
+        <p className="mt-1 min-w-0 break-words text-xs text-slate-500">
+          {document.authors[0] ?? t('searchPage.unknownAuthor')}
+          {document.year ? ` - ${document.year}` : ''}
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={actionLabel}
+        title={actionLabel}
+        className={compactAction
+          ? tone === 'outgoing'
+            ? 'h-8 w-8 shrink-0 border-sky-200 px-0 text-sky-800 hover:bg-sky-50'
+            : 'h-8 w-8 shrink-0 border-rose-200 px-0 text-rose-800 hover:bg-rose-50'
+          : tone === 'outgoing'
+            ? 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-sky-200 px-2.5 py-1.5 text-right leading-4 text-sky-800 hover:bg-sky-50'
+            : 'h-auto min-w-[6.75rem] shrink-0 whitespace-nowrap border-rose-200 px-2.5 py-1.5 text-right leading-4 text-rose-800 hover:bg-rose-50'}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          void onAction?.(document.id)
+        }}
+      >
+        {actionIcon}
+        {compactAction ? null : <span className="whitespace-nowrap">{actionLabel}</span>}
+      </Button>
+    </div>
+  )
+}
+
+function LinkedReferenceRow({ workReference }: { workReference: repo.DbWorkReference }) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white/90 p-2">
+      <p className="break-words text-sm font-medium text-slate-900">{workReference.reference.title}</p>
+      <p className="mt-1 break-words text-xs text-slate-500">
+        {formatReference(workReference.reference, 'apa')}
+      </p>
     </div>
   )
 }
@@ -91,6 +104,7 @@ export function DocumentGraphPanel({
   targetDocument,
   relatedIncomingDocuments,
   relatedOutgoingDocuments,
+  relatedOutgoingReferences = [],
   otherIncomingDocuments,
   otherOutgoingDocuments,
   onDeleteRelation,
@@ -356,22 +370,26 @@ export function DocumentGraphPanel({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-sky-900">{t('mapsPage.makesReferenceTo')}</h3>
               <Badge className="border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-100">
-                {relatedOutgoingDocuments.length}
+                {relatedOutgoingDocuments.length + relatedOutgoingReferences.length}
               </Badge>
             </div>
             <div className="space-y-2">
-              {relatedOutgoingDocuments.length ? (
-                relatedOutgoingDocuments.map((document) => (
-                  <LinkedDocumentRow
-                    key={document.id}
-                    document={document}
-                    tone="outgoing"
-                    action="hide"
-                    actionLabel={t('mapsPage.hideFromMap')}
-                    actionIcon={<EyeOff className="mr-1 h-3.5 w-3.5" />}
-                    onAction={onHideLinkedDocumentFromMap}
-                  />
-                ))
+              {relatedOutgoingDocuments.length || relatedOutgoingReferences.length ? (
+                <>
+                  {relatedOutgoingDocuments.map((document) => (
+                    <LinkedDocumentRow
+                      key={document.id}
+                      document={document}
+                      tone="outgoing"
+                      actionLabel={t('mapsPage.hideFromMap')}
+                      actionIcon={<EyeOff className="mr-1 h-3.5 w-3.5" />}
+                      onAction={onHideLinkedDocumentFromMap}
+                    />
+                  ))}
+                  {relatedOutgoingReferences.map((workReference) => (
+                    <LinkedReferenceRow key={workReference.id} workReference={workReference} />
+                  ))}
+                </>
               ) : (
                 <p className="text-sm text-sky-800/80">{t('mapsPage.none')}</p>
               )}
@@ -400,10 +418,10 @@ export function DocumentGraphPanel({
                         key={`other-outgoing-${document.id}`}
                         document={document}
                         tone="outgoing"
-                        action="add"
                         actionLabel={t('mapsPage.addToMap')}
-                        actionIcon={<Plus className="mr-1 h-3.5 w-3.5" />}
+                        actionIcon={<Plus className="h-3.5 w-3.5" />}
                         onAction={onAddLinkedDocumentToMap}
+                        compactAction
                       />
                     ))}
                   </div>
@@ -426,7 +444,6 @@ export function DocumentGraphPanel({
                     key={document.id}
                     document={document}
                     tone="incoming"
-                    action="hide"
                     actionLabel={t('mapsPage.hideFromMap')}
                     actionIcon={<EyeOff className="mr-1 h-3.5 w-3.5" />}
                     onAction={onHideLinkedDocumentFromMap}
@@ -460,10 +477,10 @@ export function DocumentGraphPanel({
                         key={`other-incoming-${document.id}`}
                         document={document}
                         tone="incoming"
-                        action="add"
                         actionLabel={t('mapsPage.addToMap')}
-                        actionIcon={<Plus className="mr-1 h-3.5 w-3.5" />}
+                        actionIcon={<Plus className="h-3.5 w-3.5" />}
                         onAction={onAddLinkedDocumentToMap}
+                        compactAction
                       />
                     ))}
                   </div>
