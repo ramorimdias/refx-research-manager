@@ -2,6 +2,7 @@
 const nextConfig = {
   output: process.env.TAURI_ENV ? 'export' : undefined,
   trailingSlash: Boolean(process.env.TAURI_ENV),
+  transpilePackages: ['pdfjs-dist'],
   typescript: {
     ignoreBuildErrors: false,
   },

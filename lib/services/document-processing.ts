@@ -1,6 +1,7 @@
 'use client'
 
 import { readFile } from '@tauri-apps/plugin-fs'
+import { isTauri } from '@/lib/tauri/client'
 import type { Document } from '@/lib/types'
 import { splitIntoSentenceLikeSegments } from '@/lib/utils/sentence-segmentation'
 
@@ -54,7 +55,6 @@ type PdfJsModule = {
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
-const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.js' as string
 const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
 
 function resolvePdfJsCandidate(importedModule: unknown) {
@@ -366,7 +366,7 @@ export async function loadPdfJsModule() {
         packageImportError = error
       }
 
-      if (!candidate && typeof window !== 'undefined') {
+      if (!candidate && typeof window !== 'undefined' && !isTauri()) {
         try {
           const browserImport = new Function('return import("/pdfjs/pdf.js")') as () => Promise<unknown>
           candidate = resolvePdfJsCandidate(await browserImport())
