@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import type { CheckedState } from '@radix-ui/react-checkbox'
-import { CheckCheck, ChevronDown, ChevronUp, CircleHelp, MessageSquare, MoreHorizontal, Search, Settings2, Star, TriangleAlert } from 'lucide-react'
+import { BookMarked, CheckCheck, ChevronDown, ChevronUp, CircleHelp, FileText, MessageSquare, MoreHorizontal, Search, Settings2, Star, TriangleAlert } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -345,7 +345,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
   const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() => loadStoredColumnVisibility())
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => loadStoredColumnOrder())
   const [resizingColumn, setResizingColumn] = useState<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
-  const { toggleFavorite, updateDocument, refreshTagSuggestionsForDocuments } = useDocumentActions()
+  const { toggleFavorite, updateDocument } = useDocumentActions()
   const selection = useDocumentListSelection(documents.map((document) => document.id))
 
   useEffect(() => {
@@ -558,6 +558,9 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
         return (
           <TableCell key={column.key}>
             <Link href={getOpenHref(doc)} className="group/link flex items-start gap-2">
+              {doc.documentType === 'physical_book'
+                ? <BookMarked className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                : <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
               <div className="min-w-0">
                 <div className="flex items-start gap-2">
                   <span className="block min-w-0 truncate font-medium text-foreground transition-colors group-hover/link:text-primary">
@@ -671,11 +674,7 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
           <DocumentBulkActions
             selectedDocumentIds={selection.selectedDocumentIds}
             onClearSelection={selection.clearSelection}
-          >
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => void refreshTagSuggestionsForDocuments(selection.selectedDocumentIds)}>
-              {t('documentTable.generateSuggestions')}
-            </Button>
-          </DocumentBulkActions>
+          />
         </div>
       ) : null}
 
