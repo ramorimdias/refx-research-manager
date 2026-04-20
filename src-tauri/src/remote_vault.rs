@@ -671,13 +671,17 @@ pub fn configure_remote_vault(
 }
 
 #[tauri::command]
-pub fn get_remote_vault_status(
+pub async fn get_remote_vault_status(
     app: AppHandle,
     input: Option<GetRemoteVaultStatusInput>,
 ) -> Result<RemoteVaultStatus, AppError> {
-    let conn = open_db(&app)?;
-    let acquire_lease = input.and_then(|value| value.acquire_lease).unwrap_or(false);
-    vault_status(&app, &conn, acquire_lease)
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = open_db(&app)?;
+        let acquire_lease = input.and_then(|value| value.acquire_lease).unwrap_or(false);
+        vault_status(&app, &conn, acquire_lease)
+    })
+    .await
+    .map_err(|error| AppError::Validation(format!("Remote vault status task failed: {error}")))?
 }
 
 #[tauri::command]

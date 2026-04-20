@@ -412,7 +412,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const shouldShowLoadingScreen = isLoading || !initialized || !isUiPrefsReady || !isSettingsReady || isDebugSplashActive
 
   useEffect(() => {
-    if (!isMacTauri || !shouldShowLoadingScreen) return
+    if (!isDesktopApp || !isTauri() || !shouldShowLoadingScreen) return
 
     const timeoutId = window.setTimeout(() => {
       console.error('Startup watchdog triggered; forcing safe desktop fallback.')
@@ -435,7 +435,7 @@ export function AppProvider({ children }: AppProviderProps) {
     }, STARTUP_WATCHDOG_TIMEOUT_MS)
 
     return () => window.clearTimeout(timeoutId)
-  }, [isMacTauri, setTheme, shouldShowLoadingScreen])
+  }, [isDesktopApp, setTheme, shouldShowLoadingScreen])
 
   useEffect(() => {
     if (!isDesktopApp || !isTauri() || shouldShowLoadingScreen || hasRevealedDesktopWindow.current) return

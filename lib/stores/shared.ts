@@ -26,6 +26,27 @@ export type AppNote = repo.DbNote
 export type AppAnnotation = repo.DbAnnotation
 
 export const DEFAULT_LIBRARY_ID = 'lib-default'
+const REMOTE_VAULT_STARTUP_STATUS_TIMEOUT_MS = 2500
+const REMOTE_VAULT_STARTUP_PULL_TIMEOUT_MS = 8000
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId)
+        resolve(value)
+      },
+      (error) => {
+        window.clearTimeout(timeoutId)
+        reject(error)
+      },
+    )
+  })
+}
 
 export function showStoreActionError(prefix: string, error: unknown) {
   toast.error(`${prefix}: ${normalizeErrorMessage(error)}`)
@@ -177,10 +198,21 @@ export function toUiGraphViewNodeLayout(layout: repo.DbGraphViewNodeLayout): Gra
 export async function fetchDesktopData(options: { pullRemote?: boolean, acquireLease?: boolean } = {}) {
   await bootstrapDesktop()
   await hydrateRemoteVaultSyncState()
-  let remoteVaultStatus = await repo.getRemoteVaultStatus({ acquireLease: options.acquireLease ?? false }).catch(() => null)
+  let remoteVaultStatus = await withTimeout(
+    repo.getRemoteVaultStatus({ acquireLease: options.acquireLease ?? false }),
+    REMOTE_VAULT_STARTUP_STATUS_TIMEOUT_MS,
+    'Remote vault status',
+  ).catch((error) => {
+    console.warn('Remote vault startup status check failed or timed out:', error)
+    return null
+  })
   if (options.pullRemote && remoteVaultStatus?.enabled && !remoteVaultStatus.isOffline) {
     try {
-      const pulled = await repo.pullRemoteVault()
+      const pulled = await withTimeout(
+        repo.pullRemoteVault(),
+        REMOTE_VAULT_STARTUP_PULL_TIMEOUT_MS,
+        'Remote vault startup pull',
+      )
       remoteVaultStatus = pulled.status ?? remoteVaultStatus
     } catch (error) {
       console.warn('Remote vault startup pull failed:', error)
