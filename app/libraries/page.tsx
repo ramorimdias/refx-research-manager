@@ -954,14 +954,9 @@ export default function LibrariesPage() {
             data-tour-id="libraries-toolbar"
           >
             <div className="flex items-center gap-4 flex-1">
-              <Button variant="outline" size="sm" className="rounded-full" onClick={() => setFiltersCollapsed((current) => !current)}>
-                {filtersCollapsed ? <PanelLeftOpen className="mr-2 h-4 w-4" /> : <PanelLeftClose className="mr-2 h-4 w-4" />}
-                {t('libraries.filters')}
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                    {activeFilterCount}
-                  </Badge>
-                )}
+              <Button variant="outline" size="sm" className="rounded-full" onClick={openCreateDialog}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('libraries.library')}
               </Button>
 
               <Select
@@ -998,10 +993,6 @@ export default function LibrariesPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="rounded-full" onClick={openCreateDialog}>
-                <Plus className="mr-2 h-4 w-4" />
-                {t('libraries.library')}
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1052,19 +1043,44 @@ export default function LibrariesPage() {
           {activeLibrary && (
             <div className="flex items-center justify-between border-0 !bg-transparent px-5 py-3 shadow-none">
               <div className="flex items-center gap-3">
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm"
+                <button
+                  type="button"
+                  className="group relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl shadow-sm transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   style={{ backgroundColor: activeLibrary.color, color: activeLibraryIconColor }}
+                  onClick={openRenameDialog}
+                  aria-label={libraryUiCopy.editButton}
+                  title={libraryUiCopy.editButton}
                 >
                   {ActiveLibraryIcon ? <ActiveLibraryIcon className="h-5 w-5" /> : null}
-                </div>
-                <div>
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                    <Pencil className="h-4 w-4 text-white drop-shadow" />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="group relative rounded-xl px-2 py-1 text-left transition-colors hover:bg-card/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  onClick={openRenameDialog}
+                  aria-label={libraryUiCopy.editButton}
+                  title={libraryUiCopy.editButton}
+                >
                   <h2 className="text-lg font-semibold tracking-tight">{activeLibrary.name}</h2>
                   <p className="text-sm text-muted-foreground">{activeLibrary.description || t('libraries.localLibrary')}</p>
-                </div>
+                  <span className="pointer-events-none absolute -right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </span>
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{t('libraries.documentsCount', { count: visibleLibraryDocuments.length })}</Badge>
+                <Button variant="outline" size="sm" className="rounded-full" onClick={() => setFiltersCollapsed((current) => !current)}>
+                  {filtersCollapsed ? <PanelLeftOpen className="mr-2 h-4 w-4" /> : <PanelLeftClose className="mr-2 h-4 w-4" />}
+                  {t('libraries.filters')}
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                      {activeFilterCount}
+                    </Badge>
+                  )}
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9 min-w-[11rem] max-w-[16rem] justify-start rounded-full">
@@ -1099,10 +1115,6 @@ export default function LibrariesPage() {
                 <Button variant="outline" size="sm" className="rounded-full" onClick={() => void openDuplicateDialog()}>
                   <CopyX className="mr-2 h-4 w-4" />
                   {t('libraries.deduplicate')}
-                </Button>
-                <Button variant="outline" size="sm" className="rounded-full" onClick={openRenameDialog}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  {libraryUiCopy.editButton}
                 </Button>
               </div>
             </div>

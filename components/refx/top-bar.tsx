@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Cloud, Command, DownloadCloud, Eye, PencilLine, Search, Settings, Unplug, UploadCloud } from 'lucide-react'
+import { Cloud, DownloadCloud, Eye, PencilLine, Search, Settings, Unplug, UploadCloud } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -112,7 +112,6 @@ export function TopBar() {
   const globalSearchQuery = useUiStore((state) => state.globalSearchQuery)
   const setGlobalSearchQuery = useUiStore((state) => state.setGlobalSearchQuery)
   const setPersistentSearch = useUiStore((state) => state.setPersistentSearch)
-  const toggleCommandPalette = useUiStore((state) => state.toggleCommandPalette)
 
   const submitGlobalSearch = () => {
     setPersistentSearch({ query: globalSearchQuery.trim() })
@@ -147,18 +146,6 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2 rounded-full"
-          onClick={() => toggleCommandPalette(true)}
-          data-tour-id="shell-command"
-        >
-          <Command className="h-4 w-4" />
-          <span className="hidden lg:inline">{t('topBar.command')}</span>
-          <span className="hidden text-[11px] text-muted-foreground md:inline">Ctrl K</span>
-        </Button>
-
         {remoteVaultBadge ? (
           <Tooltip>
             <TooltipTrigger asChild>

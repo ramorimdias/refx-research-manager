@@ -1,6 +1,5 @@
 'use client'
 
-import { scoreDocumentMatch } from '@/lib/services/document-processing'
 import { useDocumentStore } from '@/lib/stores/document-store'
 import { useLibraryStore } from '@/lib/stores/library-store'
 import { getLibraryMetadataFilterState } from '@/lib/stores/shared'
@@ -24,6 +23,23 @@ function compareValues(a: ReturnType<typeof useDocumentStore.getState>['document
   }
 }
 
+function buildLibraryMetadataSearchText(document: ReturnType<typeof useDocumentStore.getState>['documents'][number]) {
+  return [
+    document.title,
+    document.authors.join(' '),
+    document.tags.join(' '),
+    document.year ? String(document.year) : '',
+    document.doi,
+    document.citationKey,
+    document.isbn,
+    document.publisher,
+    document.readingStage,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
 export function useFilteredDocuments() {
   const activeLibraryId = useLibraryStore((state) => state.activeLibraryId)
   const documents = useDocumentStore((state) => state.documents)
@@ -35,10 +51,7 @@ export function useFilteredDocuments() {
     if (activeLibraryId && document.libraryId !== activeLibraryId) return false
 
     if (search) {
-      const haystack = [document.title, document.authors.join(' '), document.doi, document.citationKey, document.abstract, document.searchText]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+      const haystack = buildLibraryMetadataSearchText(document)
       if (!haystack.includes(search)) return false
     }
 
@@ -56,7 +69,11 @@ export function useFilteredDocuments() {
 
   return filtered.sort((left, right) => {
     if (search) {
-      const relevance = scoreDocumentMatch(right, search).rawScore - scoreDocumentMatch(left, search).rawScore
+      const leftMetadata = buildLibraryMetadataSearchText(left)
+      const rightMetadata = buildLibraryMetadataSearchText(right)
+      const relevance =
+        Number(rightMetadata.startsWith(search)) - Number(leftMetadata.startsWith(search))
+        || Number(right.title.toLowerCase().includes(search)) - Number(left.title.toLowerCase().includes(search))
       if (relevance !== 0) return relevance
     }
     const comparison = compareValues(left, right, sort.field)
