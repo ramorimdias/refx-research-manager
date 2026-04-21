@@ -283,6 +283,7 @@ export async function importPdfs(
       },
       {
         enableOcrFallback: settings.autoOcr,
+        enableMetadataExtraction: settings.autoMetadata,
         enableKeywordExtraction: settings.autoKeywordExtractionOnImport,
         enableOnlineMetadataEnrichment: settings.autoOnlineMetadataEnrichment,
         enableSemanticClassification: settings.advancedClassificationMode !== 'off',

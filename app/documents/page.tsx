@@ -539,10 +539,12 @@ function RealDocumentDetailPage({
   id,
   metadataMode,
   autoSearchMetadata,
+  returnTo,
 }: {
   id: string
   metadataMode: string | null
   autoSearchMetadata: boolean
+  returnTo: string | null
 }) {
   const params = useSearchParams()
   const router = useRouter()
@@ -928,8 +930,8 @@ function RealDocumentDetailPage({
     const hasDoi = (savePayload.doi ?? '').trim().length > 0
 
     if (hasTitle && hasAuthors && hasYear && hasDoi) return 'complete'
-    if (hasTitle && hasAuthors && hasYear && !hasDoi) return 'partial'
-    if (hasDoi) return 'partial'
+    if (hasTitle && hasAuthors && hasYear && !hasDoi) return 'missing_doi'
+    if (hasDoi) return 'fetch_possible'
     return 'missing'
   }, [savePayload])
 
@@ -1314,6 +1316,9 @@ function RealDocumentDetailPage({
     try {
       await applyFetchedMetadataCandidate(document.id, candidate.metadata, mode)
       setIsMetadataDialogOpen(false)
+      if (returnTo?.startsWith('/')) {
+        router.push(returnTo)
+      }
     } finally {
       setIsApplyingMetadataCandidate(false)
     }
@@ -2547,6 +2552,7 @@ export default function DocumentDetailPage() {
   const id = params.get('id')
   const metadataMode = params.get('metadata')
   const autoSearchMetadata = params.get('autoSearchMetadata') === '1'
+  const returnTo = params.get('returnTo')
 
   if (!id) {
     return <div className="p-6">Missing document id.</div>
@@ -2557,6 +2563,7 @@ export default function DocumentDetailPage() {
       id={id}
       metadataMode={metadataMode}
       autoSearchMetadata={autoSearchMetadata}
+      returnTo={returnTo}
     />
   )
 }

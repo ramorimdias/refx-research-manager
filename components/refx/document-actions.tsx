@@ -50,6 +50,7 @@ interface DocumentActionsProps {
 interface DocumentContextMenuProps {
   document: Document
   children: ReactNode
+  prependContextItems?: ReactNode
 }
 
 function formatCitation(document: Document) {
@@ -339,7 +340,7 @@ export function DocumentActions({ document, trigger }: DocumentActionsProps) {
   )
 }
 
-export function DocumentContextMenu({ document, children }: DocumentContextMenuProps) {
+export function DocumentContextMenu({ document, children, prependContextItems }: DocumentContextMenuProps) {
   const actions = useDocumentActionState(document)
 
   return (
@@ -347,6 +348,8 @@ export function DocumentContextMenu({ document, children }: DocumentContextMenuP
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent>
+          {prependContextItems}
+          {prependContextItems ? <ContextMenuSeparator /> : null}
           <DocumentActionMenuItems
             document={document}
             variant="context"

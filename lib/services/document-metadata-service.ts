@@ -179,6 +179,30 @@ function titleFromFilePath(filePath: string) {
   return normalizeWhitespace(fileName.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' '))
 }
 
+function looksLikeMeaningfulFileTitle(title?: string) {
+  const normalized = normalizeWhitespace(title ?? '')
+  if (!hasUsableMetadataTitle(normalized)) return false
+  if (normalized.length < 12 || normalized.length > 260) return false
+
+  const words = normalized.split(/\s+/).filter(Boolean)
+  if (words.length < 3) return false
+
+  const alphanumeric = normalized.replace(/[^a-z0-9]/gi, '')
+  if (alphanumeric.length === 0) return false
+
+  const digitCount = (alphanumeric.match(/\d/g) ?? []).length
+  const lowercaseCount = (normalized.match(/[a-z]/g) ?? []).length
+  const separatorCount = (normalized.match(/[-_.()[\]]/g) ?? []).length
+
+  if (digitCount / alphanumeric.length > 0.35) return false
+  if (lowercaseCount === 0) return false
+  if (separatorCount > Math.max(8, words.length)) return false
+  if (/^(scan|document|paper|article|download|untitled|export|fulltext|pdf)(?:\s*\d*)?$/i.test(normalized)) return false
+  if (/^[a-f0-9]{12,}$/i.test(alphanumeric)) return false
+
+  return true
+}
+
 function citationKeyFor(title: string, authors: string[], year?: number) {
   const firstAuthorToken = authors[0]?.split(/\s+/).pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'unknown'
   const titleToken = title.split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'paper'
@@ -270,8 +294,11 @@ function extractFirstPageMetadata(lines: string[], pageText: string): FirstPageM
 
 async function readRawPdfMetadata(filePath: string): Promise<RawPdfMetadataSignals> {
   const bytes = await readFile(filePath)
-  const sample = bytes.slice(0, 360_000)
-  const text = new TextDecoder('latin1', { fatal: false }).decode(sample)
+  const head = bytes.slice(0, 360_000)
+  const tail = bytes.slice(Math.max(0, bytes.length - 360_000))
+  const text = new TextDecoder('latin1', { fatal: false }).decode(
+    head.length === bytes.length ? head : new Uint8Array([...head, ...tail]),
+  )
 
   const rawTitle = text.match(/\/Title\s*\(([\s\S]{1,300}?)\)/)?.[1]
   const rawAuthor = text.match(/\/Author\s*\(([\s\S]{1,300}?)\)/)?.[1]
@@ -385,10 +412,23 @@ export async function extractLocalPdfMetadata(filePath: string, titleFallbackPat
   const fileNameTitle = titleFromFilePath(titleFallbackPath ?? filePath)
   const provenance: DocumentMetadataProvenance = {}
 
-  const title = fileNameTitle
+  const embeddedTitle = normalizeExtractedTitle(rawMetadata.title)
+  const meaningfulFileNameTitle = looksLikeMeaningfulFileTitle(fileNameTitle) ? fileNameTitle : undefined
+  const firstPageTitle = normalizeExtractedTitle(firstPageMetadata.title)
+  const title = hasUsableMetadataTitle(embeddedTitle)
+    ? embeddedTitle
+    : meaningfulFileNameTitle
+      ?? (hasUsableMetadataTitle(firstPageTitle) ? firstPageTitle : undefined)
+      ?? fileNameTitle
 
-  if (fileNameTitle) {
-    provenance.title = provenanceEntry('filename_fallback', 'Filename fallback.', 0.25)
+  if (title) {
+    provenance.title = title === embeddedTitle
+      ? provenanceEntry('embedded_pdf_metadata', 'Embedded PDF title metadata.', 0.9)
+      : title === meaningfulFileNameTitle
+        ? provenanceEntry('filename_fallback', 'Meaningful filename title.', 0.72)
+      : title === firstPageTitle
+        ? provenanceEntry('first_page_heuristic', 'First-page title heuristic.', 0.75)
+        : provenanceEntry('filename_fallback', 'Filename fallback.', 0.25)
   }
 
   const authors = rawMetadata.authors && rawMetadata.authors.length > 0

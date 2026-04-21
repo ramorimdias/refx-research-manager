@@ -3,17 +3,18 @@
 import { ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { MetadataStatus, OcrStatus, ReadingStage } from '@/lib/types'
+import type { LibraryMetadataState, MetadataStatus, OcrStatus, ReadingStage } from '@/lib/types'
 import {
   AlertCircle,
-  AlertTriangle,
   BookMarked,
   BookOpen,
+  Check,
   CheckCheck,
   CheckCircle2,
   Clock,
   FileCheck,
   Loader2,
+  Search,
   XCircle,
 } from 'lucide-react'
 import { useT } from '@/lib/localization'
@@ -24,10 +25,12 @@ const readingStageConfig: Record<ReadingStage, { labelKey: string; icon: typeof 
   finished: { labelKey: 'common.finished', icon: CheckCircle2, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 }
 
-const metadataStatusConfig: Record<MetadataStatus, { labelKey: string; icon: typeof AlertCircle; className: string }> = {
+const metadataStatusConfig: Record<MetadataStatus | LibraryMetadataState, { labelKey: string; icon: typeof AlertCircle; className: string }> = {
   missing: { labelKey: 'common.missing', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  partial: { labelKey: 'common.partial', icon: AlertTriangle, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  partial: { labelKey: 'common.missing', icon: AlertCircle, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
   complete: { labelKey: 'common.complete', icon: CheckCheck, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  missing_doi: { labelKey: 'libraries.missingDoi', icon: Check, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  fetch_possible: { labelKey: 'documentTable.fetchPossible', icon: Search, className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
 }
 
 const ocrStatusConfig: Record<OcrStatus, { labelKey: string; icon: typeof Clock; className: string }> = {
@@ -61,7 +64,7 @@ export function ReadingStageBadge({ stage }: { stage: ReadingStage }) {
   return <CompactBadge icon={config.icon} label={t(config.labelKey)} className={config.className} />
 }
 
-export function MetadataStatusBadge({ status }: { status: MetadataStatus }) {
+export function MetadataStatusBadge({ status }: { status: MetadataStatus | LibraryMetadataState }) {
   const t = useT()
   const config = metadataStatusConfig[status]
   return <CompactBadge icon={config.icon} label={t(config.labelKey)} className={config.className} />

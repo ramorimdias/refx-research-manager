@@ -4,13 +4,17 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
+  Check,
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   CloudDownload,
   Database,
   Globe,
   Loader2,
   Save,
+  Search,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -33,7 +37,90 @@ import { useDocumentActions, useDocumentStore } from '@/lib/stores/document-stor
 import { useLibraryStore } from '@/lib/stores/library-store'
 import { useRuntimeState } from '@/lib/stores/runtime-store'
 
-type MetadataQueueMode = 'fetch_possible' | 'missing'
+type MetadataQueueMode = 'fetch_possible' | 'missing_doi' | 'missing' | 'cleanup'
+
+const VERIFIED_DOI_TITLE_MATCHES_KEY = 'refx.metadata.verified-doi-title-matches.v1'
+
+const TITLE_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'by',
+  'for',
+  'from',
+  'in',
+  'into',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+])
+
+function normalizeMetadataToken(input: string) {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function metadataTokens(input: string) {
+  return normalizeMetadataToken(input)
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !TITLE_STOP_WORDS.has(token))
+}
+
+function titleSimilarity(left?: string, right?: string) {
+  const leftTokens = new Set(metadataTokens(left ?? ''))
+  const rightTokens = new Set(metadataTokens(right ?? ''))
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length
+  return overlap / Math.max(leftTokens.size, rightTokens.size)
+}
+
+function getMetadataCleanupIssues(
+  document: Document,
+  options?: { ignoreVerifiedDoiTitle?: boolean },
+) {
+  const issues: string[] = []
+  const title = document.title.trim()
+  const titleTokens = new Set(metadataTokens(title))
+  const authorTokens = document.authors.flatMap((author) => metadataTokens(author))
+  const authorOverlap = authorTokens.filter((token) => titleTokens.has(token))
+  const yearMatches = title.match(/\b(19|20)\d{2}\b/g) ?? []
+  const numericGroups = title.match(/\d+/g) ?? []
+  const alphanumeric = title.replace(/[^a-z0-9]/gi, '')
+  const digitCount = (alphanumeric.match(/\d/g) ?? []).length
+  const suspiciousAuthors = document.authors.some((author) => {
+    const normalized = author.trim()
+    return normalized.length > 80
+      || /@|https?:\/\/|doi\b|abstract|keywords|journal|university|department|received|accepted/i.test(normalized)
+      || metadataTokens(normalized).length > 7
+  })
+
+  if (authorOverlap.length >= 2) {
+    issues.push('Title contains words that look like author names.')
+  }
+  if (yearMatches.length > 1 || numericGroups.length >= 4 || (alphanumeric.length > 0 && digitCount / alphanumeric.length > 0.22)) {
+    issues.push('Title contains many numbers or years.')
+  }
+  if (suspiciousAuthors) {
+    issues.push('Author field may contain non-author text.')
+  }
+  if (!options?.ignoreVerifiedDoiTitle && document.metadataProvenance?.doi?.source === 'doi_regex' && (document.doi ?? '').trim().length > 0) {
+    issues.push('DOI was detected automatically; verify that its fetched title matches this record.')
+  }
+  if (document.metadataProvenance?.title?.source === 'filename_fallback' && titleSimilarity(title, document.sourcePath ?? document.importedFilePath ?? '') < 0.2) {
+    issues.push('Title came from a filename fallback and may need review.')
+  }
+
+  return issues
+}
 
 function hasCompleteCoreMetadata(document: Document) {
   return document.title.trim().length > 0 && document.authors.length > 0 && typeof document.year === 'number'
@@ -43,8 +130,39 @@ function isFetchPossibleDocument(document: Document) {
   return !hasCompleteCoreMetadata(document) && (document.doi ?? '').trim().length > 0
 }
 
+function isMissingDoiDocument(document: Document) {
+  return hasCompleteCoreMetadata(document) && (document.doi ?? '').trim().length === 0
+}
+
 function isMissingMetadataDocument(document: Document) {
   return !hasCompleteCoreMetadata(document) && (document.doi ?? '').trim().length === 0
+}
+
+function isCleanupCandidateDocument(
+  document: Document,
+  options?: { ignoreVerifiedDoiTitle?: boolean },
+) {
+  return hasCompleteCoreMetadata(document) && getMetadataCleanupIssues(document, options).length > 0
+}
+
+function loadVerifiedDoiTitleMatches() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(VERIFIED_DOI_TITLE_MATCHES_KEY) ?? '{}') as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] =>
+        typeof entry[0] === 'string' && typeof entry[1] === 'string',
+      ),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function persistVerifiedDoiTitleMatches(value: Record<string, string>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(VERIFIED_DOI_TITLE_MATCHES_KEY, JSON.stringify(value))
 }
 
 function buildSavePayload(input: {
@@ -97,6 +215,7 @@ export default function MetadataWorkspacePage() {
   const [candidateError, setCandidateError] = useState('')
   const [doiSearchFailed, setDoiSearchFailed] = useState(false)
   const [metadataCandidates, setMetadataCandidates] = useState<DocumentMetadataCandidate[]>([])
+  const [verifiedDoiTitleMatches, setVerifiedDoiTitleMatches] = useState<Record<string, string>>(() => loadVerifiedDoiTitleMatches())
 
   useEffect(() => {
     if (!selectedLibraryId && libraries.length > 0) {
@@ -107,14 +226,52 @@ export default function MetadataWorkspacePage() {
   const filteredDocuments = useMemo(() => {
     if (!selectedLibraryId) return []
     return documents
-      .filter((document) => document.libraryId === selectedLibraryId)
+      .filter((document) => document.libraryId === selectedLibraryId && document.documentType !== 'my_work')
       .sort((left, right) => left.title.localeCompare(right.title))
   }, [documents, selectedLibraryId])
 
+  const hasVerifiedDoiTitleMatch = (document: Document) => {
+    const doi = (document.doi ?? '').trim().toLowerCase()
+    return Boolean(doi && verifiedDoiTitleMatches[document.id] === doi)
+  }
+
   const queue = useMemo(() => {
-    const source = mode === 'fetch_possible' ? isFetchPossibleDocument : isMissingMetadataDocument
+    const source = mode === 'fetch_possible'
+      ? isFetchPossibleDocument
+      : mode === 'missing_doi'
+        ? isMissingDoiDocument
+      : mode === 'cleanup'
+        ? (document: Document) => isCleanupCandidateDocument(document, {
+            ignoreVerifiedDoiTitle: hasVerifiedDoiTitleMatch(document),
+          })
+        : isMissingMetadataDocument
     return filteredDocuments.filter(source)
-  }, [filteredDocuments, mode])
+  }, [filteredDocuments, mode, verifiedDoiTitleMatches])
+
+  const currentDocument = queue[currentIndex] ?? null
+
+  const currentCleanupIssues = useMemo(
+    () => currentDocument
+      ? getMetadataCleanupIssues(currentDocument, {
+          ignoreVerifiedDoiTitle: hasVerifiedDoiTitleMatch(currentDocument),
+        })
+      : [],
+    [currentDocument, verifiedDoiTitleMatches],
+  )
+
+  const bestDoiTitleCandidate = useMemo(() => {
+    if (!currentDocument || metadataCandidates.length === 0) return null
+    return metadataCandidates
+      .map((candidate) => ({
+        candidate,
+        similarity: titleSimilarity(currentDocument.title, candidate.title),
+      }))
+      .sort((left, right) => right.similarity - left.similarity)[0] ?? null
+  }, [currentDocument, metadataCandidates])
+
+  const hasDoiTitleMismatch = mode === 'cleanup'
+    && bestDoiTitleCandidate
+    && bestDoiTitleCandidate.similarity < 0.42
 
   useEffect(() => {
     setCurrentIndex((current) => {
@@ -122,8 +279,6 @@ export default function MetadataWorkspacePage() {
       return Math.min(current, queue.length - 1)
     })
   }, [queue.length])
-
-  const currentDocument = queue[currentIndex] ?? null
 
   useEffect(() => {
     if (!currentDocument) {
@@ -210,6 +365,25 @@ export default function MetadataWorkspacePage() {
         { providers: ['semantic_scholar', 'openalex', 'crossref'] },
       )
       setMetadataCandidates(candidates)
+      if (mode === 'cleanup' && candidates.length > 0) {
+        const bestMatch = candidates
+          .map((candidate) => ({
+            candidate,
+            similarity: titleSimilarity(document.title, candidate.title),
+          }))
+          .sort((left, right) => right.similarity - left.similarity)[0]
+
+        if (bestMatch && bestMatch.similarity >= 0.42) {
+          setVerifiedDoiTitleMatches((current) => {
+            const next = {
+              ...current,
+              [document.id]: trimmedDoi.toLowerCase(),
+            }
+            persistVerifiedDoiTitleMatches(next)
+            return next
+          })
+        }
+      }
       if (candidates.length === 0) {
         setCandidateError('No DOI results were found for this document.')
         setDoiSearchFailed(true)
@@ -221,9 +395,53 @@ export default function MetadataWorkspacePage() {
     }
   }
 
+  const runTitleAuthorCandidateSearch = async (document: Document) => {
+    const trimmedTitle = document.title.trim()
+    const primaryAuthor = document.authors[0]?.trim() ?? ''
+    if (!trimmedTitle && !primaryAuthor) {
+      setMetadataCandidates([])
+      setCandidateError('This document has no title or author to search.')
+      setDoiSearchFailed(false)
+      return
+    }
+
+    setIsFetchingCandidates(true)
+    setCandidateError('')
+    setDoiSearchFailed(false)
+    setMetadataCandidates([])
+    try {
+      const settings = await loadOnlineMetadataEnrichmentSettings(isDesktopApp)
+      const candidates = await findDocumentMetadataCandidates(
+        buildDocumentMetadataSeed({
+          title: trimmedTitle,
+          authors: JSON.stringify(primaryAuthor ? [primaryAuthor] : document.authors),
+          year: document.year,
+          doi: undefined,
+          citationKey: document.citationKey,
+        }),
+        settings,
+        { providers: ['semantic_scholar', 'openalex', 'crossref'] },
+      )
+      const doiCandidates = candidates.filter((candidate) => (candidate.doi ?? '').trim().length > 0)
+      setMetadataCandidates(doiCandidates)
+      if (doiCandidates.length === 0) {
+        setCandidateError('No title and author results with DOI were found for this document.')
+      }
+    } catch (error) {
+      setCandidateError(error instanceof Error ? error.message : 'Could not fetch metadata candidates.')
+    } finally {
+      setIsFetchingCandidates(false)
+    }
+  }
+
   useEffect(() => {
-    if (mode !== 'fetch_possible' || !currentDocument) return
+    if ((mode !== 'fetch_possible' && mode !== 'cleanup') || !currentDocument || !(currentDocument.doi ?? '').trim()) return
     void runDoiCandidateSearch(currentDocument, currentDocument.doi)
+  }, [currentDocument, isDesktopApp, mode])
+
+  useEffect(() => {
+    if (mode !== 'missing_doi' || !currentDocument) return
+    void runTitleAuthorCandidateSearch(currentDocument)
   }, [currentDocument, isDesktopApp, mode])
 
   const handleSave = async () => {
@@ -301,29 +519,81 @@ export default function MetadataWorkspacePage() {
             <div className="flex items-center gap-2 self-end">
               <Button
                 variant={mode === 'fetch_possible' ? 'secondary' : 'outline'}
-                className="rounded-full"
+                className={cn(
+                  'rounded-full border-sky-200',
+                  mode === 'fetch_possible'
+                    ? 'bg-sky-100 text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/40 dark:text-sky-100'
+                    : 'text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/30',
+                )}
                 onClick={() => {
                   setMode('fetch_possible')
                   setCurrentIndex(0)
                 }}
                 data-tour-id="metadata-fetch-possible"
               >
+                <Search className="mr-2 h-4 w-4" />
                 {t('metadataPage.fetchPossible')}
-                <Badge variant="secondary" className="ml-2">
+                <Badge variant="secondary" className="ml-2 bg-white/70 text-sky-950 dark:bg-black/20 dark:text-sky-100">
                   {filteredDocuments.filter(isFetchPossibleDocument).length}
                 </Badge>
               </Button>
               <Button
+                variant={mode === 'cleanup' ? 'secondary' : 'outline'}
+                className={cn(
+                  'rounded-full border-violet-200',
+                  mode === 'cleanup'
+                    ? 'bg-violet-100 text-violet-950 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-900/40 dark:text-violet-100'
+                    : 'text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/30',
+                )}
+                onClick={() => {
+                  setMode('cleanup')
+                  setCurrentIndex(0)
+                }}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                {t('metadataPage.cleanup')}
+                <Badge variant="secondary" className="ml-2 bg-white/70 text-violet-950 dark:bg-black/20 dark:text-violet-100">
+                  {filteredDocuments.filter((document) => isCleanupCandidateDocument(document, {
+                    ignoreVerifiedDoiTitle: hasVerifiedDoiTitleMatch(document),
+                  })).length}
+                </Badge>
+              </Button>
+              <Button
+                variant={mode === 'missing_doi' ? 'secondary' : 'outline'}
+                className={cn(
+                  'rounded-full border-amber-200',
+                  mode === 'missing_doi'
+                    ? 'bg-amber-100 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100'
+                    : 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/30',
+                )}
+                onClick={() => {
+                  setMode('missing_doi')
+                  setCurrentIndex(0)
+                }}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                {t('libraries.missingDoi')}
+                <Badge variant="secondary" className="ml-2 bg-white/70 text-amber-950 dark:bg-black/20 dark:text-amber-100">
+                  {filteredDocuments.filter(isMissingDoiDocument).length}
+                </Badge>
+              </Button>
+              <Button
                 variant={mode === 'missing' ? 'secondary' : 'outline'}
-                className="rounded-full"
+                className={cn(
+                  'rounded-full border-red-200',
+                  mode === 'missing'
+                    ? 'bg-red-100 text-red-950 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/40 dark:text-red-100'
+                    : 'text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30',
+                )}
                 onClick={() => {
                   setMode('missing')
                   setCurrentIndex(0)
                 }}
                 data-tour-id="metadata-missing"
               >
+                <CircleHelp className="mr-2 h-4 w-4" />
                 {t('metadataPage.missing')}
-                <Badge variant="secondary" className="ml-2">
+                <Badge variant="secondary" className="ml-2 bg-white/70 text-red-950 dark:bg-black/20 dark:text-red-100">
                   {filteredDocuments.filter(isMissingMetadataDocument).length}
                 </Badge>
               </Button>
@@ -341,11 +611,23 @@ export default function MetadataWorkspacePage() {
         ) : !currentDocument ? (
           <EmptyState
             icon={Database}
-            title={mode === 'fetch_possible' ? t('metadataPage.noFetchQueue') : t('metadataPage.noMissingQueue')}
+            title={
+              mode === 'fetch_possible'
+                ? t('metadataPage.noFetchQueue')
+                : mode === 'cleanup'
+                  ? t('metadataPage.noCleanupQueue')
+                  : mode === 'missing_doi'
+                    ? t('metadataPage.noMissingDoiQueue')
+                  : t('metadataPage.noMissingQueue')
+            }
             description={
               mode === 'fetch_possible'
                 ? t('metadataFields.allCompleteDescription', { library: currentLibrary.name })
-                : t('metadataFields.noMissingDescription', { library: currentLibrary.name })
+                : mode === 'cleanup'
+                  ? t('metadataPage.noCleanupDescription', { library: currentLibrary.name })
+                  : mode === 'missing_doi'
+                    ? t('metadataPage.noMissingDoiDescription', { library: currentLibrary.name })
+                  : t('metadataFields.noMissingDescription', { library: currentLibrary.name })
             }
           />
         ) : (
@@ -380,6 +662,13 @@ export default function MetadataWorkspacePage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {mode === 'cleanup' ? (
+                    currentCleanupIssues.map((issue) => (
+                      <Badge key={issue} variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
+                        {issue}
+                      </Badge>
+                    ))
+                  ) : null}
                   {hasUnsavedChanges ? (
                     <Button
                       onClick={() => void handleSave()}
@@ -475,19 +764,35 @@ export default function MetadataWorkspacePage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <CardTitle className="text-base">
-                      {mode === 'fetch_possible' ? t('metadataPage.doiReview') : t('metadataPage.manualReview')}
+                      {mode === 'fetch_possible'
+                        ? t('metadataPage.doiReview')
+                        : mode === 'cleanup'
+                          ? t('metadataPage.cleanupReview')
+                          : mode === 'missing_doi'
+                            ? t('metadataPage.missingDoiReview')
+                          : t('metadataPage.manualReview')}
                     </CardTitle>
                     <CardDescription>
                       {mode === 'fetch_possible'
                         ? t('metadataPage.doiReviewDescription')
-                        : t('metadataPage.manualReviewDescription')}
+                        : mode === 'cleanup'
+                          ? t('metadataPage.cleanupReviewDescription')
+                          : mode === 'missing_doi'
+                            ? t('metadataPage.missingDoiReviewDescription')
+                          : t('metadataPage.manualReviewDescription')}
                     </CardDescription>
                   </div>
-                  {mode === 'fetch_possible' ? (
+                  {(mode === 'fetch_possible' || mode === 'missing_doi' || (mode === 'cleanup' && (currentDocument.doi ?? '').trim())) ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => void runDoiCandidateSearch(currentDocument, doi)}
+                      onClick={() => {
+                        if (mode === 'missing_doi') {
+                          void runTitleAuthorCandidateSearch(currentDocument)
+                          return
+                        }
+                        void runDoiCandidateSearch(currentDocument, doi)
+                      }}
                       disabled={isFetchingCandidates}
                     >
                       <Globe className="mr-2 h-4 w-4" />
@@ -497,11 +802,39 @@ export default function MetadataWorkspacePage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {mode === 'fetch_possible' ? (
+                {mode === 'fetch_possible' || mode === 'cleanup' || mode === 'missing_doi' ? (
+                  <>
+                  {mode === 'cleanup' ? (
+                    <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+                      <div className="flex items-center gap-2 font-medium">
+                        <Sparkles className="h-4 w-4" />
+                        {t('metadataPage.cleanupReasons')}
+                      </div>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {currentCleanupIssues.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                        {hasDoiTitleMismatch ? (
+                          <li>
+                            {t('metadataPage.doiTitleMismatch', {
+                              similarity: `${Math.round((bestDoiTitleCandidate?.similarity ?? 0) * 100)}%`,
+                            })}
+                          </li>
+                        ) : null}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {mode === 'cleanup' && !(currentDocument.doi ?? '').trim() ? (
+                    <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                      {t('metadataPage.cleanupManualHelp')}
+                    </div>
+                  ) : (
                   isFetchingCandidates ? (
                     <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                       <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                      {t('metadataPage.searchAcrossProviders')}
+                      {mode === 'missing_doi'
+                        ? t('metadataPage.searchTitleAuthorAcrossProviders')
+                        : t('metadataPage.searchAcrossProviders')}
                     </div>
                   ) : metadataCandidates.length > 0 ? (
                     metadataCandidates.map((candidate) => (
@@ -562,7 +895,8 @@ export default function MetadataWorkspacePage() {
                     <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                       {candidateError || t('metadataPage.noCandidates')}
                     </div>
-                  )
+                  ))}
+                  </>
                 ) : (
                   <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                     {t('metadataPage.manualQueueHelp')}

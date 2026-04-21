@@ -26,6 +26,7 @@ type ProcessingContext = {
 
 export type DocumentIngestionOptions = {
   enableOcrFallback?: boolean
+  enableMetadataExtraction?: boolean
   enableKeywordExtraction?: boolean
   enableOnlineMetadataEnrichment?: boolean
   enableSemanticClassification?: boolean
@@ -56,6 +57,7 @@ export type DocumentIngestionResult = {
 
 const DEFAULT_PIPELINE_OPTIONS: ResolvedDocumentIngestionOptions = {
   enableOcrFallback: true,
+  enableMetadataExtraction: true,
   enableKeywordExtraction: true,
   enableOnlineMetadataEnrichment: false,
   enableSemanticClassification: false,
@@ -281,6 +283,10 @@ async function runLocalMetadataExtractionStage(
     return stageSkipped(stage, 'Metadata is already populated.')
   }
 
+  if (!options.enableMetadataExtraction && !isForced(stage, options)) {
+    return stageSkipped(stage, 'Local metadata extraction is disabled for this run.')
+  }
+
   try {
     await updateStageStart(context.documentId, stage)
     const metadata = await extractLocalPdfMetadata(metadataFilePath(context), context.sourcePath)
@@ -321,7 +327,9 @@ async function runTextExtractionStage(
           searchText: extracted.text,
         })
 
-    const extractedDoi = !document.doi ? extractNormalizedDoi(plainText) : undefined
+    const extractedDoi = options.enableMetadataExtraction && !document.doi
+      ? extractNormalizedDoi(plainText)
+      : undefined
     if (extractedDoi) {
       await repo.updateDocumentMetadata(context.documentId, {
         doi: extractedDoi,

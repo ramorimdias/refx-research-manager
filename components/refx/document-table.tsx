@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CheckedState } from '@radix-ui/react-checkbox'
-import { BookMarked, CheckCheck, ChevronDown, ChevronUp, CircleHelp, FileText, MessageSquare, MoreHorizontal, Search, Settings2, Star, TriangleAlert } from 'lucide-react'
+import { BookMarked, Check, CheckCheck, ChevronDown, ChevronUp, CircleHelp, FileText, MessageSquare, MoreHorizontal, Search, Settings2, Star } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -25,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ContextMenuItem } from '@/components/ui/context-menu'
 import { useDocumentListSelection } from '@/lib/hooks/use-document-list-selection'
 import { cn } from '@/lib/utils'
 import type { Document, DocumentEphemeralUiFlags, ReadingStage } from '@/lib/types'
@@ -74,6 +77,8 @@ const READING_STAGE_OPTIONS: Array<{ value: ReadingStage; label: string }> = [
   { value: 'reading', label: 'Reading' },
   { value: 'finished', label: 'Finished' },
 ]
+
+type QuickEditField = 'title' | 'authors' | 'year'
 
 function getTableMetadataState(document: Document) {
   const hasTitle = hasUsableMetadataTitle(document.title)
@@ -137,7 +142,7 @@ function getMetadataIconState(document: Document) {
   if (state.label === 'Missing DOI') {
     return {
       label: 'Missing DOI',
-      Icon: TriangleAlert,
+      Icon: Check,
       className: 'border-amber-200 bg-amber-100 text-black shadow-[0_0_0_2px_rgba(245,158,11,0.12)]',
     }
   }
@@ -322,6 +327,8 @@ export function DocumentTableColumnControls() {
 
 export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTableProps) {
   const t = useT()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { locale } = useLocale()
   const minimumColumnWidths = useMemo(
     () => Object.fromEntries(
@@ -345,6 +352,8 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
   const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() => loadStoredColumnVisibility())
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => loadStoredColumnOrder())
   const [resizingColumn, setResizingColumn] = useState<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
+  const [quickEdit, setQuickEdit] = useState<{ documentId: string; field: QuickEditField; value: string } | null>(null)
+  const [contextQuickEdit, setContextQuickEdit] = useState<{ documentId: string; field: QuickEditField } | null>(null)
   const { toggleFavorite, updateDocument } = useDocumentActions()
   const selection = useDocumentListSelection(documents.map((document) => document.id))
 
@@ -476,6 +485,98 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
         ? `/books/notes?id=${document.id}`
         : `/reader/view?id=${document.id}`
 
+  const startQuickEdit = (doc: Document, field: QuickEditField) => {
+    const value = field === 'title'
+      ? doc.title
+      : field === 'authors'
+        ? doc.authors.join(', ')
+        : doc.year ? String(doc.year) : ''
+
+    setQuickEdit({ documentId: doc.id, field, value })
+  }
+
+  const cancelQuickEdit = () => setQuickEdit(null)
+
+  const saveQuickEdit = async () => {
+    if (!quickEdit) return
+    const value = quickEdit.value.trim()
+    const documentId = quickEdit.documentId
+    const field = quickEdit.field
+
+    if (field === 'title') {
+      if (!value) return
+      setQuickEdit(null)
+      await updateDocument(documentId, { title: value })
+      return
+    }
+
+    if (field === 'authors') {
+      setQuickEdit(null)
+      await updateDocument(documentId, {
+        authors: value
+          .split(',')
+          .map((author) => author.trim())
+          .filter(Boolean),
+      })
+      return
+    }
+
+    const parsedYear = value ? Number.parseInt(value, 10) : undefined
+    if (value && (!Number.isFinite(parsedYear) || (parsedYear ?? 0) < 0)) return
+    setQuickEdit(null)
+    await updateDocument(documentId, { year: parsedYear })
+  }
+
+  const renderQuickEditInput = (className?: string) => (
+    <Input
+      data-selection-ignore="true"
+      autoFocus
+      value={quickEdit?.value ?? ''}
+      onChange={(event) => setQuickEdit((current) => current ? { ...current, value: event.target.value } : current)}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          void saveQuickEdit()
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          cancelQuickEdit()
+        }
+      }}
+      onBlur={() => void saveQuickEdit()}
+      className={cn('h-8 rounded-lg px-2.5 text-sm', className)}
+    />
+  )
+
+  const quickEditLabel = (field: QuickEditField) => {
+    if (field === 'title') return t('documentTable.editTitle')
+    if (field === 'authors') return t('documentTable.editAuthors')
+    return t('documentTable.editYear')
+  }
+
+  const renderQuickEditMenu = (
+    doc: Document,
+    field: QuickEditField,
+    children: ReactNode,
+  ) => (
+    <div
+      data-selection-ignore="true"
+      data-quick-edit-field={field}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={() => setContextQuickEdit({ documentId: doc.id, field })}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        startQuickEdit(doc, field)
+      }}
+      className="min-w-0"
+    >
+      {children}
+    </div>
+  )
+
   const getMetadataIconLabel = (label: string) => {
     if (label === 'Complete') return t('common.complete')
     if (label === 'Missing DOI') return t('libraries.missingDoi')
@@ -504,9 +605,10 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
       return badge
     }
 
+    const returnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
     const href = metadataState.label === 'Fetch Possible'
-      ? `/documents?id=${doc.id}&metadata=doi&autoSearchMetadata=1`
-      : `/documents?id=${doc.id}`
+      ? `/documents?id=${doc.id}&metadata=doi&autoSearchMetadata=1&returnTo=${encodeURIComponent(returnTo)}`
+      : `/documents?id=${doc.id}&returnTo=${encodeURIComponent(returnTo)}`
 
     return (
       <Link
@@ -557,28 +659,45 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
       case 'title':
         return (
           <TableCell key={column.key}>
-            <Link href={getOpenHref(doc)} className="group/link flex items-start gap-2">
-              {doc.documentType === 'physical_book'
-                ? <BookMarked className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                : <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
-              <div className="min-w-0">
-                <div className="flex items-start gap-2">
-                  <span className="block min-w-0 truncate font-medium text-foreground transition-colors group-hover/link:text-primary">
-                    {doc.title}
-                  </span>
-                  {ephemeralFlags?.isNewlyAdded && <NewBadge />}
-                </div>
+            {quickEdit?.documentId === doc.id && quickEdit.field === 'title' ? (
+              <div className="flex items-center gap-2">
+                {doc.documentType === 'physical_book'
+                  ? <BookMarked className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  : <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                {renderQuickEditInput()}
               </div>
-            </Link>
+            ) : renderQuickEditMenu(
+              doc,
+              'title',
+              <Link href={getOpenHref(doc)} className="group/link flex items-start gap-2">
+                {doc.documentType === 'physical_book'
+                  ? <BookMarked className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  : <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+                <div className="min-w-0">
+                  <div className="flex items-start gap-2">
+                    <span className="block min-w-0 truncate font-medium text-foreground transition-colors group-hover/link:text-primary">
+                      {doc.title}
+                    </span>
+                    {ephemeralFlags?.isNewlyAdded && <NewBadge />}
+                  </div>
+                </div>
+              </Link>,
+            )}
           </TableCell>
         )
       case 'authors':
         return (
           <TableCell key={column.key}>
-            <span className="block truncate text-sm text-muted-foreground">
-              {doc.authors.slice(0, 2).join(', ')}
-              {doc.authors.length > 2 && ' et al.'}
-            </span>
+            {quickEdit?.documentId === doc.id && quickEdit.field === 'authors'
+              ? renderQuickEditInput()
+              : renderQuickEditMenu(
+                doc,
+                'authors',
+                <span className="block truncate text-sm text-muted-foreground">
+                  {doc.authors.slice(0, 2).join(', ') || '—'}
+                  {doc.authors.length > 2 && ' et al.'}
+                </span>,
+              )}
           </TableCell>
         )
       case 'tags':
@@ -604,7 +723,15 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
       case 'year':
         return (
           <TableCell key={column.key} className="text-center">
+            {quickEdit?.documentId === doc.id && quickEdit.field === 'year'
+              ? renderQuickEditInput('text-center')
+              : renderQuickEditMenu(
+                doc,
+                'year',
+                (
             <span className="text-sm">{doc.year || '—'}</span>
+                ),
+              )}
           </TableCell>
         )
       case 'status':
@@ -717,7 +844,19 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
             const ephemeralFlags = ephemeralFlagsById[doc.id]
 
             return (
-              <DocumentContextMenu key={doc.id} document={doc}>
+              <DocumentContextMenu
+                key={doc.id}
+                document={doc}
+                prependContextItems={
+                  contextQuickEdit?.documentId === doc.id
+                    ? (
+                        <ContextMenuItem onSelect={() => startQuickEdit(doc, contextQuickEdit.field)}>
+                          {quickEditLabel(contextQuickEdit.field)}
+                        </ContextMenuItem>
+                      )
+                    : null
+                }
+              >
                 <TableRow
                   data-state={selection.isSelected(doc.id) ? 'selected' : undefined}
                   className={cn(
@@ -725,6 +864,12 @@ export function DocumentTable({ documents, ephemeralFlagsById = {} }: DocumentTa
                     ephemeralFlags?.isNewlyAdded && 'bg-emerald-500/[0.06] hover:bg-emerald-500/[0.08]',
                   )}
                   onClick={(event) => handleRowClick(doc.id, event)}
+                  onContextMenu={(event) => {
+                    const target = event.target instanceof Element ? event.target : null
+                    if (!target?.closest('[data-quick-edit-field]')) {
+                      setContextQuickEdit(null)
+                    }
+                  }}
                 >
                   <TableCell>
                     <Checkbox
