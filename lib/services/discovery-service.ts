@@ -134,6 +134,10 @@ function discoverKey(work: Pick<DiscoverWork, 'doi' | 'openAlexId' | 'title' | '
       : `tay:${titleAuthorYearKey(work.title, work.authors, work.year)}`
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 async function fetchJson<T>(url: string, signal?: AbortSignal, headers?: HeadersInit): Promise<T | null> {
   return enqueue(
     url,
@@ -481,6 +485,7 @@ export async function fetchDiscoverStep(
   try {
     items = await fetchOpenAlexStep(sourceWork, mode, signal)
   } catch (error) {
+    if (isAbortError(error)) throw error
     console.warn(`OpenAlex discover ${mode} failed:`, error)
   }
 
@@ -489,6 +494,7 @@ export async function fetchDiscoverStep(
       const semanticItems = await fetchSemanticScholarStep(sourceWork, mode, settings.semanticScholarApiKey, signal)
       items = dedupeWorks([...items, ...semanticItems])
     } catch (error) {
+      if (isAbortError(error)) throw error
       console.warn(`Semantic Scholar discover ${mode} fallback failed:`, error)
     }
   }

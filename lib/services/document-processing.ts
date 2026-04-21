@@ -54,8 +54,18 @@ type PdfJsModule = {
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
+let pdfJsWorkerModulePromise: Promise<void> | null = null
 const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.js'
 const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
+
+function browserModuleImport(specifier: string) {
+  const browserImport = new Function(
+    'specifier',
+    'return import(specifier)',
+  ) as (specifier: string) => Promise<unknown>
+
+  return browserImport(specifier)
+}
 
 function resolvePdfJsCandidate(importedModule: unknown) {
   const candidate = (
@@ -82,6 +92,19 @@ function resolvePdfJsCandidate(importedModule: unknown) {
 
 function normalizeText(input: string) {
   return input.replace(/\s+/g, ' ').trim()
+}
+
+async function ensurePdfJsWorkerModuleLoaded() {
+  if (!pdfJsWorkerModulePromise) {
+    pdfJsWorkerModulePromise = browserModuleImport(BROWSER_PDFJS_WORKER_PATH)
+      .then(() => undefined)
+      .catch((error) => {
+        pdfJsWorkerModulePromise = null
+        console.warn('PDF.js worker module preload failed; falling back to workerSrc only:', error)
+      })
+  }
+
+  await pdfJsWorkerModulePromise
 }
 
 function buildPageLines(words: PdfWord[]) {
@@ -361,11 +384,7 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js can only be initialized in a browser context.')
       }
 
-      const browserImport = new Function(
-        'specifier',
-        'return import(specifier)',
-      ) as (specifier: string) => Promise<unknown>
-      const candidate = resolvePdfJsCandidate(await browserImport(BROWSER_PDFJS_MODULE_PATH))
+      const candidate = resolvePdfJsCandidate(await browserModuleImport(BROWSER_PDFJS_MODULE_PATH))
 
       if (!candidate || typeof candidate !== 'object') {
         throw new Error('PDF.js module could not be initialized.')
@@ -380,6 +399,7 @@ export async function loadPdfJsModule() {
       }
 
       pdfjs.GlobalWorkerOptions.workerSrc = BROWSER_PDFJS_WORKER_PATH
+      await ensurePdfJsWorkerModuleLoaded()
 
       return pdfjs
     })().catch((error) => {

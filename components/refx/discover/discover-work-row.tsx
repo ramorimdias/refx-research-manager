@@ -21,8 +21,8 @@ export function DiscoverWorkRow({ work }: { work: DiscoverWork }) {
       onMouseLeave={() => setHoveredWork(null)}
       className={cn(
         'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 transition',
-        selectedWorkId === work.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30',
-        hoveredWorkId === work.id && 'border-sky-400 bg-sky-50/70',
+        selectedWorkId === work.id ? 'border-primary bg-primary/5 dark:bg-primary/10' : 'border-border hover:border-primary/30',
+        hoveredWorkId === work.id && 'border-sky-400 bg-sky-50/70 dark:border-sky-400/60 dark:bg-sky-400/10',
       )}
     >
       <div className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden">

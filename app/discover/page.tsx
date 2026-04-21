@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ReactFlowProvider } from 'reactflow'
-import { Rocket, Telescope, Trash2 } from 'lucide-react'
+import { Rocket, Star, Telescope, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DiscoverEmptyState } from '@/components/refx/discover/discover-empty-state'
 import { DiscoverTimeline } from '@/components/refx/discover/discover-timeline'
@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { filterDiscoverItems } from '@/lib/services/discover-filter-service'
+import { countDiscoverJourneyStars, countDiscoverStepStars } from '@/lib/services/discover-star-count-service'
 import { useDiscoverActions, useDiscoverStore } from '@/lib/stores/discover-store'
 import { useT } from '@/lib/localization'
 import { cn } from '@/lib/utils'
@@ -106,6 +107,9 @@ function DiscoverPageContent() {
     && selectedWork
     && selectedWork.id === currentStep.sourceWork.id,
   )
+  const activeStepFilterCount = currentStep
+    ? [currentStep.filters.yearMin, currentStep.filters.yearMax].filter((value) => value != null).length
+    : 0
   const showFilterHint = Boolean(currentStep && currentStep.items.length > 50)
   const isSavedJourney = Boolean(activeJourney && savedJourneys.some((journey) => journey.id === activeJourney.id))
   const homeJourneyEntries = useMemo(() => {
@@ -151,13 +155,13 @@ function DiscoverPageContent() {
           <span
             className={cn(
               'font-bold',
-              currentStep.mode === 'references' ? 'text-sky-600' : 'text-rose-600',
+              currentStep.mode === 'references' ? 'text-sky-600 dark:text-sky-300' : 'text-rose-600 dark:text-rose-300',
             )}
           >
             {currentStep.mode === 'references' ? t('discoverPage.referencesLabel') : t('discoverPage.citationsLabel')}
           </span>
           <span className="text-muted-foreground"> {t('discoverPage.of')} </span>
-          <span className="font-bold text-amber-500">
+          <span className="font-bold text-amber-500 dark:text-amber-300">
             {currentStep.sourceWork.firstAuthorLabel}
             {currentStep.sourceWork.year ? `, ${currentStep.sourceWork.year}` : ''}
           </span>
@@ -226,7 +230,7 @@ function DiscoverPageContent() {
           <p className="text-sm text-muted-foreground">{t('discoverPage.subtitle')}</p>
         </div>
 
-        <Card className="min-h-0 flex-1 rounded-[32px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.96)_100%)] p-6 shadow-sm">
+        <Card className="min-h-0 flex-1 rounded-[32px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.96)_100%)] p-6 shadow-sm dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(2,6,23,0.94)_100%)]">
           <div className="flex h-full min-h-0 flex-col gap-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -254,14 +258,15 @@ function DiscoverPageContent() {
                 const isPendingDelete = journeyPendingDeleteId === id
                 const isActiveEntry = activeJourney?.id === journey.id || (isUnsavedCurrent && activeJourney && !isSavedJourney)
                 const lastStep = journey.steps[journey.steps.length - 1] ?? null
+                const totalStarCount = countDiscoverJourneyStars(journey)
                 return (
                   <div
                     key={id}
                     className={cn(
                       'rounded-[28px] border px-5 py-4 transition',
                       isActiveEntry
-                        ? 'border-primary/30 bg-primary/5 shadow-sm'
-                        : 'border-border bg-background/90 hover:border-primary/30 hover:bg-primary/5',
+                        ? 'border-primary/30 bg-primary/5 shadow-sm dark:border-primary/40 dark:bg-primary/10'
+                        : 'border-border bg-background/90 hover:border-primary/30 hover:bg-primary/5 dark:bg-slate-950/70 dark:hover:bg-primary/10',
                     )}
                   >
                     <div className="flex items-start justify-between gap-4">
@@ -281,24 +286,25 @@ function DiscoverPageContent() {
                           <div className={cn(
                             'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
                             isUnsavedCurrent
-                              ? 'border-amber-200 bg-amber-50 text-amber-700'
-                              : 'border-sky-200 bg-sky-50 text-sky-700',
+                              ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-400/10 dark:text-amber-200'
+                              : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-400/10 dark:text-sky-200',
                           )}>
                             {isUnsavedCurrent ? <Telescope className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
                           </div>
                           <div className="font-medium">{journey.name}</div>
                           {isUnsavedCurrent ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-400/15 dark:text-amber-200">
                               {t('discoverPage.unsaved')}
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-3 flex items-center gap-3 overflow-hidden pb-1">
+                        <div className="mt-3 flex items-center gap-3 overflow-hidden pb-1 pt-2">
                           {journey.steps
                             .slice(Math.max(0, journey.steps.length - HOME_JOURNEY_PREVIEW_STEP_LIMIT))
                             .map((step, previewIndex, visibleSteps) => {
                               const index = journey.steps.length - visibleSteps.length + previewIndex
                               const isLastVisibleStep = previewIndex === visibleSteps.length - 1
+                              const stepStarCount = countDiscoverStepStars(step)
                               return (
                                 <div key={step.id} className="flex items-center gap-3">
                                   {previewIndex === 0 && index > 0 ? (
@@ -310,17 +316,22 @@ function DiscoverPageContent() {
                                   {previewIndex > 0 ? <div className="h-px w-10 bg-border" /> : null}
                                   <span
                                     className={cn(
-                                      'flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full border px-3 text-sm font-semibold',
+                                      'relative flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full border px-3 text-sm font-semibold',
                                       index === journey.steps.length - 1
                                         ? 'border-primary bg-primary text-primary-foreground'
                                         : 'border-border bg-background text-muted-foreground',
                                     )}
                                   >
                                     {index + 1}
+                                    {stepStarCount > 0 ? (
+                                      <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-background bg-amber-400 px-1 text-[10px] font-black leading-none text-slate-950 shadow-sm">
+                                        {stepStarCount}
+                                      </span>
+                                    ) : null}
                                   </span>
                                   {isLastVisibleStep && lastStep ? (
                                     <span className="min-w-0 truncate text-sm text-muted-foreground">
-                                      <span className={cn('font-semibold', lastStep.mode === 'references' ? 'text-sky-600' : 'text-rose-600')}>
+                                      <span className={cn('font-semibold', lastStep.mode === 'references' ? 'text-sky-600 dark:text-sky-300' : 'text-rose-600 dark:text-rose-300')}>
                                         {lastStep.mode === 'references' ? t('discoverPage.referencesLabel') : t('discoverPage.citationsLabel')}
                                       </span>
                                       <span>{` ${t('discoverPage.of')} ${lastStep.sourceWork.firstAuthorLabel}`}</span>
@@ -330,6 +341,13 @@ function DiscoverPageContent() {
                                 </div>
                               )
                             })}
+                          {journey.steps.length > 0 ? <div className="h-px w-10 bg-border" /> : null}
+                          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+                            <Star className="h-4 w-4" />
+                            <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border border-background bg-amber-400 px-1 text-[10px] font-black leading-none text-slate-950 shadow-sm">
+                              {totalStarCount}
+                            </span>
+                          </span>
                         </div>
                       </button>
                       {isPendingDelete ? (
@@ -407,7 +425,7 @@ function DiscoverPageContent() {
         </div>
 
         {error ? (
-          <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+          <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">{error}</div>
         ) : null}
 
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
@@ -462,7 +480,7 @@ function DiscoverPageContent() {
       ) : null}
 
       {error ? (
-        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">{error}</div>
       ) : null}
 
       <div className="grid min-h-0 flex-1 gap-4 overflow-hidden xl:grid-cols-[340px_minmax(0,1fr)_360px]">
@@ -482,6 +500,7 @@ function DiscoverPageContent() {
             mode={activeStepIndex === -1 ? 'starred' : currentStep?.mode}
             isLoading={isLoading}
             starredLinks={activeStepIndex === -1 ? starredLinks : []}
+            activeFilterCount={activeStepIndex === -1 ? 0 : activeStepFilterCount}
           />
         </div>
         <DiscoverRightPane

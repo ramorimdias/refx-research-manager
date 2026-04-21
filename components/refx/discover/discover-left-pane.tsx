@@ -52,7 +52,7 @@ export function DiscoverLeftPane({
         <button
           type="button"
           onClick={onFilterHintClick}
-          className="rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-left text-sm text-amber-900 transition hover:border-amber-300 hover:bg-amber-50"
+          className="rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-left text-sm text-amber-900 transition hover:border-amber-300 hover:bg-amber-50 dark:border-amber-500/30 dark:bg-amber-400/10 dark:text-amber-100 dark:hover:border-amber-400/40 dark:hover:bg-amber-400/15"
         >
           {t('discoverPage.largeStepHint')}
         </button>

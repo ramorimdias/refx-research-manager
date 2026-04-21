@@ -21,7 +21,7 @@ export function DiscoverMapNode({ data }: NodeProps<DiscoverMapNodeData>) {
     <div className="relative">
       <div
         className={cn(
-          'h-[56px] w-[56px] rounded-full border bg-background shadow-sm transition',
+          'h-[56px] w-[56px] rounded-full border bg-background shadow-sm transition dark:border-slate-500 dark:bg-slate-950',
           isSource && 'border-primary shadow-[0_0_0_10px_rgba(14,165,233,0.12)]',
           isSelected && 'border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.16)]',
           work.inLibrary && 'ring-2 ring-emerald-300/70',
@@ -41,23 +41,13 @@ export function DiscoverMapNode({ data }: NodeProps<DiscoverMapNodeData>) {
         )}
       >
         <div
-          className="font-medium text-foreground"
-          style={{
-            WebkitTextStroke: '3px rgba(255,255,255,0.98)',
-            paintOrder: 'stroke fill',
-            textShadow: '0 1px 6px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.9)',
-          }}
+          className="font-medium text-foreground [-webkit-text-stroke:3px_rgba(255,255,255,0.98)] [paint-order:stroke_fill] [text-shadow:0_1px_6px_rgba(255,255,255,0.95),0_0_10px_rgba(255,255,255,0.9)] dark:[-webkit-text-stroke:3px_rgba(2,6,23,0.96)] dark:[text-shadow:0_1px_6px_rgba(2,6,23,0.95),0_0_10px_rgba(2,6,23,0.9)]"
         >
           {baseLabel}
         </div>
         {showExpandedLabel ? (
           <div
-            className="mx-auto mt-1 max-w-[220px] text-[11px] leading-4 text-muted-foreground"
-            style={{
-              WebkitTextStroke: '2px rgba(255,255,255,0.96)',
-              paintOrder: 'stroke fill',
-              textShadow: '0 1px 6px rgba(255,255,255,0.92), 0 0 10px rgba(255,255,255,0.88)',
-            }}
+            className="mx-auto mt-1 max-w-[220px] text-[11px] leading-4 text-muted-foreground [-webkit-text-stroke:2px_rgba(255,255,255,0.96)] [paint-order:stroke_fill] [text-shadow:0_1px_6px_rgba(255,255,255,0.92),0_0_10px_rgba(255,255,255,0.88)] dark:[-webkit-text-stroke:2px_rgba(2,6,23,0.94)] dark:[text-shadow:0_1px_6px_rgba(2,6,23,0.92),0_0_10px_rgba(2,6,23,0.88)]"
           >
             {work.title}
           </div>

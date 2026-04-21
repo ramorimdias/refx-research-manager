@@ -119,7 +119,7 @@ export function DiscoverRightPane({
             variant="outline"
             size="sm"
             onClick={() => toggleStar(work.id)}
-            className={work.isStarred ? 'border-amber-300 text-amber-700 hover:border-amber-400 hover:bg-amber-50' : ''}
+            className={work.isStarred ? 'border-amber-300 text-amber-700 hover:border-amber-400 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-400/10' : ''}
           >
             <Star className={work.isStarred ? 'mr-2 h-4 w-4 fill-amber-400 text-amber-400' : 'mr-2 h-4 w-4'} />
             {t('documentTable.favorite')}
@@ -172,12 +172,12 @@ export function DiscoverRightPane({
         </div>
 
         <div className="flex flex-col gap-2">
-          <div className="text-sm font-semibold text-amber-600">
+          <div className="text-sm font-semibold text-amber-600 dark:text-amber-300">
             {t(activeJourney ? 'discoverPage.chooseWhereToDiscover' : 'discoverPage.chooseWhereToStart')}
           </div>
           {pendingAdvanceMode ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
-              <div className="text-sm font-medium text-amber-900">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-500/30 dark:bg-amber-400/10">
+              <div className="text-sm font-medium text-amber-900 dark:text-amber-100">
                 {t('discoverPage.branchWarning')}
               </div>
               <div className="mt-3 flex gap-2">
@@ -192,7 +192,7 @@ export function DiscoverRightPane({
                 <Button
                   type="button"
                   size="sm"
-                  className="bg-amber-600 text-white hover:bg-amber-700"
+                  className="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:text-slate-950 dark:hover:bg-amber-400"
                   onClick={() => {
                     const mode = pendingAdvanceMode
                     setPendingAdvanceMode(null)
@@ -206,7 +206,7 @@ export function DiscoverRightPane({
           ) : null}
           {(!showStepFilters || currentMode !== 'references') ? (
             <Button
-              className="justify-start gap-2 bg-sky-600 text-white hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500"
+              className="justify-start gap-2 bg-sky-600 text-white hover:bg-sky-700 disabled:bg-slate-200 disabled:text-slate-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
               disabled={noReferences}
               onClick={() => handleAdvance('references')}
             >
@@ -228,7 +228,7 @@ export function DiscoverRightPane({
           {(!showStepFilters || currentMode !== 'citations') ? (
             <Button
               variant="outline"
-              className="justify-start gap-2 border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50 disabled:border-slate-200 disabled:text-slate-500"
+              className="justify-start gap-2 border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50 disabled:border-slate-200 disabled:text-slate-500 dark:border-rose-500/40 dark:text-rose-200 dark:hover:border-rose-400/50 dark:hover:bg-rose-400/10 dark:disabled:border-slate-700 dark:disabled:text-slate-500"
               disabled={noCitations}
               onClick={() => handleAdvance('citations')}
             >

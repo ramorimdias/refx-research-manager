@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, FileCheck, Star } from 'lucide-react'
+import { BookOpen, FileCheck, Funnel, FunnelPlus, Star } from 'lucide-react'
 import { computeHoverFocus } from '@/lib/services/map-hover-focus-service'
 import { useDiscoverActions, useDiscoverStore } from '@/lib/stores/discover-store'
 import type { DiscoverMode, DiscoverWork } from '@/lib/types'
@@ -9,8 +9,10 @@ import { cn } from '@/lib/utils'
 
 const DEFAULT_CANVAS_WIDTH = 640
 const DEFAULT_CANVAS_HEIGHT = 620
-const BUBBLE_RADIUS = 28
+const BUBBLE_RADIUS = 24
 const NODE_SIZE = BUBBLE_RADIUS * 2
+const BUBBLE_OUTER_OUTLINE_WIDTH = 4
+const BUBBLE_EDGE_RADIUS = BUBBLE_RADIUS + BUBBLE_OUTER_OUTLINE_WIDTH
 const CANVAS_SAFE_MARGIN = 24
 const ZONE_GAP = 56
 const GRID_X_GAP = 116
@@ -26,6 +28,7 @@ type PositionedWork = {
   y: number
   isSource?: boolean
   linkedCount?: number
+  activeFilterCount?: number
   relationMode?: DiscoverMode | 'starred'
 }
 
@@ -108,10 +111,10 @@ function trimLineToBubbleEdge(sourceCenter: { x: number; y: number }, targetCent
   const uy = dy / distance
 
   return {
-    sourceX: sourceCenter.x + ux * BUBBLE_RADIUS,
-    sourceY: sourceCenter.y + uy * BUBBLE_RADIUS,
-    targetX: targetCenter.x - ux * BUBBLE_RADIUS,
-    targetY: targetCenter.y - uy * BUBBLE_RADIUS,
+    sourceX: sourceCenter.x + ux * BUBBLE_EDGE_RADIUS,
+    sourceY: sourceCenter.y + uy * BUBBLE_EDGE_RADIUS,
+    targetX: targetCenter.x - ux * BUBBLE_EDGE_RADIUS,
+    targetY: targetCenter.y - uy * BUBBLE_EDGE_RADIUS,
   }
 }
 
@@ -134,6 +137,7 @@ function DiscoverBubble({
   y,
   isSource,
   linkedCount,
+  activeFilterCount,
   relationMode,
   isSelected,
   isHovered,
@@ -157,6 +161,7 @@ function DiscoverBubble({
   const showSourceIcon = isSource
   const showLibraryIcon = !isSource && work.inLibrary
   const showFavoriteIcon = !isSource && work.isStarred
+  const showFilterBadge = isSource && relationMode !== 'starred' && activeFilterCount != null
 
   return (
     <button
@@ -169,12 +174,12 @@ function DiscoverBubble({
     >
       <div
         className={cn(
-          'flex h-[56px] w-[56px] items-center justify-center rounded-full border border-slate-700 bg-background shadow-sm transition-all duration-500 ease-out',
+          'flex h-[48px] w-[48px] items-center justify-center rounded-full border border-slate-700 bg-background shadow-sm outline outline-4 outline-offset-0 outline-white transition-[background-color,border-color,box-shadow,outline-color,opacity,transform] duration-500 ease-out dark:border-slate-500 dark:bg-slate-950 dark:outline-slate-950',
           isSource && 'border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.16)]',
           isSelected && !isSource && 'border-transparent shadow-[0_0_0_10px_rgba(251,191,36,0.16)]',
-          isSelected && !isSource && relationMode === 'references' && 'bg-[radial-gradient(circle_at_center,rgba(191,219,254,0.92)_0%,rgba(219,234,254,0.82)_45%,rgba(255,255,255,0.98)_100%)]',
-          isSelected && !isSource && relationMode === 'citations' && 'bg-[radial-gradient(circle_at_center,rgba(254,202,202,0.92)_0%,rgba(254,226,226,0.82)_45%,rgba(255,255,255,0.98)_100%)]',
-          isSelected && !isSource && relationMode !== 'references' && relationMode !== 'citations' && 'bg-[radial-gradient(circle_at_center,rgba(253,230,138,0.9)_0%,rgba(254,243,199,0.82)_45%,rgba(255,255,255,0.98)_100%)]',
+          isSelected && !isSource && relationMode === 'references' && 'bg-[radial-gradient(circle_at_center,rgba(191,219,254,0.92)_0%,rgba(219,234,254,0.82)_45%,rgba(255,255,255,0.98)_100%)] dark:bg-[radial-gradient(circle_at_center,rgba(96,165,250,0.48)_0%,rgba(37,99,235,0.28)_48%,rgba(15,23,42,0.98)_100%)]',
+          isSelected && !isSource && relationMode === 'citations' && 'bg-[radial-gradient(circle_at_center,rgba(254,202,202,0.92)_0%,rgba(254,226,226,0.82)_45%,rgba(255,255,255,0.98)_100%)] dark:bg-[radial-gradient(circle_at_center,rgba(251,113,133,0.46)_0%,rgba(225,29,72,0.26)_48%,rgba(15,23,42,0.98)_100%)]',
+          isSelected && !isSource && relationMode !== 'references' && relationMode !== 'citations' && 'bg-[radial-gradient(circle_at_center,rgba(253,230,138,0.9)_0%,rgba(254,243,199,0.82)_45%,rgba(255,255,255,0.98)_100%)] dark:bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.48)_0%,rgba(180,83,9,0.24)_48%,rgba(15,23,42,0.98)_100%)]',
           !isSource && relationMode === 'references' && 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.55),inset_0_0_18px_rgba(59,130,246,0.22)]',
           !isSource && relationMode === 'citations' && 'shadow-[inset_0_0_0_2px_rgba(239,68,68,0.55),inset_0_0_18px_rgba(239,68,68,0.22)]',
           work.inLibrary && 'ring-2 ring-emerald-300/70',
@@ -182,11 +187,31 @@ function DiscoverBubble({
           isDimmed && 'opacity-20',
         )}
       >
+        {showFilterBadge ? (
+          <span
+            className={cn(
+              'absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-amber-300 bg-background text-amber-700 shadow-sm transition-colors dark:border-amber-500/50 dark:bg-slate-950 dark:text-amber-200',
+              activeFilterCount > 0 && 'bg-amber-100 text-amber-800 dark:bg-amber-400/20 dark:text-amber-100',
+            )}
+            aria-label={`${activeFilterCount} active filters`}
+          >
+            {activeFilterCount > 0 ? (
+              <span className="relative flex h-4 w-4 items-center justify-center">
+                <Funnel className="h-3.5 w-3.5" strokeWidth={2.4} />
+                <span className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] font-black leading-none text-white ring-1 ring-background dark:bg-amber-300 dark:text-slate-950 dark:ring-slate-950">
+                  {activeFilterCount}
+                </span>
+              </span>
+            ) : (
+              <FunnelPlus className="h-3.5 w-3.5" strokeWidth={2.4} />
+            )}
+          </span>
+        ) : null}
         {showSourceIcon ? (
           <div className="relative flex items-center justify-center">
-            <BookOpen className="h-5 w-5 text-amber-700" strokeWidth={2.1} />
+            <BookOpen className="h-5 w-5 text-amber-700 dark:text-amber-200" strokeWidth={2.1} />
             {relationMode !== 'starred' ? (
-              <span className="absolute -bottom-3 rounded-full border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 shadow-sm">
+              <span className="absolute -bottom-3 rounded-full border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 shadow-sm dark:border-amber-500/40 dark:bg-slate-950 dark:text-amber-200">
                 {linkedCount ?? 0}
               </span>
             ) : null}
@@ -217,7 +242,7 @@ function DiscoverBubble({
       {showLabel ? (
         <div
           className={cn(
-            'pointer-events-none absolute text-xs transition-all duration-500 ease-out',
+            'pointer-events-none absolute text-xs transition-opacity duration-500 ease-out',
             labelSide === 'right' && 'left-full top-1/2 ml-3 w-[240px] -translate-y-1/2 text-left',
             labelSide === 'left' && 'right-full top-1/2 mr-3 w-[240px] -translate-y-1/2 text-right',
             labelSide === 'below-left' && 'left-0 top-full mt-2 w-[220px] text-left',
@@ -227,23 +252,13 @@ function DiscoverBubble({
           )}
         >
           <div
-            className="font-medium text-foreground"
-            style={{
-              WebkitTextStroke: '3px rgba(255,255,255,0.98)',
-              paintOrder: 'stroke fill',
-              textShadow: '0 1px 6px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.9)',
-            }}
+            className="font-medium text-foreground [-webkit-text-stroke:3px_rgba(255,255,255,0.98)] [paint-order:stroke_fill] [text-shadow:0_1px_6px_rgba(255,255,255,0.95),0_0_10px_rgba(255,255,255,0.9)] dark:[-webkit-text-stroke:3px_rgba(2,6,23,0.96)] dark:[text-shadow:0_1px_6px_rgba(2,6,23,0.95),0_0_10px_rgba(2,6,23,0.9)]"
           >
             {baseLabel}
           </div>
           {showExpandedLabel ? (
             <div
-              className="mx-auto mt-1 max-w-[220px] text-[11px] leading-4 text-muted-foreground"
-              style={{
-                WebkitTextStroke: '2px rgba(255,255,255,0.96)',
-                paintOrder: 'stroke fill',
-                textShadow: '0 1px 6px rgba(255,255,255,0.92), 0 0 10px rgba(255,255,255,0.88)',
-              }}
+              className="mx-auto mt-1 max-w-[220px] text-[11px] leading-4 text-muted-foreground [-webkit-text-stroke:2px_rgba(255,255,255,0.96)] [paint-order:stroke_fill] [text-shadow:0_1px_6px_rgba(255,255,255,0.92),0_0_10px_rgba(255,255,255,0.88)] dark:[-webkit-text-stroke:2px_rgba(2,6,23,0.94)] dark:[text-shadow:0_1px_6px_rgba(2,6,23,0.92),0_0_10px_rgba(2,6,23,0.88)]"
             >
               {work.title}
             </div>
@@ -262,6 +277,7 @@ export function DiscoverMap({
   mode,
   isLoading = false,
   starredLinks = [],
+  activeFilterCount = 0,
 }: {
   sourceWork: DiscoverWork
   items: DiscoverWork[]
@@ -270,6 +286,7 @@ export function DiscoverMap({
   mode?: DiscoverMode | 'starred'
   isLoading?: boolean
   starredLinks?: Array<{ sourceId: string; targetId: string }>
+  activeFilterCount?: number
 }) {
   const portalTransition = useDiscoverStore((state) => state.portalTransition)
   const { finishPortalTransition, setPortalTransitionPhase, setSelectedWork, setHoveredWork } = useDiscoverActions()
@@ -372,6 +389,7 @@ export function DiscoverMap({
       y: sourceTopY,
       isSource: true,
       linkedCount: items.length,
+      activeFilterCount,
       relationMode: mode,
     }
 
@@ -395,7 +413,7 @@ export function DiscoverMap({
         })
 
     return [source, ...related.map((item) => ({ ...item, relationMode: mode, isSource: item.isSource ?? false }))]
-  }, [canvasSize.height, canvasSize.width, items, mode, sourceWork])
+  }, [activeFilterCount, canvasSize.height, canvasSize.width, items, mode, sourceWork])
 
   const edges = useMemo(() => {
     const nodeById = new Map(positioned.map((node) => [node.work.id, node]))
@@ -526,7 +544,7 @@ export function DiscoverMap({
   }
 
   return (
-    <div ref={containerRef} className="relative h-full min-h-[620px] overflow-hidden rounded-[28px] border bg-card/95">
+    <div ref={containerRef} className="relative h-full min-h-[620px] overflow-hidden rounded-[28px] border bg-card/95 dark:border-slate-800 dark:bg-slate-950/95">
       <div
         className={cn(
           'absolute inset-0 transform-gpu will-change-transform',
@@ -538,8 +556,17 @@ export function DiscoverMap({
       >
         <svg className="absolute inset-0 h-full w-full" aria-hidden="true">
           <defs>
-            <marker id="discover-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#e2e8f0" />
+            <marker
+              id="discover-arrow"
+              viewBox="0 0 10 10"
+              refX="10"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+              className="text-slate-300 dark:text-slate-500"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" className="text-slate-300 dark:text-slate-500" />
             </marker>
           </defs>
           {edges.map((edge) => (
@@ -553,7 +580,7 @@ export function DiscoverMap({
               strokeWidth="1.8"
               markerEnd="url(#discover-arrow)"
               className={cn(
-                'text-slate-200 transition-opacity duration-500 ease-out',
+                'text-slate-300 transition-opacity duration-500 ease-out dark:text-slate-500',
                 hoverActive && hoverFocus.dimmedEdgeIds.has(edge.id) ? 'opacity-0' : hoverFocus.dimmedEdgeIds.has(edge.id) ? 'opacity-20' : 'opacity-90',
               )}
             />
@@ -589,7 +616,7 @@ export function DiscoverMap({
       {portalTransition && portalAnchorNode ? (
         <div
           className={cn(
-            'pointer-events-none absolute rounded-full border border-amber-300/90 bg-[radial-gradient(circle_at_center,rgba(255,255,255,1)_0%,rgba(254,243,199,0.96)_28%,rgba(251,191,36,0.92)_62%,rgba(245,158,11,0.82)_100%)] shadow-[0_0_0_14px_rgba(251,191,36,0.16),0_0_90px_rgba(251,191,36,0.34)] will-change-transform',
+            'pointer-events-none absolute rounded-full border border-amber-300/90 bg-[radial-gradient(circle_at_center,rgba(255,255,255,1)_0%,rgba(254,243,199,0.96)_28%,rgba(251,191,36,0.92)_62%,rgba(245,158,11,0.82)_100%)] shadow-[0_0_0_14px_rgba(251,191,36,0.16),0_0_90px_rgba(251,191,36,0.34)] will-change-transform dark:border-amber-300/70 dark:bg-[radial-gradient(circle_at_center,rgba(254,240,138,0.96)_0%,rgba(251,191,36,0.86)_34%,rgba(146,64,14,0.92)_72%,rgba(15,23,42,0.96)_100%)]',
             portalTransition.phase === 'entering' && 'animate-[discover-portal-overlay-enter_1100ms_cubic-bezier(0.14,0.72,0.18,1)_both]',
             portalTransition.phase === 'holding' && 'animate-[discover-portal-hold-overlay_1800ms_ease-in-out_infinite]',
             portalTransition.phase === 'revealing' && 'animate-[discover-portal-overlay-reveal_2300ms_cubic-bezier(0.16,0.78,0.18,1)_both]',
