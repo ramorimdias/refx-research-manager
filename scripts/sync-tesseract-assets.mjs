@@ -47,8 +47,9 @@ function syncLanguageAssets() {
 function syncPdfJsAssets() {
   const pdfJsDir = packageDir('pdfjs-dist')
   resetDirectory(publicPdfJsDir)
-  copyFileSync(join(pdfJsDir, 'build', 'pdf.mjs'), join(publicPdfJsDir, 'pdf.js'))
-  copyFileSync(join(pdfJsDir, 'build', 'pdf.worker.mjs'), join(publicPdfJsDir, 'pdf.worker.js'))
+  copyFileSync(join(pdfJsDir, 'legacy', 'build', 'pdf.mjs'), join(publicPdfJsDir, 'pdf.mjs'))
+  copyFileSync(join(pdfJsDir, 'legacy', 'build', 'pdf.worker.mjs'), join(publicPdfJsDir, 'pdf.worker.mjs'))
+  cpSync(join(pdfJsDir, 'wasm'), join(publicPdfJsDir, 'wasm'), { recursive: true })
 }
 
 resetDirectory(publicTesseractDir)

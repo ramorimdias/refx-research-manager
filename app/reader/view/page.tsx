@@ -27,6 +27,7 @@ import {
   extractPdfPageWords,
   extractSearchPreview,
   findPdfSearchOccurrences,
+  getPdfJsWasmUrl,
   loadPdfJsModule,
   type PdfWord,
   type SearchOccurrence,
@@ -567,8 +568,9 @@ function RealReaderViewPage() {
         objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
         const task = pdfjs.getDocument({
           data: bytes,
-          disableWorker: true,
+          disableWorker: false,
           useWorkerFetch: false,
+          wasmUrl: getPdfJsWasmUrl(),
           isEvalSupported: false,
           stopAtErrors: false,
         })
@@ -1523,8 +1525,9 @@ function RealReaderViewPage() {
       const bytes = await readFile(filePath)
       const loadingTask = pdfjs.getDocument({
         data: new Uint8Array(bytes),
-        disableWorker: true,
+        disableWorker: false,
         useWorkerFetch: false,
+        wasmUrl: getPdfJsWasmUrl(),
         isEvalSupported: false,
         stopAtErrors: false,
       })

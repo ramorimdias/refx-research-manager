@@ -50,10 +50,22 @@ const pdfWordCache = new Map<string, Promise<PdfPageWords[]>>()
 
 type PdfJsModule = {
   getDocument: (source: Record<string, unknown>) => { promise: Promise<unknown>; destroy?: () => void }
-  GlobalWorkerOptions: { workerSrc?: string; workerPort?: Worker | null }
+  GlobalWorkerOptions: { workerSrc?: string }
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
+const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.mjs'
+const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.mjs'
+const BROWSER_PDFJS_WASM_PATH = '/pdfjs/wasm/'
+
+function browserModuleImport(specifier: string) {
+  const browserImport = new Function(
+    'specifier',
+    'return import(specifier)',
+  ) as (specifier: string) => Promise<unknown>
+
+  return browserImport(specifier)
+}
 
 function resolvePdfJsCandidate(importedModule: unknown) {
   const candidate = (
@@ -80,56 +92,6 @@ function resolvePdfJsCandidate(importedModule: unknown) {
 
 function normalizeText(input: string) {
   return input.replace(/\s+/g, ' ').trim()
-}
-
-async function importPdfJsModuleCandidate() {
-  try {
-    const imported = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    const candidate = resolvePdfJsCandidate(imported)
-    if (candidate) {
-      return candidate
-    }
-  } catch (error) {
-    try {
-      const imported = await import('pdfjs-dist/build/pdf.mjs')
-      const candidate = resolvePdfJsCandidate(imported)
-      if (candidate) {
-        return candidate
-      }
-    } catch (fallbackError) {
-      throw fallbackError instanceof Error
-        ? fallbackError
-        : error instanceof Error
-          ? error
-          : new Error('PDF.js module could not be initialized from installed package builds.')
-    }
-  }
-
-  throw new Error('PDF.js module could not be initialized from installed package builds.')
-}
-
-async function importPdfJsWorkerHandlerCandidate() {
-  try {
-    const imported = await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
-    if (imported && typeof imported === 'object' && 'WorkerMessageHandler' in imported) {
-      return imported as { WorkerMessageHandler: unknown }
-    }
-  } catch (error) {
-    try {
-      const imported = await import('pdfjs-dist/build/pdf.worker.mjs')
-      if (imported && typeof imported === 'object' && 'WorkerMessageHandler' in imported) {
-        return imported as { WorkerMessageHandler: unknown }
-      }
-    } catch (fallbackError) {
-      throw fallbackError instanceof Error
-        ? fallbackError
-        : error instanceof Error
-          ? error
-          : new Error('PDF.js worker module could not be initialized from installed package builds.')
-    }
-  }
-
-  throw new Error('PDF.js worker module could not be initialized from installed package builds.')
 }
 
 function buildPageLines(words: PdfWord[]) {
@@ -409,7 +371,12 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js can only be initialized in a browser context.')
       }
 
-      const pdfjs = await importPdfJsModuleCandidate()
+      const candidate = resolvePdfJsCandidate(await browserModuleImport(BROWSER_PDFJS_MODULE_PATH))
+      if (!candidate || typeof candidate !== 'object') {
+        throw new Error('PDF.js module could not be initialized from public legacy assets.')
+      }
+
+      const pdfjs = candidate as PdfJsModule
       if (
         !pdfjs.GlobalWorkerOptions
         || (typeof pdfjs.GlobalWorkerOptions !== 'object' && typeof pdfjs.GlobalWorkerOptions !== 'function')
@@ -417,10 +384,7 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js worker options are unavailable in this build.')
       }
 
-      const pdfjsWorkerModule = await importPdfJsWorkerHandlerCandidate()
-      ;(globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorkerModule
-      pdfjs.GlobalWorkerOptions.workerPort = null
-      pdfjs.GlobalWorkerOptions.workerSrc = undefined
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(BROWSER_PDFJS_WORKER_PATH, window.location.origin).toString()
 
       return pdfjs
     })().catch((error) => {
@@ -430,6 +394,13 @@ export async function loadPdfJsModule() {
   }
 
   return pdfJsPromise
+}
+
+export function getPdfJsWasmUrl() {
+  if (typeof window === 'undefined') {
+    return BROWSER_PDFJS_WASM_PATH
+  }
+  return new URL(BROWSER_PDFJS_WASM_PATH, window.location.origin).toString()
 }
 
 async function extractPdfPages(filePath: string) {
@@ -443,8 +414,9 @@ async function extractPdfPages(filePath: string) {
     const bytes = await readFile(filePath)
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(bytes),
-      disableWorker: true,
+      disableWorker: false,
       useWorkerFetch: false,
+      wasmUrl: getPdfJsWasmUrl(),
       isEvalSupported: false,
       stopAtErrors: false,
     })
