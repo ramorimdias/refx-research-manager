@@ -128,7 +128,7 @@ async function extractPdfOcrText(filePath: string) {
   const bytes = await readFile(filePath)
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(bytes),
-    disableWorker: false,
+    disableWorker: true,
     useWorkerFetch: false,
     isEvalSupported: false,
     stopAtErrors: false,

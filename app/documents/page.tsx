@@ -157,7 +157,7 @@ function DocumentPdfPreview({ document }: { document: RefxDocument }) {
         const bytes = await readFile(resolvedPath ?? document.filePath)
         const task = pdfjs.getDocument({
           data: new Uint8Array(bytes),
-          disableWorker: false,
+          disableWorker: true,
           useWorkerFetch: false,
           isEvalSupported: false,
           stopAtErrors: false,
