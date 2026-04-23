@@ -50,11 +50,10 @@ const pdfWordCache = new Map<string, Promise<PdfPageWords[]>>()
 
 type PdfJsModule = {
   getDocument: (source: Record<string, unknown>) => { promise: Promise<unknown>; destroy?: () => void }
-  GlobalWorkerOptions: { workerSrc: string }
+  GlobalWorkerOptions: { workerSrc?: string; workerPort?: Worker | null }
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
-const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
 
 function resolvePdfJsCandidate(importedModule: unknown) {
   const candidate = (
@@ -107,6 +106,30 @@ async function importPdfJsModuleCandidate() {
   }
 
   throw new Error('PDF.js module could not be initialized from installed package builds.')
+}
+
+async function importPdfJsWorkerHandlerCandidate() {
+  try {
+    const imported = await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+    if (imported && typeof imported === 'object' && 'WorkerMessageHandler' in imported) {
+      return imported as { WorkerMessageHandler: unknown }
+    }
+  } catch (error) {
+    try {
+      const imported = await import('pdfjs-dist/build/pdf.worker.mjs')
+      if (imported && typeof imported === 'object' && 'WorkerMessageHandler' in imported) {
+        return imported as { WorkerMessageHandler: unknown }
+      }
+    } catch (fallbackError) {
+      throw fallbackError instanceof Error
+        ? fallbackError
+        : error instanceof Error
+          ? error
+          : new Error('PDF.js worker module could not be initialized from installed package builds.')
+    }
+  }
+
+  throw new Error('PDF.js worker module could not be initialized from installed package builds.')
 }
 
 function buildPageLines(words: PdfWord[]) {
@@ -394,7 +417,10 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js worker options are unavailable in this build.')
       }
 
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(BROWSER_PDFJS_WORKER_PATH, window.location.origin).toString()
+      const pdfjsWorkerModule = await importPdfJsWorkerHandlerCandidate()
+      ;(globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorkerModule
+      pdfjs.GlobalWorkerOptions.workerPort = null
+      pdfjs.GlobalWorkerOptions.workerSrc = undefined
 
       return pdfjs
     })().catch((error) => {
