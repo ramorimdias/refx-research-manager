@@ -1,6 +1,6 @@
 param(
   [string]$SourceIcon = "$PSScriptRoot\..\..\public\iconHD.png",
-  [string]$OutputDir = "$PSScriptRoot\..\public\assets"
+  [string[]]$OutputDirs = @("$PSScriptRoot\..\public\assets", "$PSScriptRoot\..\public\word\assets")
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,8 +8,11 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
 $resolvedSource = Resolve-Path -LiteralPath $SourceIcon
-$resolvedOutput = [System.IO.Path]::GetFullPath($OutputDir)
-New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
+$resolvedOutputs = $OutputDirs | ForEach-Object {
+  $resolved = [System.IO.Path]::GetFullPath($_)
+  New-Item -ItemType Directory -Force -Path $resolved | Out-Null
+  $resolved
+}
 
 $source = [System.Drawing.Image]::FromFile($resolvedSource)
 try {
@@ -23,7 +26,9 @@ try {
         $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
         $graphics.DrawImage($source, 0, 0, $size, $size)
-        $bitmap.Save((Join-Path $resolvedOutput "icon-$size.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        foreach ($resolvedOutput in $resolvedOutputs) {
+          $bitmap.Save((Join-Path $resolvedOutput "icon-$size.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        }
       } finally {
         $graphics.Dispose()
       }
@@ -35,4 +40,5 @@ try {
   $source.Dispose()
 }
 
-Write-Host "Synced Refx icons into $resolvedOutput"
+Write-Host "Synced Refx icons into:"
+$resolvedOutputs | ForEach-Object { Write-Host "- $_" }

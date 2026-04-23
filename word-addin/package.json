@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host localhost --port 5174",
-    "build": "tsc --noEmit && vite build",
-    "build:production": "tsc --noEmit && vite build --mode production --base=/",
+    "build": "tsc --noEmit && vite build --mode development",
+    "build:production": "tsc --noEmit && vite build --mode production",
     "manifests": "node scripts/generate-manifests.mjs",
     "preview": "vite preview --host localhost --port 5174",
     "icons": "powershell -ExecutionPolicy Bypass -File scripts/sync-refx-icons.ps1",
@@ -14,7 +14,9 @@
     "certs:verify": "office-addin-dev-certs verify",
     "trust:windows": "powershell -ExecutionPolicy Bypass -File scripts/trust-windows-catalog.ps1",
     "debug:word": "npx --yes office-addin-debugging start manifest.xml desktop --app word --debug-method direct --no-live-reload",
-    "debug:word:stop": "npx --yes office-addin-debugging stop manifest.xml"
+    "debug:word:stop": "npx --yes office-addin-debugging stop manifest.xml",
+    "debug:word:production": "npx --yes office-addin-debugging start manifest.production.xml desktop --app word --debug-method direct --no-live-reload",
+    "debug:word:production:stop": "npx --yes office-addin-debugging stop manifest.production.xml"
   },
   "dependencies": {
     "@microsoft/office-js": "^1.1.110"

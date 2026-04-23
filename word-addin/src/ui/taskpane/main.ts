@@ -13,6 +13,7 @@ type AppState = {
   selectedWork: RefxWork | null
   results: RefxReference[]
   status: string
+  lastError: string | null
   bridgeOnline: boolean
   mockMode: boolean
   isBusy: boolean
@@ -28,6 +29,7 @@ const state: AppState = {
   selectedWork: null,
   results: [],
   status: 'Checking Refx bridge...',
+  lastError: null,
   bridgeOnline: false,
   mockMode: isMockModeEnabled(),
   isBusy: false,
@@ -92,6 +94,7 @@ async function runAction<T>(label: string, action: () => Promise<T>): Promise<T 
   try {
     setBusy(true, label)
     const result = await action()
+    state.lastError = null
     if (state.status === label) {
       state.status = 'Done.'
     }
@@ -101,7 +104,8 @@ async function runAction<T>(label: string, action: () => Promise<T>): Promise<T 
     if ((isBridgeAction(label) || isBridgeError(error)) && !state.mockMode) {
       state.bridgeOnline = false
     }
-    state.status = formatTaskpaneError(error)
+    state.lastError = formatTaskpaneError(error)
+    state.status = state.lastError
     return null
   } finally {
     state.isBusy = false
@@ -227,6 +231,10 @@ function renderUnsupportedHost() {
 }
 
 function render() {
+  const linkedWorkSummary = state.selectedWork
+    ? `${state.selectedWork.title} (${state.selectedWork.referenceCount} references)`
+    : 'No My Work selected yet'
+
   root.innerHTML = `
     <main class="shell">
       <section class="hero">
@@ -240,9 +248,35 @@ function render() {
         <section class="disconnect-banner" role="status">
           <strong>Refx desktop is not connected.</strong>
           <span>Open Refx on this computer so the Word add-in can load My Works, insert references, and sync bibliography data as intended.</span>
-          ${isProductionAddin ? `<small>This hosted add-in still connects only to the local companion bridge at ${getBridgeBaseUrl()}.</small>` : ''}
+          <ol>
+            <li>Open the Refx desktop app.</li>
+            <li>Wait for your library to finish loading.</li>
+            <li>Return here and click Sync Refx.</li>
+          </ol>
+          <small>This ${isProductionAddin ? 'hosted' : 'development'} add-in connects to the local companion bridge at ${getBridgeBaseUrl()}.</small>
         </section>
       ` : ''}
+
+      <section class="companion-card">
+        <strong>Companion add-in</strong>
+        <span>Refx for Word is not standalone. It reads references from the Refx desktop app running on this computer.</span>
+        <dl>
+          <div>
+            <dt>Bridge</dt>
+            <dd>${state.bridgeOnline ? 'Connected' : state.mockMode ? 'Mock mode' : 'Disconnected'} - ${getBridgeBaseUrl()}</dd>
+          </div>
+          <div>
+            <dt>Linked work</dt>
+            <dd>${linkedWorkSummary}</dd>
+          </div>
+          ${state.lastError ? `
+            <div>
+              <dt>Last error</dt>
+              <dd>${state.lastError}</dd>
+            </div>
+          ` : ''}
+        </dl>
+      </section>
 
       <section class="panel">
         <div class="work-picker">
@@ -259,7 +293,7 @@ function render() {
             <strong>${state.selectedWork.title}</strong>
             <span>${sourceSubtitle({ ...state.selectedWork, sourceType: 'work' })} · ${state.selectedWork.referenceCount} references</span>
           </div>
-        ` : `<p class="muted">${state.works.length === 0 ? 'No My Work found.' : 'Choose one My Work. Word will only see references from that work.'}</p>`}
+        ` : `<p class="muted">${state.works.length === 0 ? 'No My Work found. Open Refx desktop and click Sync Refx.' : 'Choose one My Work. Word will only see references from that work.'}</p>`}
         <!-- Legacy work list removed; the dropdown above is the single visible picker. -->
         <div hidden>
           ${state.works.map((work) => `
@@ -390,6 +424,7 @@ Office.onReady(async () => {
     state.status = state.mockMode ? 'Mock mode enabled.' : 'Refx bridge connected.'
   } catch {
     state.bridgeOnline = false
+    state.lastError = 'Refx bridge offline.'
     state.status = 'Refx bridge offline. Start Refx desktop, then reopen or refresh this task pane.'
   }
   render()
@@ -401,13 +436,15 @@ Office.onReady(async () => {
 window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled taskpane rejection', event.reason)
   state.isBusy = false
-  state.status = formatTaskpaneError(event.reason)
+  state.lastError = formatTaskpaneError(event.reason)
+  state.status = state.lastError
   render()
 })
 
 window.addEventListener('error', (event) => {
   console.error('Unhandled taskpane error', event.error ?? event.message)
   state.isBusy = false
-  state.status = formatTaskpaneError(event.error ?? new Error(event.message))
+  state.lastError = formatTaskpaneError(event.error ?? new Error(event.message))
+  state.status = state.lastError
   render()
 })

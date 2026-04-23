@@ -7,7 +7,8 @@ The important design choice is that visible citation numbers are never the sourc
 ## Hosting Modes
 
 - Development frontend: `https://localhost:5174`
-- Production frontend: `https://word.667764.xyz`
+- Production homepage: `https://refx.667764.xyz/`
+- Production add-in frontend: `https://refx.667764.xyz/word/`
 - Local Refx bridge, both modes: `http://127.0.0.1:38474`
 
 Use `manifest.xml` for local development. Use `manifest.production.xml` for the hosted production add-in.
@@ -89,7 +90,8 @@ The development manifest is `word-addin/manifest.xml`. Sideload it in desktop Wo
 Production hosting targets:
 
 ```text
-https://word.667764.xyz
+https://refx.667764.xyz/
+https://refx.667764.xyz/word/
 ```
 
 Build and generate the production manifest:
@@ -99,7 +101,9 @@ pnpm --dir word-addin manifests
 pnpm --dir word-addin build:production
 ```
 
-Deploy `word-addin/dist/` to the web root for `https://word.667764.xyz`.
+Deploy `word-addin/dist/` to the VM web root served at `https://refx.667764.xyz/`. The public pages live at `/`, `/download/`, `/tutorials/`, and `/about/`; the Word add-in remains at `/word/`.
+
+The Windows download CTA is centralized in `word-addin/src/site/config.ts`.
 
 Use `word-addin/manifest.production.xml` for production sideloading, private deployment, organizational deployment, and future Marketplace validation. See [DEPLOYMENT.md](./DEPLOYMENT.md) for VM and Cloudflare setup details.
 

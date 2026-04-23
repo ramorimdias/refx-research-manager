@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { hostedUrl, hostingConfig } from '../config/hosting.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
@@ -11,22 +12,20 @@ const VERSION = '1.0.0.0'
 const configs = {
   development: {
     output: 'manifest.xml',
-    baseUrl: 'https://localhost:5174',
-    supportUrl: 'https://localhost:5174',
+    ...hostingConfig.development,
   },
   production: {
     output: 'manifest.production.xml',
-    baseUrl: 'https://word.667764.xyz',
-    supportUrl: 'https://667764.xyz/refx/support',
+    ...hostingConfig.production,
   },
 }
 
-function manifest({ baseUrl, supportUrl }) {
-  const sourceUrl = `${baseUrl}/index.html`
-  const icon16 = `${baseUrl}/assets/icon-16.png`
-  const icon32 = `${baseUrl}/assets/icon-32.png`
-  const icon64 = `${baseUrl}/assets/icon-64.png`
-  const icon80 = `${baseUrl}/assets/icon-80.png`
+function manifest(config) {
+  const sourceUrl = hostedUrl(config, 'index.html')
+  const icon16 = hostedUrl(config, 'assets/icon-16.png')
+  const icon32 = hostedUrl(config, 'assets/icon-32.png')
+  const icon64 = hostedUrl(config, 'assets/icon-64.png')
+  const icon80 = hostedUrl(config, 'assets/icon-80.png')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
@@ -41,9 +40,9 @@ function manifest({ baseUrl, supportUrl }) {
   <Description DefaultValue="Insert Refx citations and rebuild numeric bibliographies."/>
   <IconUrl DefaultValue="${icon32}"/>
   <HighResolutionIconUrl DefaultValue="${icon64}"/>
-  <SupportUrl DefaultValue="${supportUrl}"/>
+  <SupportUrl DefaultValue="${config.supportUrl}"/>
   <AppDomains>
-    <AppDomain>${baseUrl}</AppDomain>
+    <AppDomain>${config.origin}</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Document"/>
