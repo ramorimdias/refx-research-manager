@@ -54,11 +54,9 @@ type PdfJsModule = {
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
-let pdfJsWorkerModulePromise: Promise<void> | null = null
-const BROWSER_PDFJS_MODULE_PATH = '/pdfjs/pdf.js'
 const BROWSER_PDFJS_WORKER_PATH = '/pdfjs/pdf.worker.js'
 
-function browserModuleImport(specifier: string) {
+function dynamicModuleImport(specifier: string) {
   const browserImport = new Function(
     'specifier',
     'return import(specifier)',
@@ -94,17 +92,28 @@ function normalizeText(input: string) {
   return input.replace(/\s+/g, ' ').trim()
 }
 
-async function ensurePdfJsWorkerModuleLoaded() {
-  if (!pdfJsWorkerModulePromise) {
-    pdfJsWorkerModulePromise = browserModuleImport(BROWSER_PDFJS_WORKER_PATH)
-      .then(() => undefined)
-      .catch((error) => {
-        pdfJsWorkerModulePromise = null
-        console.warn('PDF.js worker module preload failed; falling back to workerSrc only:', error)
-      })
+async function importPdfJsModuleCandidate() {
+  const candidates = [
+    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/build/pdf.mjs',
+  ]
+
+  let lastError: unknown = null
+  for (const specifier of candidates) {
+    try {
+      const imported = await dynamicModuleImport(specifier)
+      const candidate = resolvePdfJsCandidate(imported)
+      if (candidate) {
+        return candidate
+      }
+    } catch (error) {
+      lastError = error
+    }
   }
 
-  await pdfJsWorkerModulePromise
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('PDF.js module could not be initialized from installed package builds.')
 }
 
 function buildPageLines(words: PdfWord[]) {
@@ -384,13 +393,7 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js can only be initialized in a browser context.')
       }
 
-      const candidate = resolvePdfJsCandidate(await browserModuleImport(BROWSER_PDFJS_MODULE_PATH))
-
-      if (!candidate || typeof candidate !== 'object') {
-        throw new Error('PDF.js module could not be initialized.')
-      }
-
-      const pdfjs = candidate as PdfJsModule
+      const pdfjs = await importPdfJsModuleCandidate()
       if (
         !pdfjs.GlobalWorkerOptions
         || (typeof pdfjs.GlobalWorkerOptions !== 'object' && typeof pdfjs.GlobalWorkerOptions !== 'function')
@@ -398,8 +401,7 @@ export async function loadPdfJsModule() {
         throw new Error('PDF.js worker options are unavailable in this build.')
       }
 
-      pdfjs.GlobalWorkerOptions.workerSrc = BROWSER_PDFJS_WORKER_PATH
-      await ensurePdfJsWorkerModuleLoaded()
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(BROWSER_PDFJS_WORKER_PATH, window.location.origin).toString()
 
       return pdfjs
     })().catch((error) => {
