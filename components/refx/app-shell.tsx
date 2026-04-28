@@ -138,7 +138,7 @@ export function AppShell({ children }: AppShellProps) {
       }}
     >
       <AppSidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
         {showRemoteReadOnlyBanner ? (
           <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50 px-4 py-2 text-sm text-amber-950">
@@ -150,7 +150,7 @@ export function AppShell({ children }: AppShellProps) {
             <span>{getRemoteVaultDisplayMessage(t, remoteVaultStatus)}</span>
           </div>
         ) : null}
-        <main className="flex-1 overflow-auto bg-background">
+        <main className="min-w-0 flex-1 overflow-auto bg-background">
           {children}
         </main>
       </div>

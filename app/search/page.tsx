@@ -19,6 +19,7 @@ import type { KeywordGroup, MetadataStatus, ReadingStage } from '@/lib/types'
 import { searchDocuments, type DocumentSearchPageHit, type DocumentSearchQuery, type SearchProgressUpdate } from '@/lib/services/document-search-service'
 import { useT } from '@/lib/localization'
 import type { Document } from '@/lib/types'
+import { saveHomeRecentSearch } from '@/lib/home-dashboard'
 import { useDocumentStore } from '@/lib/stores/document-store'
 import { useLibraryStore } from '@/lib/stores/library-store'
 import { useUiStore } from '@/lib/stores/ui-store'
@@ -572,6 +573,9 @@ function RealSearchPage() {
     })
 
     const href = nextParams.toString() ? `/search?${nextParams.toString()}` : '/search'
+    if (navigation === 'push' && trimmedQuery) {
+      saveHomeRecentSearch({ label: trimmedQuery, href, mode: 'simple' })
+    }
     if (navigation === 'push') {
       router.push(href)
       return
@@ -743,6 +747,11 @@ function RealSearchPage() {
       mode: 'complex',
       groups: preparedGroups,
       groupJoin: draftGroupJoinOperator,
+    })
+    saveHomeRecentSearch({
+      label: querySummary(preparedGroups, draftGroupJoinOperator),
+      href: `/search?${nextParams.toString()}`,
+      mode: 'complex',
     })
     router.push(`/search?${nextParams.toString()}`)
   }
