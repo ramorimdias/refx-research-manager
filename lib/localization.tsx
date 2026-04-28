@@ -114,7 +114,7 @@ const translations = {
       appUpdates: 'App updates',
       appUpdatesDescription: 'Check for signed releases published on GitHub.',
       anonymousUsageStats: 'Anonymous usage stats',
-      anonymousUsageStatsHelp: 'Share an anonymous install ID, app version, and heartbeat so you can count active desktop installs.',
+      anonymousUsageStatsHelp: 'Share an anonymous install ID, app version, and open/close events so you can count active desktop installs.',
       checkAutomatically: 'Check automatically',
       checkAutomaticallyHelp: 'Look for updates when REFX starts.',
       checking: 'Checking...',

@@ -40,7 +40,6 @@ import {
 import {
   ensureUsageTelemetryIdentity,
   sendUsageTelemetryEvent,
-  USAGE_TELEMETRY_HEARTBEAT_INTERVAL_MS,
 } from '@/lib/services/usage-telemetry-service'
 import { getCurrentWindow, isTauri, WebviewWindow } from '@/lib/tauri/client'
 import { getRemoteVaultStatusSnapshot, getRemoteVaultSyncPhaseSnapshot } from '@/lib/remote-storage-state'
@@ -109,6 +108,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const [startupDiagnostics, setStartupDiagnostics] = useState<string[]>([])
   const hasRevealedDesktopWindow = useRef(false)
   const telemetrySessionStartedAt = useRef(new Date().toISOString())
+  const telemetrySettingsRef = useRef<StoredAppSettings | null>(null)
   const { initialize } = useRuntimeActions()
   const { initialized, isDesktopApp } = useRuntimeState()
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
@@ -208,6 +208,10 @@ export function AppProvider({ children }: AppProviderProps) {
   }, [initialized, isDesktopApp, setTheme])
 
   useEffect(() => {
+    telemetrySettingsRef.current = appSettings
+  }, [appSettings])
+
+  useEffect(() => {
     if (!initialized || !isSettingsReady || !isDesktopApp || !appSettings) return
 
     void sendUsageTelemetryEvent(appSettings, {
@@ -218,18 +222,11 @@ export function AppProvider({ children }: AppProviderProps) {
       setAppSettings((current) => current ? { ...current, usageTelemetryLastSentAt: sentAt } : current)
     })
 
-    const intervalId = window.setInterval(() => {
-      void sendUsageTelemetryEvent(appSettings, {
-        event: 'heartbeat',
-        sessionStartedAt: telemetrySessionStartedAt.current,
-      }).then((sentAt) => {
-        if (!sentAt) return
-        setAppSettings((current) => current ? { ...current, usageTelemetryLastSentAt: sentAt } : current)
-      })
-    }, USAGE_TELEMETRY_HEARTBEAT_INTERVAL_MS)
-
     const handleBeforeUnload = () => {
-      void sendUsageTelemetryEvent(appSettings, {
+      const currentSettings = telemetrySettingsRef.current
+      if (!currentSettings) return
+
+      void sendUsageTelemetryEvent(currentSettings, {
         event: 'app_closed',
         sessionStartedAt: telemetrySessionStartedAt.current,
       })
@@ -237,10 +234,15 @@ export function AppProvider({ children }: AppProviderProps) {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => {
-      window.clearInterval(intervalId)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [appSettings, initialized, isDesktopApp, isSettingsReady])
+  }, [
+    appSettings?.shareAnonymousUsageStats,
+    appSettings?.usageInstallId,
+    initialized,
+    isDesktopApp,
+    isSettingsReady,
+  ])
 
   useEffect(() => {
     if (!initialized || !isDesktopApp || !appSettings?.autoCheckForUpdates) return

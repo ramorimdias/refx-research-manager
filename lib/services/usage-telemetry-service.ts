@@ -6,11 +6,9 @@ import * as repo from '@/lib/repositories/local-db'
 import { isTauri } from '@/lib/tauri/client'
 
 const USAGE_TELEMETRY_ENDPOINT = (process.env.NEXT_PUBLIC_REFX_USAGE_TELEMETRY_URL ?? '').trim()
-export const USAGE_TELEMETRY_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000
-const HEARTBEAT_DEDUP_MS = 15 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 7000
 
-type UsageTelemetryEventName = 'app_started' | 'heartbeat' | 'app_closed'
+type UsageTelemetryEventName = 'app_started' | 'app_closed'
 
 type UsageTelemetryPayload = {
   install_id: string
@@ -59,11 +57,7 @@ function shouldSkipSend(settings: StoredAppSettings, event: UsageTelemetryEventN
   if (!settings.shareAnonymousUsageStats) return true
   if (!isUsageTelemetryConfigured()) return true
   if (!settings.usageInstallId.trim()) return true
-  if (event !== 'heartbeat') return false
-
-  const previousSentAt = Date.parse(settings.usageTelemetryLastSentAt)
-  if (!Number.isFinite(previousSentAt)) return false
-  return sentAt.getTime() - previousSentAt < HEARTBEAT_DEDUP_MS
+  return false
 }
 
 function getPlatformLabel() {
