@@ -7,6 +7,7 @@ import { ArrowLeft, Bold, BookMarked, FileText, Italic, List, MessageSquareText,
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/refx/page-header'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -265,15 +266,11 @@ function RealCommentsPage() {
   if (!id) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <MessageSquareText className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{t('commentsPage.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('commentsPage.subtitle')}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<MessageSquareText className="h-6 w-6" />}
+          title={t('commentsPage.title')}
+          subtitle={t('commentsPage.subtitle')}
+        />
 
         <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <Card className="flex min-h-0 flex-col">

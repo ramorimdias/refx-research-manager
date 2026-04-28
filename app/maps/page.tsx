@@ -3,11 +3,11 @@
 import Link from 'next/link'
 import {
   startTransition,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import {
@@ -34,21 +34,23 @@ import {
 import 'reactflow/dist/style.css'
 import {
   Check,
-  ChevronDown,
-  ChevronUp,
+  FilePenLine,
   GitBranch,
   Loader2,
   Plus,
   RefreshCw,
   Save,
+  SaveAll,
+  Search,
+  SlidersHorizontal,
   Trash2,
   WandSparkles,
   ChevronsUpDown,
   Waypoints,
 } from 'lucide-react'
-import { DocumentGraphControls } from '@/components/refx/document-graph-controls'
 import { DocumentGraphPanel } from '@/components/refx/document-graph-panel'
 import { EmptyState } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -169,6 +171,37 @@ const DEFAULT_GRAPH_PREFERENCES: GraphPreferences = {
 const DEFAULT_GRAPH_VIEW_DRAFT: GraphViewDraft = {
   name: '',
   description: '',
+}
+
+function MapsToolbarIconButton({
+  label,
+  tooltipSide = 'top',
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof Button> & {
+  label: string
+  tooltipSide?: 'top' | 'bottom'
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          {...props}
+          aria-label={label}
+          className={cn(
+            'h-9 w-9 rounded-full border border-border/70 bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+            className,
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side={tooltipSide} sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function getWorkReferenceTargetDocumentId(workReference: repo.DbWorkReference) {
@@ -748,24 +781,20 @@ function MapsPageContent() {
   const [activeGraphViewId, setActiveGraphViewId] = useState<string | null>(null)
   const [pendingConnectionDocumentId, setPendingConnectionDocumentId] = useState<string | null>(null)
   const [pendingConnectionDirection, setPendingConnectionDirection] = useState<ConnectionDirection | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
   const [isAddDocumentPopoverOpen, setIsAddDocumentPopoverOpen] = useState(false)
   const [addDocumentQuery, setAddDocumentQuery] = useState('')
   const [pendingConnectionCursor, setPendingConnectionCursor] = useState<{ x: number; y: number } | null>(null)
-  const deferredSearchQuery = useDeferredValue(searchQuery)
   const [isDeletingRelation, setIsDeletingRelation] = useState(false)
   const [pendingDeleteRelationId, setPendingDeleteRelationId] = useState<string | null>(null)
   const [pendingDeleteAllLinksDocumentId, setPendingDeleteAllLinksDocumentId] = useState<string | null>(null)
   const [isDeleteWorkspaceDialogOpen, setIsDeleteWorkspaceDialogOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<GraphContextMenuState>(null)
   const [isReheatingLayout, setIsReheatingLayout] = useState(false)
-  const [isTopBarCollapsed, setIsTopBarCollapsed] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [isCreateMapDialogOpen, setIsCreateMapDialogOpen] = useState(false)
   const [isSaveViewDialogOpen, setIsSaveViewDialogOpen] = useState(false)
   const [isEditingViewDialogOpen, setIsEditingViewDialogOpen] = useState(false)
   const [graphViewDraft, setGraphViewDraft] = useState<GraphViewDraft>(DEFAULT_GRAPH_VIEW_DRAFT)
-  const [selectedMyWorkPickerResetKey, setSelectedMyWorkPickerResetKey] = useState(0)
   const [workReferencesByDocumentId, setWorkReferencesByDocumentId] = useState<Record<string, repo.DbWorkReference[]>>({})
   const [workReferencesReloadTick, setWorkReferencesReloadTick] = useState(0)
   const [isRefreshingWorkReferences, setIsRefreshingWorkReferences] = useState(false)
@@ -836,14 +865,6 @@ function MapsPageContent() {
   const activeLibrary = useMemo(
     () => libraries.find((library) => library.id === activeLibraryId) ?? libraries[0] ?? null,
     [activeLibraryId, libraries],
-  )
-
-  const myWorkDocuments = useMemo(
-    () =>
-      documents
-        .filter((document) => document.documentType === 'my_work')
-        .sort((left, right) => left.title.localeCompare(right.title)),
-    [documents],
   )
 
   const activeLibraryGraphViews = useMemo(
@@ -959,9 +980,9 @@ function MapsPageContent() {
         yearMin: graphPreferences.yearMin,
         yearMax: graphPreferences.yearMax,
         hideOrphans: graphPreferences.hideOrphans,
-        searchQuery: deferredSearchQuery,
+        searchQuery: '',
       }),
-    [deferredSearchQuery, graphPreferences, hiddenDocumentIds, libraryDocuments, libraryRelations, manualVisibleDocumentIds, selectedDocumentId],
+    [graphPreferences, hiddenDocumentIds, libraryDocuments, libraryRelations, manualVisibleDocumentIds, selectedDocumentId],
   )
   const hiddenDocumentIdSet = useMemo(() => new Set(hiddenDocumentIds), [hiddenDocumentIds])
 
@@ -1031,7 +1052,7 @@ function MapsPageContent() {
     () => buildDocumentGraphMetrics(visibleDocuments, visibleRelations),
     [visibleDocuments, visibleRelations],
   )
-  const searchMatches = derivedGraphView.searchMatches
+  const searchMatches = useMemo(() => new Set<string>(), [])
   const visibleWorkReferences = useMemo(
     () =>
       visibleDocuments
@@ -1053,11 +1074,6 @@ function MapsPageContent() {
     () => libraryDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
     [libraryDocuments, visibleDocuments],
   )
-  const addableMyWorkDocuments = useMemo(
-    () =>
-      myWorkDocuments.filter((document) => !visibleDocuments.some((entry) => entry.id === document.id)),
-    [myWorkDocuments, visibleDocuments],
-  )
   const filteredAddableDocuments = useMemo(() => {
     const query = addDocumentQuery.trim().toLowerCase()
     if (!query) return addableDocuments
@@ -1071,6 +1087,10 @@ function MapsPageContent() {
       return haystack.includes(query)
     })
   }, [addDocumentQuery, addableDocuments])
+  const hasAddableWorks = useMemo(
+    () => addableDocuments.some((document) => document.documentType === 'my_work'),
+    [addableDocuments],
+  )
 
   const selectedDocument = useMemo(
     () => libraryDocuments.find((document) => document.id === selectedDocumentId) ?? null,
@@ -1333,15 +1353,6 @@ function MapsPageContent() {
     setActiveDocument(null)
   }
 
-  const searchResults = useMemo(
-    () =>
-      visibleDocuments.filter((document) =>
-        deferredSearchQuery.trim().length > 0
-        && document.title.toLowerCase().includes(deferredSearchQuery.trim().toLowerCase()),
-      ),
-    [deferredSearchQuery, visibleDocuments],
-  )
-
   const selectedDocumentIncomingDocuments = useMemo(
     () =>
       selectedDocument
@@ -1459,7 +1470,7 @@ function MapsPageContent() {
 
     setPendingConnectionDocumentId(documentId)
     setPendingConnectionDirection(direction)
-    setSearchQuery('')
+    setAddDocumentQuery('')
     setIsAddDocumentPopoverOpen(true)
   }
 
@@ -2470,13 +2481,6 @@ function MapsPageContent() {
     setIsEditingViewDialogOpen(false)
   }
 
-  const handleDuplicateGraphView = async () => {
-    if (!activeGraphView) return
-    const duplicated = await duplicateGraphView(activeGraphView.id)
-    if (!duplicated) return
-    setActiveGraphViewId(duplicated.id)
-  }
-
   const handleDeleteActiveGraphView = async () => {
     if (!activeGraphView) return
     const fallbackGraphViewId = activeLibraryGraphViews.find((view) => view.id !== activeGraphView.id)?.id ?? null
@@ -2838,320 +2842,289 @@ function MapsPageContent() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.06),_transparent_24%),linear-gradient(180deg,_rgba(248,250,252,1)_0%,_rgba(244,246,248,1)_100%)]">
-      <div className="shrink-0 border-b border-border/80 bg-background/92 px-6 py-3 backdrop-blur">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Waypoints className="h-6 w-6" />
-              </div>
-              <div className="space-y-1">
-                <h1 className="text-2xl font-semibold tracking-tight">{t('mapsPage.title')}</h1>
-                <p className="text-sm text-muted-foreground xl:whitespace-nowrap">
-                  {t('mapsPage.subtitle')}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsTopBarCollapsed((current) => !current)}
-                >
-                  {isTopBarCollapsed ? (
-                    <>
-                      <ChevronDown className="mr-2 h-4 w-4" />
-                      {t('mapsPage.showControls')}
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="mr-2 h-4 w-4" />
-                      {t('mapsPage.hideControls')}
-                    </>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleOpenCreateMapDialog}
-                  data-tour-id="maps-new-view"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('mapsPage.newMap')}
-                </Button>
-                {activeGraphView ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => void persistActiveViewSnapshot()}>
-                        <Save className="mr-2 h-4 w-4" />
-                        {t('mapsPage.saveCurrentView')}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>
-                      {t('mapsPage.saveCurrentViewHelp')}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="sm" onClick={handleOpenSaveViewDialog} data-tour-id="maps-save-as-view">
-                      <Save className="mr-2 h-4 w-4" />
-                      {activeGraphView ? t('mapsPage.saveAsNewView') : t('mapsPage.saveView')}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8}>
-                    {t('mapsPage.saveNewViewHelp')}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleReheatLayout()}
-                      disabled={isReheatingLayout || visibleDocuments.length === 0}
-                      data-tour-id="maps-rebuild-layout"
-                    >
-                      <WandSparkles className={cn('mr-2 h-4 w-4', isReheatingLayout && 'animate-pulse')} />
-                      {t('mapsPage.rebuildLayout')}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8}>
-                    {t('mapsPage.rebuildLayoutHelp')}
-                    </TooltipContent>
-                  </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void refreshWorkReferences()}
-                      disabled={isRefreshingWorkReferences}
-                    >
-                      <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshingWorkReferences && 'animate-spin')} />
-                      {t('mapsPage.refreshReferences')}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={8}>
-                    {t('mapsPage.refreshReferencesHelp')}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setIsDeleteWorkspaceDialogOpen(true)}
-                disabled={!activeGraphView}
-                data-tour-id="maps-delete-map"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t('mapsPage.deleteMap')}
-              </Button>
-            </div>
-          </div>
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden bg-background p-4 md:p-6">
+      <div className="shrink-0 space-y-4">
+        <PageHeader
+          icon={<Waypoints className="h-6 w-6" />}
+          title={t('mapsPage.title')}
+          subtitle={t('mapsPage.subtitle')}
+          actions={(
+            <>
+              <Badge variant="outline" className="h-8 rounded-full px-3 text-xs">
+                {visibleDocuments.length}
+              </Badge>
 
-          {!isTopBarCollapsed ? (
-          <div className="grid gap-2 xl:grid-cols-[minmax(0,0.72fr)_minmax(360px,520px)_minmax(0,0.95fr)]">
-            <Card
-              className="border-border/70 bg-card/92 p-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
-              data-tour-id="maps-workspace"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      {t('mapsPage.workspace')}
-                    </p>
-                    <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px]">
-                      {visibleDocuments.length}
-                    </Badge>
-                  </div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="min-w-[220px] flex-1">
-                        <Select
-                          value={activeGraphViewId ?? WORKING_MAP_SELECT_VALUE}
-                          onValueChange={(value) => setActiveGraphViewId(value === WORKING_MAP_SELECT_VALUE ? null : value)}
-                        >
-                          <SelectTrigger className="bg-background/90">
-                            <SelectValue placeholder={t('mapsPage.workingMap')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={WORKING_MAP_SELECT_VALUE}>
-                              {t('mapsPage.workingMap')}
-                            </SelectItem>
-                            {activeLibraryGraphViews.map((view) => (
-                              <SelectItem key={view.id} value={view.id}>
-                                {view.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={8}>
-                      {activeGraphView?.description?.trim() || t('mapsPage.workingMapDescription')}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                {activeGraphView ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={handleOpenEditViewDialog}>
-                      {t('mapsPage.renameView')}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => void handleDuplicateGraphView()}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t('mapsPage.duplicateView')}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </Card>
-
-            <Card
-              className="border-border/70 bg-card/92 p-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
-              data-tour-id="maps-add-controls"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    {t('mapsPage.canvasEditor')}
-                  </p>
-                </div>
-                <div className="flex min-w-0 flex-wrap gap-2 sm:flex-nowrap">
-                  <Popover open={isAddDocumentPopoverOpen} onOpenChange={setIsAddDocumentPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={isAddDocumentPopoverOpen}
-                        className="min-w-0 flex-1 justify-between bg-white/90 text-left whitespace-normal h-auto py-2"
-                        data-tour-id="maps-add-document"
+              <div className="min-w-[220px] flex-1" data-tour-id="maps-workspace">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Select
+                        value={activeGraphViewId ?? WORKING_MAP_SELECT_VALUE}
+                        onValueChange={(value) => setActiveGraphViewId(value === WORKING_MAP_SELECT_VALUE ? null : value)}
                       >
-                        <span className="min-w-0 flex-1 break-words pr-2">
-                          {pendingConnectionDirection
-                            ? pendingConnectionDirection === 'outbound'
-                              ? t('mapsPage.findReferencedDocument')
-                              : t('mapsPage.findCitingDocument')
-                            : t('mapsPage.addDocumentToMap')}
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[320px] p-0" align="start">
-                      <div className="space-y-2 p-2">
-                        <Input
-                          value={addDocumentQuery}
-                          onChange={(event) => setAddDocumentQuery(event.target.value)}
-                          placeholder={pendingConnectionDirection ? t('mapsPage.searchAndLinkPlaceholder') : t('mapsPage.searchDocumentsPlaceholder')}
-                          className="bg-background"
-                        />
-                        <div className="max-h-[300px] overflow-y-auto">
-                          {filteredAddableDocuments.length > 0 ? (
-                            <div className="space-y-1">
-                              {filteredAddableDocuments.map((document) => (
-                                <button
-                                  key={document.id}
-                                  type="button"
-                                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground"
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() => {
-                                    void handleAddDocumentToMap(document.id)
-                                    setIsAddDocumentPopoverOpen(false)
-                                    setAddDocumentQuery('')
-                                  }}
-                                >
-                                  <Check className="mt-0.5 h-4 w-4 shrink-0 opacity-0" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{document.title}</p>
-                                    <p className="truncate text-xs text-slate-500">
-                                      {document.authors.slice(0, 2).join(', ') || t('searchPage.unknownAuthor')}
-                                      {document.year ? ` - ${document.year}` : ''}
-                                    </p>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-                              {t('mapsPage.noMatchingDocument')}
-                            </p>
-                          )}
+                        <SelectTrigger className="h-9 rounded-xl bg-background">
+                          <SelectValue placeholder={t('mapsPage.workingMap')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={WORKING_MAP_SELECT_VALUE}>
+                            {t('mapsPage.workingMap')}
+                          </SelectItem>
+                          {activeLibraryGraphViews.map((view) => (
+                            <SelectItem key={view.id} value={view.id}>
+                              {view.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={8}>
+                    {activeGraphView?.description?.trim() || t('mapsPage.workingMapDescription')}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+
+              {activeGraphView ? (
+                <MapsToolbarIconButton
+                  label={t('mapsPage.renameView')}
+                  tooltipSide="bottom"
+                  variant="ghost"
+                  onClick={handleOpenEditViewDialog}
+                >
+                  <FilePenLine className="h-4 w-4" />
+                </MapsToolbarIconButton>
+              ) : null}
+
+              <Popover open={isAddDocumentPopoverOpen} onOpenChange={setIsAddDocumentPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title={t('mapsPage.addDocumentToMap')}
+                aria-label={t('mapsPage.addDocumentToMap')}
+                className="h-9 w-9 rounded-full"
+                data-tour-id="maps-add-document"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[360px] p-0" align="start">
+                  <div className="space-y-2 p-2">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={addDocumentQuery}
+                        onChange={(event) => setAddDocumentQuery(event.target.value)}
+                        placeholder={pendingConnectionDirection ? t('mapsPage.searchAndLinkPlaceholder') : t('mapsPage.searchDocumentsPlaceholder')}
+                        className="bg-background pl-9"
+                      />
+                    </div>
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {filteredAddableDocuments.length > 0 ? (
+                        <div className="space-y-1">
+                          {filteredAddableDocuments.map((document) => (
+                            <button
+                              key={document.id}
+                              type="button"
+                              className="flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-accent hover:text-accent-foreground"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                void handleAddDocumentToMap(document.id)
+                                setIsAddDocumentPopoverOpen(false)
+                                setAddDocumentQuery('')
+                              }}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-sm font-medium">{document.title}</p>
+                                  {document.documentType === 'my_work' ? (
+                                    <Badge className="h-5 rounded-full border-amber-300/70 bg-amber-50 px-2 text-[10px] font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 dark:hover:bg-amber-500/15">
+                                      {t('referencesPage.title')}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {document.authors.slice(0, 2).join(', ') || t('searchPage.unknownAuthor')}
+                                  {document.year ? ` - ${document.year}` : ''}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                          {addableDocuments.length > 0 || hasAddableWorks
+                            ? t('mapsPage.noMatchingDocument')
+                            : t('mapsPage.myWorkAlreadyOnMap')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title={t('mapsPage.filterLayout')}
+                    aria-label={t('mapsPage.filterLayout')}
+                    className="h-9 w-9 rounded-full"
+                    data-tour-id="maps-layout-filter"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-3" align="end">
+                  <div className="grid gap-3">
+                    <div className="space-y-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <h3 className="inline-flex cursor-help text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
+                            {t('mapsPage.appearance')}
+                          </h3>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8}>
+                          {t('mapsPage.appearanceDescription')}
+                        </TooltipContent>
+                      </Tooltip>
+                      <div className="grid gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">{t('mapsPage.nodeColors')}</Label>
+                          <Select
+                            value={graphPreferences.colorMode}
+                            onValueChange={(value) => setGraphPreferences((current) => ({ ...current, colorMode: value as GraphColorMode }))}
+                          >
+                            <SelectTrigger className="h-8 bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="library">{t('mapsPage.libraryColors')}</SelectItem>
+                              <SelectItem value="year">{t('mapsPage.yearColors')}</SelectItem>
+                              <SelectItem value="density">{t('mapsPage.density')}</SelectItem>
+                              <SelectItem value="status">{t('mapsPage.status')}</SelectItem>
+                              <SelectItem value="component">{t('mapsPage.component')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">{t('mapsPage.nodeSize')}</Label>
+                          <Select
+                            value={graphPreferences.sizeMode}
+                            onValueChange={(value) => setGraphPreferences((current) => ({ ...current, sizeMode: value as GraphSizeMode }))}
+                          >
+                            <SelectTrigger className="h-8 bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="uniform">{t('mapsPage.uniform')}</SelectItem>
+                              <SelectItem value="inbound_citations">{t('mapsPage.inboundCitations')}</SelectItem>
+                              <SelectItem value="total_degree">{t('mapsPage.totalDegree')}</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
-                    </PopoverContent>
-                  </Popover>
-                  <div data-tour-id="maps-add-work" className="min-w-0 shrink-0">
-                    {myWorkDocuments.length > 0 ? (
-                      <div className="w-[220px]">
+                    </div>
+                    <div className="space-y-2 border-t border-border/60 pt-3">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <h3 className="inline-flex cursor-help text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
+                            {t('mapsPage.focus')}
+                          </h3>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8}>
+                          {t('mapsPage.focusDescription')}
+                        </TooltipContent>
+                      </Tooltip>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">{t('mapsPage.focusType')}</Label>
                         <Select
-                          key={selectedMyWorkPickerResetKey}
-                          onValueChange={(value) => {
-                            void handleAddDocumentToMap(value)
-                            setSelectedMyWorkPickerResetKey((currentKey) => currentKey + 1)
-                          }}
-                          disabled={addableMyWorkDocuments.length === 0}
+                          value={graphPreferences.neighborhoodDepth}
+                          onValueChange={(value) => setGraphPreferences((current) => ({
+                            ...current,
+                            neighborhoodDepth: value as GraphNeighborhoodDepth,
+                            focusMode: value !== 'full',
+                          }))}
                         >
-                          <SelectTrigger className="w-full border-amber-200 bg-amber-50/90 text-amber-950 hover:bg-amber-100/90 disabled:cursor-not-allowed disabled:opacity-60">
-                            <SelectValue
-                              placeholder={
-                                addableMyWorkDocuments.length > 0
-                                  ? t('mapsPage.selectWork')
-                                  : t('mapsPage.myWorkAlreadyOnMap')
-                              }
-                            />
+                          <SelectTrigger className="h-8 bg-background">
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {addableMyWorkDocuments.map((document) => (
-                              <SelectItem key={document.id} value={document.id}>
-                                {document.title}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="full">{t('mapsPage.fullGraph')}</SelectItem>
+                            <SelectItem value="1">{t('mapsPage.oneHopNeighbors')}</SelectItem>
+                            <SelectItem value="2">{t('mapsPage.twoHopNeighbors')}</SelectItem>
                           </SelectContent>
                         </Select>
-                        {addableMyWorkDocuments.length === 0 ? (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {t('mapsPage.myWorkAlreadyOnMap')}
-                          </p>
-                        ) : null}
                       </div>
-                    ) : (
-                      <p className="max-w-[220px] text-xs text-muted-foreground whitespace-normal break-words">
-                        {t('mapsPage.noWorksRegisteredPrefix')}{' '}
-                        <Link href="/references" className="font-medium text-foreground underline underline-offset-4">
-                          {t('referencesPage.title')}
-                        </Link>{' '}
-                        {t('mapsPage.noWorksRegisteredSuffix')}
-                      </p>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            </Card>
+                </PopoverContent>
+              </Popover>
 
-            <div data-tour-id="maps-layout-filter">
-              <DocumentGraphControls
-                colorMode={graphPreferences.colorMode}
-                onColorModeChange={(value) => setGraphPreferences((current) => ({ ...current, colorMode: value }))}
-                sizeMode={graphPreferences.sizeMode}
-                onSizeModeChange={(value) => setGraphPreferences((current) => ({ ...current, sizeMode: value }))}
-                neighborhoodDepth={graphPreferences.neighborhoodDepth}
-                onNeighborhoodDepthChange={(value) => setGraphPreferences((current) => ({
-                  ...current,
-                  neighborhoodDepth: value,
-                  focusMode: value !== 'full',
-                }))}
-                searchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
-                searchResults={searchResults}
-                onJumpToDocument={handleJumpToDocument}
-              />
-            </div>
-          </div>
-          ) : null}
-        </div>
+              <MapsToolbarIconButton
+                label={t('mapsPage.newMap')}
+                tooltipSide="bottom"
+                onClick={handleOpenCreateMapDialog}
+                variant="outline"
+                data-tour-id="maps-new-view"
+              >
+                <Plus className="h-4 w-4" />
+              </MapsToolbarIconButton>
+              {activeGraphView ? (
+                <MapsToolbarIconButton
+                  label={t('mapsPage.saveCurrentView')}
+                  tooltipSide="bottom"
+                  variant="outline"
+                  onClick={() => void persistActiveViewSnapshot()}
+                >
+                  <Save className="h-4 w-4" />
+                </MapsToolbarIconButton>
+              ) : null}
+            <MapsToolbarIconButton
+              label={activeGraphView ? t('mapsPage.saveAsNewView') : t('mapsPage.saveView')}
+              tooltipSide="bottom"
+              variant="outline"
+              onClick={handleOpenSaveViewDialog}
+              data-tour-id="maps-save-as-view"
+            >
+              <SaveAll className="h-4 w-4" />
+            </MapsToolbarIconButton>
+            <MapsToolbarIconButton
+              label={t('mapsPage.rebuildLayout')}
+              tooltipSide="bottom"
+              variant="outline"
+              onClick={() => void handleReheatLayout()}
+              disabled={isReheatingLayout || visibleDocuments.length === 0}
+              data-tour-id="maps-rebuild-layout"
+            >
+              <WandSparkles className={cn('h-4 w-4', isReheatingLayout && 'animate-pulse')} />
+            </MapsToolbarIconButton>
+            <MapsToolbarIconButton
+              label={t('mapsPage.refreshReferences')}
+              tooltipSide="bottom"
+              variant="outline"
+              onClick={() => void refreshWorkReferences()}
+              disabled={isRefreshingWorkReferences}
+            >
+              <RefreshCw className={cn('h-4 w-4', isRefreshingWorkReferences && 'animate-spin')} />
+            </MapsToolbarIconButton>
+            <MapsToolbarIconButton
+              label={t('mapsPage.deleteMap')}
+              tooltipSide="bottom"
+              variant="outline"
+              className="text-rose-600 hover:text-rose-700"
+              onClick={() => setIsDeleteWorkspaceDialogOpen(true)}
+              disabled={!activeGraphView}
+              data-tour-id="maps-delete-map"
+            >
+              <Trash2 className="h-4 w-4" />
+            </MapsToolbarIconButton>
+            </>
+          )}
+        />
       </div>
 
       <div
@@ -3172,7 +3145,7 @@ function MapsPageContent() {
         <div className="relative h-full min-h-0 overflow-hidden bg-muted/55 dark:bg-[#141821]">
           {visibleDocuments.length === 0 ? (
             <div className="pointer-events-none absolute left-6 top-6 z-10 max-w-sm">
-              <Card className="border-dashed bg-card/92 p-4 shadow-sm">
+              <Card className="border-dashed bg-card/92 p-4 shadow-sm backdrop-blur">
                 <p className="text-sm text-muted-foreground">
                   {t('mapsPage.noDocumentsControls')}
                 </p>
@@ -3180,7 +3153,7 @@ function MapsPageContent() {
             </div>
           ) : edges.length === 0 ? (
             <div className="pointer-events-none absolute left-6 top-6 z-10 max-w-sm">
-              <Card className="border-dashed bg-card/92 p-4 shadow-sm">
+              <Card className="border-dashed bg-card/92 p-4 shadow-sm backdrop-blur">
                 <p className="text-sm text-muted-foreground">
                   {t('mapsPage.noLinksControls')}
                 </p>
@@ -3345,14 +3318,14 @@ function MapsPageContent() {
           </div>
           {contextMenu ? (
             <div
-              className="fixed z-[1000] min-w-[180px] rounded-md border bg-white p-1 shadow-lg"
+              className="fixed z-[1000] min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
               style={{ left: contextMenu.x, top: contextMenu.y }}
             >
               {contextMenu.kind === 'node' ? (
                 <>
                   <button
                     type="button"
-                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
                       void handleRemoveDocumentFromCurrentView(contextMenu.documentId)
                       setContextMenu(null)
@@ -3362,7 +3335,7 @@ function MapsPageContent() {
                   </button>
                   <button
                     type="button"
-                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
                       setPendingDeleteAllLinksDocumentId(contextMenu.documentId)
                       setContextMenu(null)
@@ -3375,7 +3348,7 @@ function MapsPageContent() {
                 <>
                   <button
                     type="button"
-                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
                       void handleDeleteRelationWithoutPrompt(contextMenu.relationId)
                       setContextMenu(null)
@@ -3385,7 +3358,7 @@ function MapsPageContent() {
                   </button>
                   <button
                     type="button"
-                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                     onClick={() => {
                       void handleInvertRelation(contextMenu.relationId)
                       setContextMenu(null)

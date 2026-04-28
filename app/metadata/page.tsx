@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import {
   buildDocumentMetadataSeed,
   findDocumentMetadataCandidates,
@@ -475,25 +476,20 @@ export default function MetadataWorkspacePage() {
     : ''
 
   return (
-    <div className="p-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <CloudDownload className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{t('metadataPage.title')}</h1>
-              <p className="text-sm text-muted-foreground">{t('metadataPage.subtitle')}</p>
-            </div>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/maps">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {t('metadataPage.back')}
-            </Link>
-          </Button>
-        </div>
+    <div className="flex h-full min-h-0 flex-col gap-6 p-4 md:p-6">
+        <PageHeader
+          icon={<CloudDownload className="h-6 w-6" />}
+          title={t('metadataPage.title')}
+          subtitle={t('metadataPage.subtitle')}
+          actions={(
+            <Button asChild variant="outline" size="sm">
+              <Link href="/maps">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                {t('metadataPage.back')}
+              </Link>
+            </Button>
+          )}
+        />
 
         <Card data-tour-id="metadata-queue">
           <CardContent className="flex flex-wrap items-center gap-3 p-4">
@@ -907,7 +903,6 @@ export default function MetadataWorkspacePage() {
           </div>
         )}
         </div>
-      </div>
     </div>
   )
 }

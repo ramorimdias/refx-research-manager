@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/refx/page-header'
 import * as repo from '@/lib/repositories/local-db'
 import { useT } from '@/lib/localization'
 import { useDocumentStore } from '@/lib/stores/document-store'
@@ -230,15 +231,11 @@ export default function NotesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <StickyNote className="h-6 w-6" />
-        </div>
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('notesPage.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('notesPage.subtitle')}</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={<StickyNote className="h-6 w-6" />}
+        title={t('notesPage.title')}
+        subtitle={t('notesPage.subtitle')}
+      />
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[384px_minmax(0,1fr)]">
         <Card className="flex min-h-0 flex-col" data-tour-id="notes-list">

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EmptyState } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import { loadAppSettings } from '@/lib/app-settings'
 import { getLibraryForegroundColor, getLibraryOverlayColor } from '@/lib/library-colors'
 import { getLibraryIcon } from '@/lib/library-icons'
@@ -287,17 +288,17 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center gap-3" data-tour-id="home-greeting">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <Home className="h-6 w-6" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">
-            <span>{typedGreetingTitle}</span>
-            <span className="refx-type-cursor" aria-hidden="true" />
-          </h1>
-          <p className="text-muted-foreground">{greeting.subtitle}</p>
-        </div>
+      <div data-tour-id="home-greeting">
+        <PageHeader
+          icon={<Home className="h-6 w-6" />}
+          title={(
+            <>
+              <span>{typedGreetingTitle}</span>
+              <span className="refx-type-cursor" aria-hidden="true" />
+            </>
+          )}
+          subtitle={greeting.subtitle}
+        />
       </div>
 
       <div data-tour-id="home-libraries">

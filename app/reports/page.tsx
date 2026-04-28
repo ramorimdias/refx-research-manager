@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { BarChart3, BookOpen, Clock, FileText, Star } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState, StatsCard } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import { useLocale } from '@/lib/localization'
 import { useDocumentStore } from '@/lib/stores/document-store'
 import { useRuntimeState } from '@/lib/stores/runtime-store'
@@ -61,19 +62,13 @@ export default function ReportsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <BarChart3 className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">{copy.title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
-          </div>
-        </div>
-      </div>
-
       <div className="space-y-6 p-6">
+        <PageHeader
+          icon={<BarChart3 className="h-6 w-6" />}
+          title={copy.title}
+          subtitle={copy.subtitle}
+        />
+
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour-id="reports-summary">
           <StatsCard label="Total Documents" value={stats.totalDocuments} icon={FileText} />
           <StatsCard label="Finished" value={stats.readDocuments} icon={BookOpen} />

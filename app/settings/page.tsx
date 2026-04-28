@@ -41,6 +41,7 @@ import * as repo from '@/lib/repositories/local-db'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { AppUpdateDialog } from '@/components/refx/app-update-dialog'
+import { PageHeader } from '@/components/refx/page-header'
 import { checkForAppUpdate, downloadAndInstallAppUpdate, type AppUpdateSummary } from '@/lib/services/app-update-service'
 import { APP_LOCALES, useLocale, useT } from '@/lib/localization'
 import { getRemoteVaultDisplayMessage, getRemoteVaultModeLabel } from '@/lib/remote-vault-copy'
@@ -999,16 +1000,12 @@ export default function SettingsPage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border/80 bg-background/92 px-6 py-5 backdrop-blur">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-              <Settings className="h-6 w-6" />
-              {t('settings.title')}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">{t('settings.subtitle')}</p>
-          </div>
-        </div>
+      <div className="px-4 pb-2 pt-4 md:px-6">
+        <PageHeader
+          icon={<Settings className="h-6 w-6" />}
+          title={t('settings.title')}
+          subtitle={t('settings.subtitle')}
+        />
       </div>
 
       <div className="flex flex-1 overflow-hidden">

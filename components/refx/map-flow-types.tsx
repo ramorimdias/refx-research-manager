@@ -200,9 +200,9 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
         <div
           className="text-sm font-semibold text-foreground"
           style={{
-            WebkitTextStroke: '3px rgba(255,255,255,0.98)',
+            WebkitTextStroke: '3px hsl(var(--background))',
             paintOrder: 'stroke fill',
-            textShadow: '0 1px 6px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.9)',
+            textShadow: '0 1px 6px hsl(var(--background) / 0.96), 0 0 10px hsl(var(--background) / 0.92)',
           }}
         >
           {baseLabel}
@@ -211,9 +211,9 @@ function DocumentGraphNode({ data }: NodeProps<GraphNodeData>) {
           <div
             className="mx-auto mt-1 max-w-[240px] text-xs leading-4 text-muted-foreground"
             style={{
-              WebkitTextStroke: '2px rgba(255,255,255,0.96)',
+              WebkitTextStroke: '2px hsl(var(--background))',
               paintOrder: 'stroke fill',
-              textShadow: '0 1px 6px rgba(255,255,255,0.92), 0 0 10px rgba(255,255,255,0.88)',
+              textShadow: '0 1px 6px hsl(var(--background) / 0.92), 0 0 10px hsl(var(--background) / 0.88)',
             }}
           >
             {document.title}
@@ -356,9 +356,9 @@ function ReferenceGraphNode({ data, selected }: NodeProps<ReferenceGraphNodeData
         <div
           className="text-sm font-semibold text-foreground"
           style={{
-            WebkitTextStroke: '3px rgba(255,255,255,0.98)',
+            WebkitTextStroke: '3px hsl(var(--background))',
             paintOrder: 'stroke fill',
-            textShadow: '0 1px 6px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.9)',
+            textShadow: '0 1px 6px hsl(var(--background) / 0.96), 0 0 10px hsl(var(--background) / 0.92)',
           }}
         >
           {baseLabel}

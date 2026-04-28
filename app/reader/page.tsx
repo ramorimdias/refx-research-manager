@@ -6,6 +6,7 @@ import { ArrowRight, BookOpen, Clock, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import { useDocumentStore } from '@/lib/stores/document-store'
 import type { Document } from '@/lib/types'
 import { useT } from '@/lib/localization'
@@ -60,15 +61,11 @@ export default function ReaderIndexPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-6">
       <div className="shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <BookOpen className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{t('readerIndex.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('readerIndex.subtitle')}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<BookOpen className="h-6 w-6" />}
+          title={t('readerIndex.title')}
+          subtitle={t('readerIndex.subtitle')}
+        />
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(22rem,0.9fr)_minmax(28rem,1.35fr)]">

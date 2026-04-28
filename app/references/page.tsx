@@ -17,6 +17,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { EmptyState } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -788,19 +789,11 @@ export default function ReferencesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Brackets className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{t('referencesPage.title')}</h1>
-            <p className="text-sm text-muted-foreground">
-              {t('referencesPage.subtitle')}
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={<Brackets className="h-6 w-6" />}
+        title={t('referencesPage.title')}
+        subtitle={t('referencesPage.subtitle')}
+      />
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
         <Card className="min-h-0" data-tour-id="references-work">

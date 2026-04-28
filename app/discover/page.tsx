@@ -10,6 +10,7 @@ import { DiscoverTimeline } from '@/components/refx/discover/discover-timeline'
 import { DiscoverLeftPane } from '@/components/refx/discover/discover-left-pane'
 import { DiscoverRightPane } from '@/components/refx/discover/discover-right-pane'
 import { DiscoverMap } from '@/components/refx/discover/discover-map'
+import { PageHeader } from '@/components/refx/page-header'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -296,15 +297,11 @@ function DiscoverPageContent() {
   if (viewMode === 'home') {
     return (
       <div className="relative flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Telescope className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{t('discoverPage.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('discoverPage.subtitle')}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Telescope className="h-6 w-6" />}
+          title={t('discoverPage.title')}
+          subtitle={t('discoverPage.subtitle')}
+        />
 
         <button
           type="button"
@@ -462,32 +459,28 @@ function DiscoverPageContent() {
   if (viewMode === 'seed' && sourceWork && !activeJourney) {
     return (
       <div className="relative flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Telescope className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{t('discoverPage.title')}</h1>
-              <p className="text-sm text-muted-foreground">{t('discoverPage.seedPreviewDescription')}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="rounded-full" onClick={() => setViewMode('home')}>
-              {t('discoverPage.backToHome')}
-            </Button>
-            <Button
-              variant="outline"
-              className="rounded-full"
-              onClick={() => {
-                resetDiscoverSession()
-                setViewMode('seed')
-              }}
-            >
-              {t('discoverPage.chooseAnotherDocument')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          icon={<Telescope className="h-6 w-6" />}
+          title={t('discoverPage.title')}
+          subtitle={t('discoverPage.seedPreviewDescription')}
+          actions={(
+            <>
+              <Button variant="outline" className="rounded-full" onClick={() => setViewMode('home')}>
+                {t('discoverPage.backToHome')}
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => {
+                  resetDiscoverSession()
+                  setViewMode('seed')
+                }}
+              >
+                {t('discoverPage.chooseAnotherDocument')}
+              </Button>
+            </>
+          )}
+        />
 
         {error ? (
           <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200">{error}</div>
@@ -509,47 +502,47 @@ function DiscoverPageContent() {
 
   return (
       <div className="relative flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <Button variant="outline" className="rounded-full" onClick={() => setViewMode('home')}>
-          {t('discoverPage.backToHome')}
-        </Button>
-        <div className="ml-auto flex min-w-0 items-center justify-end text-right">
-          <div className="min-w-0 space-y-1">
-            {isEditingJourneyName ? (
-              <Input
-                autoFocus
-                value={journeyName}
-                onChange={(event) => setJourneyName(event.target.value)}
-                onBlur={handleCommitJourneyName}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    handleCommitJourneyName()
-                  }
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    skipJourneyNameBlurRef.current = true
-                    setJourneyName(activeJourney?.name ?? '')
-                    setIsEditingJourneyName(false)
-                  }
-                }}
-                placeholder={t('discoverPage.saveJourneyPlaceholder')}
-                className="h-9 w-[min(28rem,70vw)] text-right text-lg font-semibold"
-              />
-            ) : (
-              <button
-                type="button"
-                className="group flex min-w-0 items-center justify-end gap-2 text-right"
-                onClick={() => setIsEditingJourneyName(true)}
-                title={t('discoverPage.saveName')}
-              >
-                <h1 className="truncate text-2xl font-semibold tracking-tight">{visibleJourneyName}</h1>
-                <Pencil className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={<Telescope className="h-6 w-6" />}
+        title={isEditingJourneyName ? (
+          <Input
+            autoFocus
+            value={journeyName}
+            onChange={(event) => setJourneyName(event.target.value)}
+            onBlur={handleCommitJourneyName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                handleCommitJourneyName()
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                skipJourneyNameBlurRef.current = true
+                setJourneyName(activeJourney?.name ?? '')
+                setIsEditingJourneyName(false)
+              }
+            }}
+            placeholder={t('discoverPage.saveJourneyPlaceholder')}
+            className="h-10 w-[min(28rem,70vw)] max-w-full bg-background/80 text-lg font-semibold"
+          />
+        ) : (
+          <button
+            type="button"
+            className="group flex min-w-0 items-center gap-2 text-left"
+            onClick={() => setIsEditingJourneyName(true)}
+            title={t('discoverPage.saveName')}
+          >
+            <span className="truncate">{visibleJourneyName}</span>
+            <Pencil className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
+          </button>
+        )}
+        subtitle={sourceWork ? `${sourceWork.firstAuthorLabel}${sourceWork.year ? `, ${sourceWork.year}` : ''}` : undefined}
+        actions={(
+          <Button variant="outline" className="rounded-full" onClick={() => setViewMode('home')}>
+            {t('discoverPage.backToHome')}
+          </Button>
+        )}
+      />
 
       {activeJourney ? (
         <DiscoverTimeline journey={activeJourney} activeStepIndex={activeStepIndex} onOpenStep={openStep} />

@@ -14,6 +14,7 @@ import { Slider } from '@/components/ui/slider'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EmptyState, MetadataStatusBadge, ReadingStageBadge } from '@/components/refx/common'
+import { PageHeader } from '@/components/refx/page-header'
 import type { KeywordGroup, MetadataStatus, ReadingStage } from '@/lib/types'
 import { searchDocuments, type DocumentSearchPageHit, type DocumentSearchQuery, type SearchProgressUpdate } from '@/lib/services/document-search-service'
 import { useT } from '@/lib/localization'
@@ -796,19 +797,14 @@ function RealSearchPage() {
   )
 
   return (
-    <div className="p-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <SearchIcon className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">{t('searchPage.title')}</h1>
-            <p className="text-sm text-muted-foreground">{t('searchPage.subtitleCompact')}</p>
-          </div>
-        </div>
+    <div className="flex h-full min-h-0 flex-col gap-6 p-4 md:p-6">
+        <PageHeader
+          icon={<SearchIcon className="h-6 w-6" />}
+          title={t('searchPage.title')}
+          subtitle={t('searchPage.subtitleCompact')}
+        />
 
-        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="grid min-h-0 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="h-fit" data-tour-id="search-query">
             <CardContent className="space-y-5 pt-6">
               <form
@@ -1152,7 +1148,6 @@ function RealSearchPage() {
             })}
           </div>
         </div>
-      </div>
     </div>
   )
 }
